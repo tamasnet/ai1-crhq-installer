@@ -183,7 +183,8 @@ updatedAt: 2026-05-14
 ---
 ```
 Utility installs → `skills` row (`skill_type:'user'`, `skill_path`, `skill_dir`) + copies the
-tree to `${BASE}/user-skills/<name>/`. `description`/`version` parsed from frontmatter.
+tree to the operator-configured skill-install dir `${INSTALL_BASE_DIR}/<name>/` (the manifest is
+unaware of this path — D-19). `description`/`version` parsed from frontmatter.
 
 ### Recipe — `recipes/<name>.md`
 YAML frontmatter (`name`, `description`) + markdown body → `recipes` row (uuid PK auto).
@@ -210,7 +211,7 @@ name: plaud-ingest-crawl
 description: Hourly Plaud sync into brain
 schedule: "0 * * * *"            # cron, or alias: hourly|every-15-min|every-30-min|daily
 timezone: America/Vancouver      # optional, default UTC
-script: plaud-ingest/scripts/crawl-plaud.js   # relative to user-skills/
+script: plaud-ingest/scripts/crawl-plaud.js   # path under the skill-install root: <skill-key>/scripts/<file>
 args: "--limit 50"               # optional
 timeout_minutes: 10
 max_concurrent: 1
@@ -219,7 +220,7 @@ enabled: true
 requires: [plaud-ingest]         # optional: skill keys whose files must exist first
 ```
 Utility maps → `background_jobs` row: `id=job-<ts>-<rand>`, `job_type:'script'`,
-`script_path:'node'`, `script_args = ${BASE}/user-skills/<script> <args>`. Before registering,
+`script_path:'node'`, `script_args = join(INSTALL_BASE_DIR, script) + ' ' + args`. Before registering,
 it verifies each `requires` skill is installed and its `scripts/` dir exists (coarse GAP-3
 guard); deeper dynamic-import-chain checks remain the package's `install_entry` job. On
 failure it halts with a two-ways-forward message + `--no-job` escape.
@@ -262,10 +263,10 @@ manifest is deliberate (Tamás's scope call). Full detail in `canon-conventions.
 
 | Review GAP | Where it lives |
 |------------|----------------|
-| name-PK upsert; never `.returning('id')` (GAP 2) | utility — `installer-core` (C-schema) |
-| idempotent check-then-upsert; `onConflict.ignore()` (GAP 5) | utility — `installer-core` (C6) |
+| name-PK upsert; never `.returning('id')` (GAP 2) | utility — `lib/core/*` (C-schema) |
+| idempotent check-then-upsert; `onConflict.ignore()` (GAP 5) | utility — `lib/core/*` (C6) |
 | `INSTALL_BASE_DIR` for all fs ops (GAP 10) | utility + any `install_entry` (C2) |
-| `installer-sandbox` publish gate (GAP 8) | testing harness (`testing-and-sandbox.md`) |
+| publish gate (GAP 8) | built-in `--sandbox --lifecycle` (`testing-and-sandbox.md`) |
 | secret-pattern scan before publish (GAP 9) | publish gate (not install-time) |
 | install-result taxonomy + exit codes (GAP 11) | utility output contract (see §8) |
 | no `sudo` in operator docs (GAP 4) | README/INSTALL authoring rule |

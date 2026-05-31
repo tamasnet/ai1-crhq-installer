@@ -14,35 +14,41 @@ existing CommonJS scaffold is migrated to **ESM `.mjs`** (required by C1).
 - [x] Confirm DB user can `CREATE/DROP SCHEMA` with isolation — **PASS** (sandbox DB-isolation
       viable here).
 - [x] Lock product-shape (D-8), jobs type (D-9), manifest (D-10), env names (D-15) — all confirmed.
-- [~] **Full `installer-sandbox` lifecycle run — DEFERRED to early build phase.** Two blockers
-      found that make it inappropriate to run under the planning-only constraint:
-      1. `installer-sandbox` lives in `ai1-repos` with **no `node_modules`**; ESM ignores
-         `NODE_PATH`, so `import knex`/`dotenv` won't resolve until the harness is **staged on
-         the satellite** (a build action).
-      2. The 4 on-satellite canon installers **hardcode `BASE`** (don't honor `CRHQ_BASE_DIR`),
-         so running them through the sandbox would write to the **real** `user-skills/`. The
-         safe subject is our **own** `INSTALL_BASE_DIR`-honoring installer (doesn't exist yet) or
-         `dev-handoff`/`plaud` once their deps resolve.
+- [~] **Full lifecycle run — DEFERRED to build phase** (requires our installer to exist).
+      Note: we now **build the sandbox into the utility** (`--sandbox`, D-17) rather than depend
+      on the external `installer-sandbox` harness, so there's nothing external to stage. A useful
+      Phase 0 finding stands: the 4 on-satellite canon installers **hardcode `BASE`** (don't
+      honor `CRHQ_BASE_DIR`) → they can't be safely sandbox-run against the real FS, which is
+      exactly why our installer must honor `INSTALL_BASE_DIR` (C2).
 
-**Exit:** schema + sandbox-privilege confirmed; D-8/9/10/15 decided. **First build-phase task:**
-stage `installer-sandbox` on the satellite and run the lifecycle against our installer.
+**Exit:** schema + sandbox-privilege confirmed; D-8/9/10/15/17 decided. **First build-phase
+task:** scaffold `lib/` (incl. `sandbox.mjs`) and self-test with `--sandbox --lifecycle`.
 
-## Phase 1 — Core library (`lib/`)
+## Phase 1 — Core library (`lib/`) — authoritative map: `utility-design.md` Part C
 
-- [ ] `db.mjs` — **static hardcoded** `import getDb from server/db/knex.js` (C1) + `destroy()`.
-- [ ] `log.mjs` — prefixed logging, `[dry-run]` markers, and the canon completion strings (C7).
-- [ ] `frontmatter.mjs` — parse SKILL.md frontmatter → `{ meta, body }` (zero-dep).
-- [ ] `manifest.mjs` — load YAML/JSON, validate, resolve paths, normalize to a plan.
-- [ ] `installer-core.mjs` — primitives with dry-run/lock/idempotency baked in:
-      `upsertSkill, upsertRecipe, upsertAgent, upsertJob, remove*, status*`.
+- [ ] `db.mjs` — **static hardcoded** `import getDb from server/db/knex.js` (C1) + `INSTALL_SCHEMA`
+      `searchPath` (B4) + `closeDb()`.
+- [ ] `log.mjs` — prefixed logging, `[dry-run]` markers, canon completion strings (C7), `VERDICT`.
+- [ ] `parse.mjs` — `parseFrontmatter` (SKILL.md → `{meta, body}`) + `loadYaml` (zero-dep if reasonable).
+- [ ] `fs.mjs` — `copyTree` / `writeIfChanged` / `removeTree`, all `INSTALL_BASE_DIR`-rooted (C2).
+- [ ] `manifest.mjs` — load + validate `ai1-package.yaml`, resolve paths, normalize to an ordered plan.
+- [ ] `prereq.mjs` — `requireSkills` / `requireFiles` (C12).
+- [ ] `context.mjs` — `createContext(argv)` → bound `{db,BASE,DRY_RUN,RESPECT_LOCKS,mode,log,results}` (B3).
+- [ ] `index.mjs` — public API barrel (the stable import surface, B2).
+- [ ] `core/{skill,recipe,agent,job,service}.mjs` — per-type `upsert*`/`remove*`/`status*` primitives
+      (dry-run/lock/idempotency/join-sync baked in) — the decomposed former "installer-core".
+- [ ] `sandbox.mjs` — `--sandbox`: provision (`CREATE SCHEMA` + `CREATE TABLE … LIKE … INCLUDING
+      ALL`, D-18) + seed prerequisite skills + redirect `INSTALL_SCHEMA`/`INSTALL_BASE_DIR` +
+      teardown (`--keep` to preserve); `--lifecycle` assertion suite (D-17).
 
-**Exit:** `node --input-type=module -e` smoke tests pass for manifest + frontmatter; core
-primitives unit-exercised against a scratch sandbox schema.
+**Exit:** `node --input-type=module -e` smoke tests pass for manifest + parse; core
+primitives unit-exercised via `--sandbox` (self-provisioned isolated schema).
 
 ## Phase 2 — Skill + Recipe install
 
 - [ ] `upsertSkill`: unlock-if-needed (C5) → insert|update (`skill_type:'user'`, `skill_path`,
-      `skill_dir`, NOT-NULL fields set) → copy `${BASE}/user-skills/<name>/`.
+      `skill_dir`=`${INSTALL_BASE_DIR}/<key>`, `skill_path`=`db://skills/<name>`, NOT-NULL fields set)
+      → copy assets to `${INSTALL_BASE_DIR}/<key>/`.
 - [ ] `upsertRecipe`: insert|update by name (uuid auto).
 - [ ] Wire `--dry-run`/`--status`/`--uninstall` for both.
 
@@ -72,8 +78,8 @@ primitives unit-exercised against a scratch sandbox schema.
 - [ ] `--only=<type>`, `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--no-agent`.
 - [ ] Aggregate summary; continue-and-report with non-zero exit on any failure.
 
-**Test:** full `installer-sandbox` lifecycle over `examples/bundle/` (skill+recipe+agent+job)
-→ all phases green. `sandbox-install-test --dir scripts` → pass.
+**Test:** `--sandbox --lifecycle` over `examples/bundle/` (skill+recipe+agent+job)
+→ all phases green. `--dry-run` → clean "would…" output.
 
 ## Phase 6 — Services (deploy-project)
 
@@ -100,16 +106,16 @@ primitives unit-exercised against a scratch sandbox schema.
 
 ## Testing strategy (summary)
 
-- Per-change: `sandbox-install-test --dir scripts` (fast dry-run gate).
-- Per-phase: `installer-sandbox --installer scripts/install.mjs` (full lifecycle).
+- Per-change: `--dry-run` over the sample bundle (fast, zero-write gate).
+- Per-phase: `--sandbox --lifecycle` over the sample bundle (self-contained full lifecycle).
 - Negative cases: malformed manifest, missing SKILL.md, locked skill (+/- `--respect-locks`),
   missing dependency (C12 halt + exit code).
-- Services: explicit non-sandbox smoke test (harnesses don't model nginx/PM2).
+- Services: explicit non-sandbox smoke test (the sandbox models DB + fs, not nginx/PM2).
 
 ## Deliverables checklist
 
-- [ ] `lib/{db,log,frontmatter,manifest,installer-core,service}.mjs`
-- [ ] `scripts/install.mjs` generic runner
+- [ ] `lib/{index,context,db,manifest,parse,fs,log,prereq,sandbox}.mjs` + `lib/core/{skill,recipe,agent,job,service}.mjs`
+- [ ] `scripts/install.mjs` generic runner (incl. `--sandbox`)
 - [ ] `examples/bundle/` complete sample (with its `ai1-package.yaml`)
 - [ ] Updated `SKILL.md` + `README.md`
-- [ ] Green `installer-sandbox` lifecycle + passing `sandbox-install-test`
+- [ ] Green `--sandbox --lifecycle` over the sample bundle

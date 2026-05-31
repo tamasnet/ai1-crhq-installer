@@ -26,29 +26,32 @@ This is the build checklist for `ai1-crhq-installer`.
 > ⚠️ This means the current scaffold's CommonJS `scripts/install.js` + `install-*.js`
 > must be **rewritten as ESM `.mjs`** (see migration note in `architecture.md`).
 
-## C2 — configurable base dir for ALL filesystem operations
+## C2 — `INSTALL_BASE_DIR` = the parent dir for skill `<key>` directories
 
-Our utility's canonical env var is **`INSTALL_BASE_DIR`** (vendor-neutral; D-15). For
-compatibility with the existing `installer-sandbox` harness — which sets the legacy
-`CRHQ_BASE_DIR` — resolve a precedence chain:
+**`INSTALL_BASE_DIR` is the directory under which each skill's `<key>` folder is created**
+(vendor-neutral; D-15/D-19). The installer core does `join(INSTALL_BASE_DIR, key)` and has
+**no knowledge** of the CRHQ-specific `user-skills/` segment — that lives entirely in the
+configured value. Resolution:
 
 ```js
-const BASE = process.env.INSTALL_BASE_DIR
-          || process.env.CRHQ_BASE_DIR        // legacy fallback — the canon harness sets this
-          || '/opt/projects/crhq-satellite';  // default on a CRHQ satellite
+import { join } from 'path';
+const INSTALL_BASE_DIR =
+     process.env.INSTALL_BASE_DIR                                          // canonical: the skill-parent dir
+  || (process.env.CRHQ_BASE_DIR && join(process.env.CRHQ_BASE_DIR, 'user-skills'))  // legacy: CRHQ_BASE_DIR is the satellite ROOT
+  || '/opt/projects/crhq-satellite/user-skills';                          // default on a CRHQ satellite
+// skill assets → join(INSTALL_BASE_DIR, key);  skill_dir (DB) = that same absolute path
 ```
-Every read of bundled data and every write to `user-skills/` derives from `BASE`. The
-sandbox harness sets the base to a temp dir (e.g. `.scratch/sandbox-<ts>`) so installs
-never touch the real tree.
+The `user-skills/` literal appears **only** in the CRHQ legacy-compat shim + the default — never
+in the core logic. The sandbox sets `INSTALL_BASE_DIR` to a temp dir so installs never touch the
+real tree.
 
-## C3 — Install target is `user-skills/`, not `skills/`
+## C3 — Skill install dir = `INSTALL_BASE_DIR/<key>`
 
-- Skill assets copy to `${BASE}/user-skills/<name>/...` (webuser-owned). `skills/` is
-  managed differently — do not write there.
-- `skill_dir` = `${BASE}/user-skills/<name>`
-- `skill_path` = `user-skills/<name>` (plaud) **or** `db://skills/<name>` (requirements/dev-handoff).
-  Both observed; column is just NOT-NULL. **Pick one and be consistent** — recommend
-  `user-skills/<name>` (most recent convention).
+- Skill assets copy to `${INSTALL_BASE_DIR}/<key>/...`. On a CRHQ satellite `INSTALL_BASE_DIR`
+  resolves to `.../user-skills` (webuser-owned); never write to the system `skills/` tree.
+- `skill_dir` (DB) = `${INSTALL_BASE_DIR}/<key>` (absolute).
+- `skill_path` (DB) = **`db://skills/<name>`** — standardized (OQ-10 resolved). Location-independent,
+  doesn't bake in `user-skills`. NOT-NULL, so always set it.
 
 ## C4 — Standard flags
 
@@ -67,7 +70,7 @@ and similar per-bundle toggles.
 - Join tables: `insert(...).onConflict([cols]).ignore()`.
 - Re-running produces identical end-state. `install → uninstall → status` shows clean;
   `install → install` shows no drift; `uninstall → install` reproduces the original.
-  (These are exactly the phases `installer-sandbox` checks.)
+  (These are exactly the phases the built-in `--sandbox --lifecycle` suite checks.)
 
 ## C7 — Completion strings the harness greps (don't paraphrase loosely)
 
@@ -77,7 +80,8 @@ and similar per-bundle toggles.
 | uninstall | `/uninstall\s+complete/i` | `Uninstall complete.` |
 | dry-run | contains `would` / `dry` / `preview`, stdout > 200 bytes | `[dry-run] would create …` |
 
-`sandbox-install-test` also fails on any line matching `^(error:|❌|fatal:|uncaught|throw)`.
+Treat any line matching `^(error:|❌|fatal:|uncaught|throw)` as a failure signal in dry-run
+output (a good practice inherited from the old pre-push check).
 
 ## C8 — Lifecycle hygiene
 
@@ -126,17 +130,19 @@ for each sub-installer:
 
 ---
 
-## Sandbox contract (what makes an installer testable)
+## Sandbox contract — built into the utility (D-17)
 
-`node user-skills/installer-sandbox/scripts/test.mjs --installer <path-to-install.mjs>`
-will, for any installer obeying C1–C8:
+Our utility self-provides the sandbox via **`--sandbox`** (`lib/sandbox.mjs`) — no external
+harness, no `--loader` hook. For any installer obeying C1–C8 it will:
 
-1. `CREATE SCHEMA sandbox_<ts>` with prod-matching DDL (7 tables) + seed utility skills.
-2. Set the schema + base-dir env (the existing harness uses `SANDBOX_SCHEMA` +
-   `CRHQ_BASE_DIR`; our utility also reads `INSTALL_SCHEMA`/`INSTALL_BASE_DIR` — D-15).
-3. Run `node --loader sandbox-hooks.mjs <install.mjs>` through the lifecycle:
-   **fresh install → status → idempotency (2nd install, state diff) → uninstall →
-   clean check → reinstall → final status**, then `DROP SCHEMA CASCADE` + rm temp dir.
+1. `CREATE SCHEMA sandbox_<ts>` cloned from live: `CREATE TABLE sandbox_<ts>.<t>
+   (LIKE public.<t> INCLUDING ALL)` (D-18, zero drift) + seed prerequisite skills from live.
+2. Set `INSTALL_SCHEMA=sandbox_<ts>` + `INSTALL_BASE_DIR=<tempdir>` internally; `getDb()` applies
+   the `searchPath` natively (C2 / OQ-U4). (Legacy `SANDBOX_SCHEMA`/`CRHQ_BASE_DIR` still honored
+   for back-compat — D-15.)
+3. Run the op; with `--lifecycle`: **fresh install → status → idempotency → uninstall →
+   clean check → reinstall**. Then `DROP SCHEMA CASCADE` + rm temp dir (unless `--keep`).
 
-If C1 (interceptable knex) or C2 (`INSTALL_BASE_DIR`/`CRHQ_BASE_DIR`) is violated, the test would mutate the
-real satellite — so these two are non-negotiable.
+If C1 (interceptable / schema-aware knex) or C2 (`INSTALL_BASE_DIR`) is violated, an install
+would mutate the real satellite — so these two are non-negotiable. (They're also what let the
+built-in `--sandbox` redirect cleanly.)

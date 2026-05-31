@@ -26,12 +26,12 @@ Each item tagged with its source convention for traceability.
 ### A2. Component upserts (DB-direct via knex; idempotent)
 - [ ] **Skill** — parse `SKILL.md` frontmatter; lock handling (C5); insert|update `skills` row
       (`skill_type:'user'`, `skill_path`, `skill_dir`, all NOT-NULL cols); copy tree to
-      `${BASE}/user-skills/<name>/`. (integration-ref §2; C3)
+      `${INSTALL_BASE_DIR}/<key>/`. (integration-ref §2; C3)
 - [ ] **Recipe** — parse `.md` frontmatter+body; insert|update `recipes` (uuid PK auto).
 - [ ] **Agent** — parse `.yaml`; insert|update `agents` by `key` (minimal cols + defaults);
       sync `agent_skills` (attach only existing+active skills); resolve recipe name→uuid; sync
       `agent_recipes`. (integration-ref §2)
-- [ ] **Job** — parse `.yaml`; expand `script`→`${BASE}/user-skills/<script>` + `args`;
+- [ ] **Job** — parse `.yaml`; expand `script`→`join(INSTALL_BASE_DIR, script)` + `args`;
       `requires` prereq guard (C12); insert|update `background_jobs` (`id=job-<ts>-<rand>`).
 - [ ] **Service** — parse `service.yaml`; deploy-project emit; **dry-run = build only, skip
       apply** (D-2a).
@@ -69,12 +69,17 @@ Each item tagged with its source convention for traceability.
 
 ### A7. Flag handling
 - [ ] Standard flags (utility-owned): `--dry-run`, `--status`, `--uninstall`, `--respect-locks`,
-      `--no-agent`, `--no-job`, `--only=<type>`.
+      `--no-agent`, `--no-job`, `--only=<type>`, **`--sandbox`** (+ `--keep`, `--lifecycle`).
 - [ ] Parse package-specific `install_flags` from the manifest; forward to `install_entry`.
 
-### A8. Testability (must satisfy, not implement)
-- [ ] Runs green through `installer-sandbox` lifecycle (install→status→idempotency→uninstall→
-      reinstall) and passes `sandbox-install-test --dry-run` (testing-and-sandbox.md).
+### A8. Built-in sandbox (self-contained — D-17; replaces external `installer-sandbox`)
+- [ ] **`--sandbox`** — provision an isolated schema (`sandbox_<ts>`, cloned from live via
+      `CREATE TABLE … LIKE … INCLUDING ALL`, D-18) + a temp `INSTALL_BASE_DIR`; set
+      `INSTALL_SCHEMA`/`INSTALL_BASE_DIR` internally; run the op into there; report; tear down.
+- [ ] `--keep` — preserve the schema + temp dir (print their names) for inspection.
+- [ ] `--lifecycle` — additionally run the full assertion suite (install → status →
+      idempotency → uninstall → reinstall), absorbing what the external harness did.
+- [ ] No external harness, no `--loader` hook (relies on native `INSTALL_SCHEMA`, OQ-U4).
 
 ---
 
@@ -90,11 +95,18 @@ The public env interface is **vendor-neutral** (D-15) — the package manifest i
 CRHQ-independent, so the utility's knobs are too:
 
 ```js
-const BASE   = process.env.INSTALL_BASE_DIR || process.env.CRHQ_BASE_DIR  || '/opt/projects/crhq-satellite';
-const SCHEMA = process.env.INSTALL_SCHEMA   || process.env.SANDBOX_SCHEMA || null;  // null → default schema
+import { join } from 'path';
+// INSTALL_BASE_DIR = the parent dir under which each skill's <key> folder is created (D-19).
+// Core does join(INSTALL_BASE_DIR, key) — no `user-skills` knowledge in the logic.
+const INSTALL_BASE_DIR =
+     process.env.INSTALL_BASE_DIR
+  || (process.env.CRHQ_BASE_DIR && join(process.env.CRHQ_BASE_DIR, 'user-skills'))  // legacy: CRHQ_BASE_DIR is the satellite ROOT
+  || '/opt/projects/crhq-satellite/user-skills';
+const SCHEMA = process.env.INSTALL_SCHEMA || process.env.SANDBOX_SCHEMA || null;     // null → default schema
 ```
-The legacy fallbacks keep us compatible with the existing `installer-sandbox` harness (which
-sets `CRHQ_BASE_DIR`/`SANDBOX_SCHEMA`) without forking it.
+The legacy fallbacks keep us compatible with the old `installer-sandbox` harness (which sets the
+satellite-root `CRHQ_BASE_DIR` + `SANDBOX_SCHEMA`) without forking it — we just append
+`user-skills` to reconstruct the skill-parent dir.
 
 Every install script that uses the library funnels:
 - **all DB access** through one `getDb()` → a single place to make the **schema** configurable
@@ -153,19 +165,26 @@ try {
 The script never touches `BASE`, the knex import, lock logic, or the taxonomy directly — it
 inherits all of it. That is the DRY + sandbox payoff in one.
 
-### B4. Sandbox interplay (two supported modes)
+### B4. Sandbox — built into the utility (D-17)
 
-- **Mode 1 — loader hook (legacy-compatible):** the library's `getDb()` does the canonical
-  hardcoded `import … server/db/knex.js`, so the existing `installer-sandbox` loader hook
-  intercepts it transitively. Works for both library-based and legacy direct-knex installers.
-- **Mode 2 — native (library-only):** `getDb()` checks `INSTALL_SCHEMA` (legacy
-  `SANDBOX_SCHEMA`); if set, it builds a knex with `searchPath:[schema]` itself — **no loader
-  hook needed**. Simpler, less fragile path-matching, and it's the mechanism that delivers your
-  "configurable schema" directly.
+The utility **provisions its own sandbox** — no external `installer-sandbox` harness, no
+`--loader` hook. `lib/sandbox.mjs` (see Part C) does:
 
-Recommend the library support **both**: native when `INSTALL_SCHEMA`/`SANDBOX_SCHEMA` is set,
-otherwise the canonical import (which the hook can still intercept). Legacy installers keep
-working unchanged.
+1. **Provision** — using a default-`searchPath` knex: `CREATE SCHEMA sandbox_<ts>`, then for each
+   managed table `CREATE TABLE sandbox_<ts>.<t> (LIKE public.<t> INCLUDING ALL)` (D-18 — clones
+   live columns/defaults/constraints/indexes, zero drift). Optionally re-add intra-schema FKs
+   and **seed** prerequisite `skills` rows copied from live so agent-attach + dep checks mirror
+   reality (OQ-14).
+2. **Redirect** — set `INSTALL_SCHEMA=sandbox_<ts>` + `INSTALL_BASE_DIR=<tempdir>`; `getDb()`
+   then builds knex with `searchPath:[sandbox_<ts>]` (native, B1) and `fs.mjs` writes under the
+   temp dir. All component installs land in the sandbox.
+3. **Run** — the requested op (install by default); with `--lifecycle`, the full
+   install→status→idempotency→uninstall→reinstall assertion suite.
+4. **Teardown** — `DROP SCHEMA sandbox_<ts> CASCADE` + rm tempdir, unless `--keep`.
+
+> **Legacy-compat (optional):** because `getDb()` also reads the legacy `SANDBOX_SCHEMA` and the
+> canonical hardcoded knex import is interceptable, the utility *still* runs correctly if someone
+> drives it under the old external loader-hook harness — but we no longer depend on it.
 
 ### B5. Distribution / import path (OQ-U1)
 
@@ -206,6 +225,7 @@ scripts/
     fs.mjs             # copyTree, writeIfChanged, removeTree — all INSTALL_BASE_DIR-rooted (C2)
     log.mjs            # log + dry-run markers + completion strings + VERDICT taxonomy
     prereq.mjs         # requireSkills, requireFiles (C12)
+    sandbox.mjs        # --sandbox: provision (LIKE-clone) + seed + redirect + teardown (B4, D-17/18)
     core/
       skill.mjs        # upsertSkill / removeSkill / statusSkill
       recipe.mjs       # upsert/remove/status

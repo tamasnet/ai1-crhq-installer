@@ -10,7 +10,7 @@ satellite:
 
 | Resource | Store | Sandbox-testable? |
 |----------|-------|-------------------|
-| Skill | `skills` table + `user-skills/<name>/` | ✅ |
+| Skill | `skills` table + `INSTALL_BASE_DIR/<key>/` | ✅ |
 | Recipe | `recipes` table (uuid PK) | ✅ |
 | Agent | `agents` + `agent_skills` + `agent_recipes` | ✅ |
 | Job | `background_jobs` table | ✅ |
@@ -41,13 +41,17 @@ Synthesized into `package-manifest-spec.md`.
 ## Settled (this session)
 
 - **DB-direct via knex** (user-confirmed) — REST can't be sandbox-intercepted.
-- **ESM `.mjs` + hardcoded knex import** + **`INSTALL_BASE_DIR`** for all fs ops → the installer
-  runs in `installer-sandbox` against an isolated Postgres schema + temp filesystem.
+- **ESM `.mjs` + hardcoded knex import** + **`INSTALL_BASE_DIR`** for all fs ops → installs are
+  redirectable to an isolated Postgres schema + temp filesystem.
+- **Built-in `--sandbox`** (D-17): the utility self-provisions an isolated schema (cloned from
+  live via `CREATE TABLE … LIKE`, D-18) + temp dir, installs into there, and tears down — **no
+  external harness**. `--lifecycle` runs the full install→…→reinstall assertions.
 - **Configurable base path + schema** via **vendor-neutral env** (D-15): `INSTALL_BASE_DIR`
-  (files) + `INSTALL_SCHEMA` (db `searchPath`), each falling back to the legacy
-  `CRHQ_BASE_DIR`/`SANDBOX_SCHEMA` so the canon harness still works unchanged.
+  (files) + `INSTALL_SCHEMA` (db `searchPath`), each falling back to legacy
+  `CRHQ_BASE_DIR`/`SANDBOX_SCHEMA`.
 - Auto-unlock locked skills by default; `--respect-locks` to skip.
-- Reuse `installer-sandbox`, `sandbox-install-test`, and `deploy-project`.
+- **Self-contained** except CRHQ deps: `server/db/knex.js`, the DB, and `deploy-project`
+  (services). Dropped: external `installer-sandbox` + `sandbox-install-test` (D-16/D-17).
 
 ## Settled (this turn)
 

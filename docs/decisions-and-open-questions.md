@@ -8,7 +8,7 @@ Living log. Updated after studying the canon installers + sandbox harnesses.
 |----|----------|--------|-----------|
 | **D-1** | Install mechanism = **DB-direct via knex** (no REST for resource writes) | **Confirmed (user)** | Required for sandbox testing — REST can't be intercepted. Matches all 4 canon installers. |
 | **D-1a** | Installer is **ESM `.mjs`** and imports knex via the **hardcoded** path `/opt/.../server/db/knex.js` | Firm | C1 — only ESM static-import is interceptable by `sandbox-hooks.mjs`. Current CommonJS scaffold must migrate. |
-| **D-1b** | All filesystem ops derive from `process.env.INSTALL_BASE_DIR \|\| process.env.CRHQ_BASE_DIR \|\| '/opt/projects/crhq-satellite'` | Firm (user-requested) | C2 — configurable base path; legacy fallback for harness compat (D-15). |
+| **D-1b** | Skill fs ops derive from `INSTALL_BASE_DIR` (the **skill-parent dir**) — see D-19 for resolution | Firm (user-requested) | C2 — configurable; legacy fallback for harness compat (D-15). |
 | **D-1c** | Schema configurable via `process.env.INSTALL_SCHEMA \|\| process.env.SANDBOX_SCHEMA` → knex `searchPath` (native in `getDb()`, B4 Mode 2) | Firm | Delivers "configurable DB schema"; legacy fallback keeps the canon loader-hook harness working. |
 | **D-2** | Services = **reuse deploy-project conventions** | Provisional | Avoids duplicating nginx/PM2/SSL/port logic. |
 | **D-2b** | Services: shell out to deploy-project scripts **vs** inline templates | **Open** | Decide after reading whether deploy-project exposes reusable scripts. |
@@ -16,11 +16,15 @@ Living log. Updated after studying the canon installers + sandbox harnesses.
 | **D-4** | Install order skills → recipes → agents → jobs → services; uninstall reverses | Firm | Dependency order (C13). |
 | **D-5** | Locked skills: **auto-unlock then update by default; `--respect-locks` to skip** | **Revised** | Aligns with canon (was "refuse unless --force"). |
 | **D-6** | Zero new runtime deps if reasonable (hand-roll frontmatter; YAML may need a tiny parser — TBD) | Provisional | Portability. Revisit if YAML manifest needs a dep. |
-| **D-7** | `--dry-run` = zero side effects; output contains "would…" and >200 bytes | Firm | C7; checked by `sandbox-install-test`. |
+| **D-7** | `--dry-run` = zero side effects; output contains "would…" and >200 bytes | Firm | C7; it's our built-in pre-flight check. |
 | **D-8** | **Product shape = C (core lib + generic manifest runner)** | **Confirmed (user)** | Best fit for the brief + DRYs the canon installers; keeps scaffolder optional. The manifest is the runner's input; `install_entry` is the package-specific hook. |
 | **D-9** | Add **jobs** (`background_jobs`) as a first-class resource type | **Confirmed (user)** | Every canon installer registers jobs; rounds out the system. Now a `jobs` component in the package manifest. |
 | **D-10** | Manifest = **`ai1-package.yaml`** at the package root — declarative `components` inventory (skills/recipes/agents/jobs/services) + optional `install_entry` hook. Spec finalized in `package-manifest-spec.md` (v0.2) | **Confirmed (user)** | Builds on Tamás's Ai1 Package Standard draft + ThinkBot review; cross-cutting impl concerns kept OUT of the spec (utility-owned, §7). |
-| **D-11** | Reuse `installer-sandbox` + `sandbox-install-test` for testing; reuse `deploy-project` for services | Firm | They already exist and define the contract. |
+| **D-11** | ~~Reuse `installer-sandbox` + `sandbox-install-test`~~ → **superseded by D-16/D-17.** Still reuse `deploy-project` for services | Revised | Sandboxing is now built into the utility; only `deploy-project` (a CRHQ dependency) is reused. |
+| **D-16** | **Drop `sandbox-install-test` dependency** | **Confirmed (user)** | It tests the sandbox harness itself; not needed here. Our built-in `--dry-run` is the pre-flight check. |
+| **D-17** | **Absorb `installer-sandbox` into the utility** as a built-in **`--sandbox`** mode — the utility is self-contained (except CRHQ deps: `server/db/knex.js`, the DB, `deploy-project`) | **Confirmed (user)** | `--sandbox` provisions an isolated schema + temp dir, sets `INSTALL_SCHEMA`/`INSTALL_BASE_DIR` internally, installs into there, reports, tears down. No external harness, no `--loader` hook (relies on native `INSTALL_SCHEMA`, OQ-U4). |
+| **D-18** | Sandbox schema is **cloned from live** via `CREATE TABLE sandbox_x.<t> (LIKE public.<t> INCLUDING ALL)` (not hardcoded DDL) | **Confirmed (design)** | Zero schema drift (Phase 0 showed the old hardcoded DDL had already drifted); self-contained; auto-tracks production. FK re-creation + seed strategy are details (OQ-14). |
+| **D-19** | **`INSTALL_BASE_DIR` = the parent dir for skill `<key>` directories** (not the satellite root). Core does `join(INSTALL_BASE_DIR, key)`; no `user-skills` in the logic. Resolution: `INSTALL_BASE_DIR \|\| join(CRHQ_BASE_DIR,'user-skills') \|\| '/opt/projects/crhq-satellite/user-skills'`. `skill_dir`=`${INSTALL_BASE_DIR}/<key>`, `skill_path`=`db://skills/<name>` | **Confirmed (user)** | Removes the CRHQ-specific `user-skills/` segment from the installer's core + keeps the manifest unaware of it. The `user-skills` literal survives only in the legacy-compat shim + default. |
 | **D-2a** | Services dry-run = **run the build step, skip the deploy-project apply** | **Confirmed (user)** | Surfaces build errors without touching nginx/PM2/live state. |
 | **D-12** | Utility is **both a CLI and a library** — primitives exported for bundled `install_entry` scripts + standalone installers to import | **Confirmed (user direction)** | DRYs the canon installers; one DB/fs chokepoint. Detailed in `utility-design.md`. |
 | **D-13** | The library is the vehicle for the earlier **"configurable base path + schema"** ask: `INSTALL_BASE_DIR` (fs) + `INSTALL_SCHEMA`→`searchPath` (db), inherited by any importer | **Confirmed (design)** | Library-based installers become sandbox-correct for free; loader hook optional. |
@@ -33,17 +37,18 @@ Living log. Updated after studying the canon installers + sandbox harnesses.
 |----|----------|--------|----------------|
 | **OQ-1** | REST write endpoints for agents/recipes? | **Moot** | Superseded by D-1 (DB-direct). |
 | **OQ-2** | Live schema matches the sandbox DDL documented here? | **Resolved (2026-05-31)** | `columnInfo()` probe — MATCH. Refinements in `integration-reference.md §6`. CREATE/DROP-SCHEMA privilege confirmed. |
-| **OQ-3** | Skill asset path `skills/` vs `user-skills/`? | **Resolved** | `user-skills/<name>` (C3) |
+| **OQ-3** | Skill asset path `skills/` vs `user-skills/`? | **Resolved** | `${INSTALL_BASE_DIR}/<key>` — INSTALL_BASE_DIR is the skill-parent dir (C3/D-19); on CRHQ it's `.../user-skills` |
 | **OQ-4** | Recipe source format (md+frontmatter vs JSON)? | Open | Decide in D-10 manifest design; recipes only need name/description/content |
 | **OQ-5/OQ-6** | Service: shell-out vs inline; port allocation rule | Open (Phase 6) | Read `deploy-project` fully (D-2a) |
 | **OQ-7** | Is importing `server/db/knex.js` acceptable for a distributable skill? | **Resolved** | Yes — it's the sanctioned canon mechanism (runtime import, never modify). The CLAUDE.md boundary forbids *modifying/printing* core files, not importing them. |
 | **OQ-8** | Agent fields settable on insert (`default_model`, `icon`, `provider`, `capabilities`)? | **Resolved** | Yes; canon inserts minimal + relies on defaults. Column is `default_model` (not `model`). |
 | **OQ-9** | Multi-satellite path portability | Partially resolved | `INSTALL_BASE_DIR` (D-1b/D-15) covers fs; the knex import path stays hardcoded for interception (C1). `SATELLITE_ID` for service URLs from env. |
-| **OQ-10** | `skill_path` value: `user-skills/<name>` vs `db://skills/<name>` | Open (cosmetic) | Pick one in Phase 1 (recommend `user-skills/<name>`) |
+| **OQ-10** | `skill_path` value: `user-skills/<name>` vs `db://skills/<name>` | **Resolved** | `db://skills/<name>` — location-independent; doesn't bake `user-skills` into the DB (aligns with D-19). |
 | **OQ-11** | `--no-agent` vs `--skip-agent` naming | Open (cosmetic) | Pick `--no-agent` |
 | **OQ-U1…U5** | Utility/library design choices (lib import path; `install_entry` on uninstall/status; `--json`; native `INSTALL_SCHEMA`; refactor canon installers) | **Resolved (user)** — see `utility-design.md §D`: U1 canonical absolute path (alias later) · U2 yes · U3 yes · U4 yes · U5 no | — |
-| **OQ-12** | Running `installer-sandbox` here requires it **staged on the satellite** (ai1-repos has no node_modules; ESM ignores NODE_PATH) | Open (build-phase) | First build task: stage harness on satellite; then lifecycle-test our installer (Phase 0 §implementation-plan) |
-| **OQ-13** | The 4 on-satellite canon installers hardcode `BASE` (not FS-isolated under sandbox) | Noted | Reinforces D-1b/C2: our installer MUST honor `INSTALL_BASE_DIR`. Don't sandbox-run the hardcoded-BASE installers against real FS |
+| **OQ-12** | ~~Staging `installer-sandbox` on the satellite~~ | **Obsolete (D-17)** | We build the sandbox into the utility; nothing external to stage. |
+| **OQ-13** | The 4 on-satellite canon installers hardcode `BASE` (not FS-isolated under sandbox) | Noted | Reinforces D-1b/C2: our installer MUST honor `INSTALL_BASE_DIR`. |
+| **OQ-14** | Built-in sandbox details: re-create intra-schema FKs after `LIKE`? how to seed prerequisite skills (copy real `skills` rows vs minimal placeholders)? | Open (build) | `LIKE INCLUDING ALL` omits FKs; decide whether fidelity needs them. Seed by copying live `skills(name,is_active,skill_type,skill_path)` so agent-attach + dep checks mirror reality. |
 
 ## Reference installers (studied this session)
 

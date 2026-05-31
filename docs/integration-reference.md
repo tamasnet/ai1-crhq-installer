@@ -1,8 +1,9 @@
 # DB Schema & Integration Reference
 
-**Authoritative** — schema below is taken verbatim from the sandbox DDL in
-`installer-sandbox/scripts/test.mjs` (which mirrors production) and cross-checked against
-the four reference installers. This supersedes the earlier REST-centric draft.
+**Authoritative** — schema below was **verified against the live DB** (Phase 0, §6) and
+cross-checked against the four reference installers. (It was originally drafted from the old
+`installer-sandbox` DDL, but the live read is the source of truth — and the built-in sandbox
+now clones from live, D-18, so there's no separate DDL to drift.)
 
 Resource writes are **DB-direct via knex** (see `canon-conventions.md` C1, C9). REST is
 read-only here and not used for installs.
@@ -26,8 +27,8 @@ Connection (from sandbox harness defaults): pg, `DB_HOST` localhost, `DB_PORT` 5
 |--------|----------------|-------|
 | `name` | varchar PK | unique key; never `.returning('id')` |
 | `description` | text | usually parsed from SKILL.md frontmatter |
-| `skill_path` | text **NOT NULL** default `''` | e.g. `user-skills/<name>` or `db://skills/<name>` |
-| `skill_dir` | text | `${BASE}/user-skills/<name>` |
+| `skill_path` | text **NOT NULL** default `''` | standardized to **`db://skills/<name>`** (OQ-10) — location-independent |
+| `skill_dir` | text | `${INSTALL_BASE_DIR}/<key>` (absolute; `INSTALL_BASE_DIR` = the skill-parent dir, D-19) |
 | `is_global` | bool default false | installers set false |
 | `is_active` | bool default true | |
 | `locked`, `locked_at`, `locked_by` | bool/ts/varchar | PG trigger blocks UPDATE on locked rows → unlock first (C5) |
@@ -124,10 +125,10 @@ node --input-type=module -e "import('/opt/projects/crhq-satellite/server/db/knex
 
 ## 5. Known inconsistencies to standardize in our build
 
-- `skill_path` value format: `user-skills/<name>` vs `db://skills/<name>` — pick one.
+- `skill_path` value format — **resolved: `db://skills/<name>`** (OQ-10).
 - Agent flag name: `--no-agent` (dev-handoff) vs `--skip-agent` (requirements) — pick one
   (recommend `--no-agent`).
-- `skill_dir` uses `<name>` vs a separate `scriptDir` — keep `skill_dir == user-skills/<name>`.
+- `skill_dir` — **resolved: `${INSTALL_BASE_DIR}/<key>`** (absolute; D-19).
 
 ## 6. Phase 0 verification — live DB (2026-05-31) ✅
 
@@ -147,5 +148,5 @@ names/types/defaults). Refinements captured from the live read:
   `recipes.name(200)`, `agent_skills.skill_name(100)`,
   `background_jobs.id(50)/name(255)/schedule(100)/timezone(50)`.
 - **Sandbox privilege confirmed**: the DB user can `CREATE SCHEMA` / `DROP … CASCADE` and a
-  schema-qualified table is fully isolated — so the `installer-sandbox` DB-isolation mechanism
-  is viable on this satellite.
+  schema-qualified table is fully isolated — so the built-in `--sandbox` DB-isolation mechanism
+  (and the `LIKE`-clone of D-18) is viable on this satellite.
