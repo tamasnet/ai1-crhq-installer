@@ -1,0 +1,19 @@
+{
+  "name": "example-bundle",
+  "version": "1.0.0",
+  "description": "Sample manifest showing every resource type the installer supports",
+  "resources": {
+    "skills": [
+      { "path": "skills/hello-skill" }
+    ],
+    "agents": [
+      { "path": "agents/hello-agent.json" }
+    ],
+    "recipes": [
+      { "path": "recipes/hello-recipe.json" }
+    ],
+    "services": [
+      { "path": "services/hello-service" }
+    ]
+  }
+}

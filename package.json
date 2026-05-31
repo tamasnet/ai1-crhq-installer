@@ -1,0 +1,15 @@
+{
+  "name": "ai1-crhq-installer",
+  "version": "0.1.0",
+  "description": "Install CRHQ resources (skills, agents, recipes) and services into a CRHQ satellite",
+  "private": true,
+  "bin": {
+    "ai1-install": "./scripts/install.js"
+  },
+  "scripts": {
+    "install-bundle": "node scripts/install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
