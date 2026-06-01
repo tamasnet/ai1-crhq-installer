@@ -73,13 +73,18 @@ skills skipped), add/remove-stale skill sync, recipe sync + stale removal, field
 zero-write, `--no-agent`, status, clean removal of row + all join links, and a full
 skill+recipe+agent `--sandbox --lifecycle`. (Shared test helper extracted to `tests/_helpers.mjs`.)
 
-## Phase 4 — Jobs (background_jobs)
+## Phase 4 — Jobs (background_jobs) — ✅ DONE 2026-06-01
 
-- [ ] `upsertJob`: insert|update by name; `id = job-<ts>-<rand>`, `job_type:'script'`,
+- [x] `upsertJob`: insert|update by name; `id = job-<ts>-<rand>`, `job_type:'script'`,
       `script_path:'node'`, `script_args:'<abs> <args>'`, cron/timezone/limits/enabled.
-- [ ] `--no-job` toggle; prereq-check pattern (C12) where a job depends on another skill.
+- [x] `--no-job` toggle; prereq-check pattern (C12) where a job depends on another skill.
 
-**Test:** sandbox: job row present post-install, removed post-uninstall.
+**Test:** `tests/job.test.mjs` (`npm test`) — 10 assertions green: id minting + canon columns
+(`job_type`/`script_path`/`run_count`), `script_args` resolved under `INSTALL_BASE_DIR` (+ args),
+schedule-alias expansion (`hourly`/`daily`/`every-15-min`) + raw-cron passthrough, idempotent
+re-run with stable id, update preserves id, **C12 `requires` prereq → PrereqError**, `--no-job`,
+dry-run zero-write, status, removal, and a skill+job `--sandbox --lifecycle` (present post-install,
+gone post-uninstall).
 
 ## Phase 5 — Generic runner (`install.mjs`)
 
