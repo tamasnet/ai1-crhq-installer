@@ -8,6 +8,7 @@ export { parseFrontmatter, loadYaml } from './parse.mjs';
 export { copyTree, writeIfChanged, removeTree } from './fs.mjs';
 export { makeLogger, VERDICT, SEVERITY } from './log.mjs';
 export { requireSkills, requireFiles, PrereqError } from './prereq.mjs';
+export { preflight, PreflightError } from './preflight.mjs';
 export { loadManifest, validateManifest, ManifestError } from './manifest.mjs';
 export { runPlan, ORDER } from './run.mjs';
 export * as sandbox from './sandbox.mjs';

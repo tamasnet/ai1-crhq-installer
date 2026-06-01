@@ -1,0 +1,11 @@
+name: entry-pkg
+version: 0.1.0
+description: Fixture package exercising the install_entry hook + flag forwarding.
+components:
+  skills:
+    - path: skills/entry-skill
+      version: 0.1.0
+install_entry: scripts/entry.mjs
+install_flags:
+  - name: --foo
+    description: a package-specific flag (forwarded to install_entry)

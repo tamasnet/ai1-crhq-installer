@@ -86,15 +86,21 @@ re-run with stable id, update preserves id, **C12 `requires` prereq → PrereqEr
 dry-run zero-write, status, removal, and a skill+job `--sandbox --lifecycle` (present post-install,
 gone post-uninstall).
 
-## Phase 5 — Generic runner (`install.mjs`)
+## Phase 5 — Generic runner (`install.mjs`) — ✅ DONE 2026-06-01
 
-- [ ] Parse flags + manifest; build plan; preflight (DB reachable, BASE writable).
-- [ ] Dispatch **skills → recipes → agents → jobs → services**; uninstall reverses.
-- [ ] `--only=<type>`, `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--no-agent`.
-- [ ] Aggregate summary; continue-and-report with non-zero exit on any failure.
+- [x] Parse flags + manifest; build plan; **preflight** (`lib/preflight.mjs` — DB reachable; BASE
+      writable for write modes; failure = transport exit 2).
+- [x] Dispatch **skills → recipes → agents → jobs → services**; uninstall reverses (via `runPlan`).
+- [x] `--only=<type>`, `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--no-agent`/`--no-job`, `--json`.
+- [x] Aggregate summary; continue-and-report with non-zero exit on any failure.
+- [x] **`install_entry` hook (A4 / OQ-U2)** — after the declarative pass, spawn `node <entry>` as a
+      subprocess for all modes, forwarding mode + standard + package-specific flags (sandbox-internal
+      flags and the package path are not forwarded; INSTALL_SCHEMA/BASE_DIR inherited via env).
 
-**Test:** `--sandbox --lifecycle` over `examples/bundle/` (skill+recipe+agent+job)
-→ all phases green. `--dry-run` → clean "would…" output.
+**Test:** `tests/runner.test.mjs` (`npm test`) — 7 assertions green via the real CLI (spawnSync):
+preflight pass + unwritable-BASE→PreflightError; install_entry runs with correct flag forwarding
+for install/dry-run+pkg-flag/uninstall/status/`--only`. Plus `--sandbox --lifecycle` over
+`examples/bundle` green and `--dry-run` clean "would…" output (both re-verified post-preflight).
 
 ## Phase 6 — Services (deploy-project)
 
