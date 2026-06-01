@@ -1,8 +1,8 @@
 # Ai1 Package Manifest — Specification (v0.2, finalized for build)
 
-**Supersedes** the 2026-05-27 draft (`ai1-package-standard.md`). Incorporates the ThinkBot
-review (`tamas-package-standard-REVIEW.md` / `-ANNOTATED.md`) **and** the canon/sandbox
-learnings in `canon-conventions.md` + `integration-reference.md`.
+Finalized package manifest format. Synthesizes the original Ai1 Package Standard draft
+(2026-05-27) + a hardening review with the canon/sandbox learnings in `canon-conventions.md` +
+`integration-reference.md`.
 
 > **Scope discipline (per Tamás):** this spec defines the **declarative manifest only**.
 > Cross-cutting *implementation* concerns the review raised — name-PK upserts, idempotency,

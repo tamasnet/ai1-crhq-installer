@@ -126,8 +126,7 @@ node --input-type=module -e "import('/opt/projects/crhq-satellite/server/db/knex
 ## 5. Known inconsistencies to standardize in our build
 
 - `skill_path` value format — **resolved: `db://skills/<name>`** (OQ-10).
-- Agent flag name: `--no-agent` (dev-handoff) vs `--skip-agent` (requirements) — pick one
-  (recommend `--no-agent`).
+- Agent flag name — **resolved: `--no-agent`** (OQ-11); `--skip-agent` is a legacy alias.
 - `skill_dir` — **resolved: `${INSTALL_BASE_DIR}/<key>`** (absolute; D-19).
 
 ## 6. Phase 0 verification — live DB (2026-05-31) ✅

@@ -49,7 +49,7 @@ Jobs were not in the original scaffold but every canon installer registers them 
 ```
 ai1-crhq-installer/
 ├── SKILL.md                      # skill doc (frontmatter name/description)
-├── manifest.yaml                 # publishing metadata (scope, classification, version…)
+├── ai1-package.yaml              # the installer dogfoods its own manifest format (1 skill)
 ├── package.json                  # type: module
 ├── scripts/
 │   ├── install.mjs               # generic entry: load manifest → drive core; flags
