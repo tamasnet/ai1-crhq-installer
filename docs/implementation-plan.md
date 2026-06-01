@@ -24,7 +24,10 @@ existing CommonJS scaffold is migrated to **ESM `.mjs`** (required by C1).
 **Exit:** schema + sandbox-privilege confirmed; D-8/9/10/15/17 decided. **First build-phase
 task:** scaffold `lib/` (incl. `sandbox.mjs`) and self-test with `--sandbox --lifecycle`.
 
-## Phase 1 — Core library (`lib/`) — map: `utility-design.md` Part C · signatures: `api-design.md`
+## Phase 1 — Core library (`lib/`) — map: `utility-design.md` Part C · signatures: `api-design.md` — ✅ DONE 2026-06-01
+
+> All `lib/` modules + `lib/core/*` + `sandbox.mjs` + thin `install.mjs` built (commit a8e6c10).
+> `node scripts/install.mjs examples/bundle --sandbox --lifecycle` is green; dry-run + negatives verified.
 
 - [ ] `db.mjs` — **static hardcoded** `import getDb from server/db/knex.js` (C1) + `INSTALL_SCHEMA`
       `searchPath` (B4) + `closeDb()`.
@@ -44,15 +47,19 @@ task:** scaffold `lib/` (incl. `sandbox.mjs`) and self-test with `--sandbox --li
 **Exit:** `node --input-type=module -e` smoke tests pass for manifest + parse; core
 primitives unit-exercised via `--sandbox` (self-provisioned isolated schema).
 
-## Phase 2 — Skill + Recipe install
+## Phase 2 — Skill + Recipe install — ✅ DONE 2026-06-01
 
-- [ ] `upsertSkill`: unlock-if-needed (C5) → insert|update (`skill_type:'user'`, `skill_path`,
+- [x] `upsertSkill`: unlock-if-needed (C5) → insert|update (`skill_type:'user'`, `skill_path`,
       `skill_dir`=`${INSTALL_BASE_DIR}/<key>`, `skill_path`=`db://skills/<name>`, NOT-NULL fields set)
       → copy assets to `${INSTALL_BASE_DIR}/<key>/`.
-- [ ] `upsertRecipe`: insert|update by name (uuid auto).
-- [ ] Wire `--dry-run`/`--status`/`--uninstall` for both.
+- [x] `upsertRecipe`: insert|update by name (uuid auto).
+- [x] Wire `--dry-run`/`--status`/`--uninstall` for both.
 
-**Test:** sandbox lifecycle with a skills+recipes-only manifest → green.
+**Test:** `tests/skill-recipe.test.mjs` (`npm test`) — 15 assertions green: row-level fields,
+asset copy + idempotency, **C5 lock handling both ways**, dry-run zero-write, status, removal,
+recipe lifecycle, missing-SKILL.md + version-pin negatives, and a skills+recipes-only
+`--sandbox --lifecycle`. (Note: `LIKE` doesn't clone the skills lock TRIGGER, so the test
+validates the installer's lock *logic*, not the DB trigger.)
 
 ## Phase 3 — Agent install + join sync
 
