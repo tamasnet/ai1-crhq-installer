@@ -1,0 +1,21 @@
+name: ai1-sample-bundle
+version: 0.1.0
+description: >
+  Minimal sample package used to exercise the installer end-to-end (skill + recipe + agent + job)
+  under --sandbox --lifecycle. Phase 7 will round this out (add a service, full metadata).
+installer: ">=0.1.0"
+category: example
+classification: internal
+complexity: beginner
+status: mvp-draft
+
+components:
+  skills:
+    - path: skills/ai1-sample-skill
+      version: 0.1.0
+  recipes:
+    - path: recipes/ai1-sample-recipe.md
+  agents:
+    - path: agents/ai1-sample-agent.yaml
+  jobs:
+    - path: jobs/ai1-sample-job.yaml

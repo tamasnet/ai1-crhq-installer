@@ -1,0 +1,10 @@
+key: ai1-sample-agent
+name: Ai1 Sample Agent
+description: "Sample agent for the installer test bundle; attaches the bundle's skill + recipe."
+mode: cli
+default_model: sonnet
+icon: "🧪"
+skills:
+  - ai1-sample-skill
+recipes:
+  - ai1-sample-recipe

@@ -5,8 +5,9 @@ A **generic, manifest-driven installer** (a CRHQ skill) that deploys a bundle of
 self-sandboxing. It generalizes the canon installers (requirements / dev-handoff / plaud) into
 one reusable utility.
 
-**Status:** planning complete — ready to build Phase 1. The current `scripts/*.js` are CommonJS
-**stubs** that get **replaced** by the ESM design below.
+**Status:** Phase 1 **built and verified** — the ESM core `lib/` + built-in `--sandbox` are in
+place and `--sandbox --lifecycle` over `examples/bundle` is green. The legacy CommonJS
+`scripts/*.js` stubs have been replaced by the ESM design below. Next: Phase 2.
 
 ## Read first (the contracts — in `docs/`)
 1. `docs/README.md` — orientation + key decisions

@@ -1,0 +1,8 @@
+name: ai1-sample-job
+description: Sample background job for the installer test bundle.
+schedule: hourly
+script: ai1-sample-skill/scripts/hello.js
+timezone: UTC
+timeout_minutes: 5
+requires:
+  - ai1-sample-skill

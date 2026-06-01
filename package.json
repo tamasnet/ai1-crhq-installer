@@ -4,12 +4,15 @@
   "description": "Install CRHQ resources (skills, agents, recipes) and services into a CRHQ satellite",
   "private": true,
   "bin": {
-    "ai1-install": "./scripts/install.js"
+    "ai1-install": "./scripts/install.mjs"
   },
   "scripts": {
-    "install-bundle": "node scripts/install.js"
+    "install-bundle": "node scripts/install.mjs"
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
   }
 }
