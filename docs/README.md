@@ -26,6 +26,7 @@ which we studied as the canonical pattern.
 |-----|---------|
 | [`package-manifest-spec.md`](./package-manifest-spec.md) | **The package manifest format** (`ai1-package.yaml`, v0.2 finalized) — the installer's input contract |
 | [`utility-design.md`](./utility-design.md) | **Utility capabilities list + library API** — CLI + importable primitives; sandbox/configurability |
+| [`api-design.md`](./api-design.md) | **Signatures & control flow** — `createContext`, primitives, def shapes, `lib/sandbox.mjs`, `install.mjs` flow, exit codes |
 | [`architecture.md`](./architecture.md) | Product shape, resource types, layout, flow, services, safety |
 | [`canon-conventions.md`](./canon-conventions.md) | **The build contract** — 13 conventions + sandbox compatibility |
 | [`integration-reference.md`](./integration-reference.md) | **Authoritative DB schema** (7 tables) + knex usage + REST (read-only) |

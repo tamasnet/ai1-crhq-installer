@@ -237,6 +237,9 @@ scripts/
 `install.mjs` and every `core/*` function consume the same `context`, so the CLI and a
 package's `install_entry` exercise identical code paths.
 
+> **Exact signatures, def shapes, sandbox provisioning, and the `install.mjs` control flow are
+> specified in [`api-design.md`](./api-design.md).**
+
 ---
 
 ## Part D — Decisions (all confirmed by user)

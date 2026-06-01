@@ -110,6 +110,7 @@ components:
     - path: jobs/plaud-ingest-crawl.yaml
   services:
     - path: services/plaud-broker      # dir containing service.yaml + source
+      version: 1.0.0                   # REQUIRED for services; must match service.yaml
 
 # ── Dependencies — external, NOT bundled (optional) ───────────────────────────
 dependencies:
@@ -142,8 +143,9 @@ install_flags:
 | `installer`, `triggers`, `category`, `classification`, `complexity`, `foundational`, `status` | Optional (recommended) |
 | `dependencies`, `credentials_needed`, `provides_credentials` | Optional |
 | `install_entry`, `install_flags` | Optional |
-| `components.skills[].version` | **Required per skill** — must equal that skill's `SKILL.md` `version` |
-| `components.*[].version` (non-skill) | Optional |
+| `components.skills[].version` | **Required** — must equal that skill's `SKILL.md` `version` |
+| `components.services[].version` | **Required** — must equal that service's `service.yaml` `version` |
+| `components.{recipes,agents,jobs}[].version` | Optional |
 
 > **Changed from draft:** removed `shape` from the required list (it was never defined in
 > the schema and the example used `category`/`classification` instead — the review's nit).
@@ -151,25 +153,22 @@ install_flags:
 
 ---
 
-## 5. Bundled component file formats
+## 5. Bundled component conventions
 
-**One syntax, two file kinds — no JSON.** Everything in a package is YAML:
+**One syntax, two file kinds — no JSON.** Content-bearing components (skill, recipe) are
+**Markdown** (`.md`): YAML frontmatter + a body that becomes a DB `content` column. Config-only
+components (agent, job, service descriptor) are **YAML** (`.yaml`). Each component's fields are
+fully specified below — **a package is self-describing**; the utility maps these to DB columns
+(or, for services, to deploy-project artifacts) itself, so nothing here defers to an external
+"platform definition."
 
-- **Content components** (skill, recipe) carry a long-form body that becomes a DB `content`
-  column, so they're **Markdown** (`.md`) — YAML frontmatter for metadata + a Markdown body.
-- **Config components** (agent, job, service descriptor) are pure structured config, so they're
-  **YAML** (`.yaml`) — same syntax as `ai1-package.yaml` and as the `.md` frontmatter.
+### 5.1 Skill — `skills/<key>/`
+Layout: `SKILL.md` (flat YAML frontmatter + Markdown body) + optional `scripts/`, `tests/`.
 
-So the only reason `.md` exists is an authored prose body; otherwise it's YAML throughout.
-(The agent/job/service *schemas* still match the platform definitions — only the on-disk
-serialization is YAML, since the utility maps them to DB columns itself via knex.)
-
-### Skill — `skills/<key>/SKILL.md` (+ `scripts/`, optional `tests/`)
-Flat YAML frontmatter, no `<!-- SKILL-META -->` block:
 ```yaml
 ---
-name: plaud-login
-version: 0.4.0                 # must match components.skills[].version
+name: plaud-login              # = skills.name (PK) and the install <key>
+version: 0.4.0                 # must equal components.skills[].version
 description: "OAuth handshake for the Plaud integration…"
 category: integration
 classification: client-facing
@@ -181,65 +180,139 @@ provides_credentials: [plaud]
 triggers: [/plaud-login, "connect plaud"]
 updatedAt: 2026-05-14
 ---
+(Markdown body — becomes skills.content)
 ```
-Utility installs → `skills` row (`skill_type:'user'`, `skill_path`, `skill_dir`) + copies the
-tree to the operator-configured skill-install dir `${INSTALL_BASE_DIR}/<name>/` (the manifest is
-unaware of this path — D-19). `description`/`version` parsed from frontmatter.
 
-### Recipe — `recipes/<name>.md`
-YAML frontmatter (`name`, `description`) + markdown body → `recipes` row (uuid PK auto).
+| Frontmatter | Req | Maps to / use |
+|-------------|-----|---------------|
+| `name` | ✅ | `skills.name` (PK) + install `<key>`; kebab-case, ≤100 chars |
+| `version` | ✅ | must equal `components.skills[].version` |
+| `description` | ✅ | `skills.description` (third-person, trigger words) |
+| `category`,`classification`,`complexity`,`foundational` | – | classification/discovery metadata |
+| `dependencies` | – | external prereqs (skill keys / package names) |
+| `credentials_needed`,`provides_credentials` | – | credential orchestration |
+| `triggers` | – | agent-facing invocation phrases |
+| `updatedAt` | – | informational |
 
-### Agent — `agents/<key>.yaml`
+Install: upsert `skills` (`skill_type:'user'`, `skill_path='db://skills/<name>'`,
+`skill_dir='${INSTALL_BASE_DIR}/<key>'`, `is_active:true`) + copy the tree to
+`${INSTALL_BASE_DIR}/<key>/` (operator-configured; the manifest is unaware of it — D-19).
+
+### 5.2 Recipe — `recipes/<name>.md`
+Markdown file: YAML frontmatter + Markdown body.
+
+```yaml
+---
+name: plaud-pipeline           # = recipes.name (UNIQUE)
+description: "End-to-end Plaud capture → brain pipeline."
+version: 1.0.0                 # optional; if set, must equal components.recipes[].version
+---
+(Markdown body — becomes recipes.content)
+```
+
+| Frontmatter | Req | Maps to / use |
+|-------------|-----|---------------|
+| `name` | ✅ | `recipes.name` (UNIQUE lookup key); ≤200 chars |
+| `description` | ✅ | `recipes.description` (NOT NULL) |
+| `version` | – | optional pin |
+
+Install: upsert `recipes` by name (`id` uuid auto, `content` NOT NULL, `is_active:true`).
+
+### 5.3 Agent — `agents/<key>.yaml`
 ```yaml
 key: plaud-agent
 name: Plaud Agent
-description: "..."
-mode: cli
-default_model: sonnet         # optional
-icon: "🎙️"                    # optional
-skills: [plaud-login, plaud-ingest, memory]
-recipes: [plaud-pipeline]
+description: "Runs the Plaud capture + ingest pipeline."
+mode: cli                      # optional, default cli
+default_model: sonnet          # optional, default sonnet
+icon: "🎙️"                     # optional, default 🤖
+skills: [plaud-login, plaud-ingest, memory]   # attach iff installed + active
+recipes: [plaud-pipeline]                      # attach by name → recipes.id
 ```
-Utility upserts the `agents` row (by `key`) and syncs joins: attaches each `skills[]` entry
-**only if installed + active** (`agent_skills`), resolves each `recipes[]` name → uuid
-(`agent_recipes`). Because agents install *after* skills/recipes, bundled components are
-attachable. Column is `default_model` (not `model`); minimal insert relies on defaults.
 
-### Job — `jobs/<name>.yaml`
+| Field | Req | Maps to / use |
+|-------|-----|---------------|
+| `key` | ✅ | `agents.key` (PK); ≤50 chars |
+| `name` | ✅ | `agents.name` |
+| `description` | – | `agents.description` |
+| `mode` | – | `agents.mode` (default `cli`) |
+| `default_model` | – | `agents.default_model` (default `sonnet`; **the column is `default_model`, not `model`**) |
+| `icon` | – | `agents.icon` (default `🤖`) |
+| `skills` | – | each → `agent_skills` **iff** the skill is installed + active (else skipped with a warning) |
+| `recipes` | – | each name → resolved to `recipes.id` (uuid) → `agent_recipes` |
+
+Install: upsert `agents` by `key` (minimal insert; other columns ride DB defaults — e.g.
+`provider='claude'`), then **sync** `agent_skills` and `agent_recipes` (add desired, drop stale,
+`onConflict` ignore). Runs after skills + recipes so bundled components are attachable.
+
+### 5.4 Job (scheduled / background) — `jobs/<name>.yaml`
 ```yaml
 name: plaud-ingest-crawl
 description: Hourly Plaud sync into brain
-schedule: "0 * * * *"            # cron, or alias: hourly|every-15-min|every-30-min|daily
-timezone: America/Vancouver      # optional, default UTC
+schedule: "0 * * * *"          # cron, or alias: hourly | every-15-min | every-30-min | daily
 script: plaud-ingest/scripts/crawl-plaud.js   # path under the skill-install root: <skill-key>/scripts/<file>
-args: "--limit 50"               # optional
-timeout_minutes: 10
-max_concurrent: 1
-skip_if_running: true
-enabled: true
-requires: [plaud-ingest]         # optional: skill keys whose files must exist first
+args: "--limit 50"             # optional
+timezone: America/Vancouver    # optional, default UTC
+timeout_minutes: 10            # optional, default 30
+max_concurrent: 1              # optional, default 1
+skip_if_running: true          # optional, default true
+enabled: true                  # optional, default true
+requires: [plaud-ingest]       # optional: skill keys whose install dir must exist first
 ```
-Utility maps → `background_jobs` row: `id=job-<ts>-<rand>`, `job_type:'script'`,
-`script_path:'node'`, `script_args = join(INSTALL_BASE_DIR, script) + ' ' + args`. Before registering,
-it verifies each `requires` skill is installed and its `scripts/` dir exists (coarse GAP-3
-guard); deeper dynamic-import-chain checks remain the package's `install_entry` job. On
-failure it halts with a two-ways-forward message + `--no-job` escape.
 
-### Service — `services/<name>/` with `service.yaml` + source
+| Field | Req | Maps to / use |
+|-------|-----|---------------|
+| `name` | ✅ | `background_jobs.name` (lookup key); ≤255 chars |
+| `schedule` | ✅ | cron expression or alias (`hourly`/`every-15-min`/`every-30-min`/`daily`) |
+| `script` | ✅ | path under the skill-install root; resolved to `join(INSTALL_BASE_DIR, script)` |
+| `description` | – | `background_jobs.description` |
+| `args` | – | appended to the script invocation |
+| `timezone` | – | default `UTC` |
+| `timeout_minutes` | – | default `30` |
+| `max_concurrent` | – | default `1` |
+| `skip_if_running` | – | default `true` |
+| `enabled` | – | default `true` |
+| `requires` | – | skill keys whose install dir must exist before registering (coarse C12 guard) |
+
+Install: upsert `background_jobs` by name — `id='job-<ts>-<rand>'`, `job_type:'script'`,
+`script_path:'node'`, `script_args=join(INSTALL_BASE_DIR, script)[+ ' ' + args]`, `run_count:0`.
+Halts with a two-ways-forward message + `--no-job` escape if a `requires` skill is absent
+(deeper dynamic-import-chain checks remain the package's `install_entry` job).
+
+### 5.5 Service (nginx + PM2 web app) — `services/<name>/`
+Layout: `service.yaml` + the application source. **Not DB-resident** — deployed via the
+`deploy-project` conventions (D-2).
+
 ```yaml
 name: plaud-broker
-port: 4300
+version: 1.0.0                 # REQUIRED — must equal components.services[].version
+port: 4300                     # optional — deploy-project allocates a free port if omitted
 start: node server.js
-cwd: ./
-env:
+cwd: ./                        # optional, default ./
+build: npm ci && npm run build # optional — command run during the build step
+env:                           # optional → written to the service's .env (secrets never logged)
   NODE_ENV: production
-nginx:
-  subdomain: plaud
-  ssl: true
+nginx:                         # optional
+  subdomain: plaud             # default: <name>
+  ssl: true                    # default: true
 ```
-Not DB-resident. Utility follows `deploy-project` conventions (copy → `/opt/projects/user/<name>/`,
-`.env` from `env`, `ecosystem.config.cjs`, nginx vhost, port, PM2). **Dry-run runs the build
-step but skips the deploy-project apply** (D-2a) — secrets never logged.
+
+| Field | Req | Use |
+|-------|-----|-----|
+| `name` | ✅ | project dir name, PM2 process name, default subdomain |
+| `version` | ✅ | must equal `components.services[].version` (mirrors skills) |
+| `port` | – | listen port; if omitted, `deploy-project` allocates a free one |
+| `start` | ✅ | PM2 start command |
+| `cwd` | – | working dir relative to the service dir (default `./`) |
+| `build` | – | command run during the **build step** (e.g. `npm ci && npm run build`) |
+| `env` | – | key/values written to the service `.env`; **secrets never echoed to logs** |
+| `nginx.subdomain` | – | default `<name>` → `{SATELLITE_ID}-<subdomain>.crhq.ai` |
+| `nginx.ssl` | – | default `true` |
+
+Install (deploy-project, D-2): copy source → `/opt/projects/user/<name>/`, write `.env` from
+`env`, `ecosystem.config.cjs`, and the nginx vhost; allocate the port; PM2 start + save; nginx
+reload. **Dry-run runs the build step (incl. `build`) but skips the deploy-project apply**
+(D-2a). Never run PM2 against `crhq-satellite`.
 
 ---
 
@@ -287,11 +360,17 @@ listed here so the manifest stays clean of it.)
 ## 9. Settled choices (v0.2)
 
 These were confirmed and are now part of the spec (no longer open):
-`ai1-package.yaml` filename · `jobs` key/dir naming · `version` pin required for **skills only**
-· coarse `requires` on jobs kept · `installer` field is a **min-version range** (`">=1.0.0"`).
+`ai1-package.yaml` filename · `jobs` key/dir naming · `version` pin required for **skills and
+services** (optional for recipes/agents/jobs) · coarse `requires` on jobs kept · `installer`
+field is a **min-version range** (`">=1.0.0"`).
 
 ## 10. Changes from the 2026-05-27 draft
 
+- **Self-contained component conventions (§5).** Every component type (skill, recipe, agent,
+  job, service) has a full inline field reference — no more "matches platform definitions"
+  deferral. Each field documents required/optional + what it maps to.
+- **Services require a `version`** (mirrors skills) — both `components.services[].version` and
+  `service.yaml.version`, which must match. Added optional `build` field to `service.yaml`.
 - **No JSON.** All config components serialize as **YAML** (`agents/<key>.yaml`,
   `jobs/<name>.yaml`, `services/<name>/service.yaml`); Markdown (`.md`) is used only for
   content-bearing components (skills, recipes) where the body becomes a DB row. One syntax

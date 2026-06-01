@@ -49,6 +49,7 @@ Living log. Updated after studying the canon installers + sandbox harnesses.
 | **OQ-12** | ~~Staging `installer-sandbox` on the satellite~~ | **Obsolete (D-17)** | We build the sandbox into the utility; nothing external to stage. |
 | **OQ-13** | The 4 on-satellite canon installers hardcode `BASE` (not FS-isolated under sandbox) | Noted | Reinforces D-1b/C2: our installer MUST honor `INSTALL_BASE_DIR`. |
 | **OQ-14** | Built-in sandbox details: re-create intra-schema FKs after `LIKE`? how to seed prerequisite skills (copy real `skills` rows vs minimal placeholders)? | Open (build) | `LIKE INCLUDING ALL` omits FKs; decide whether fidelity needs them. Seed by copying live `skills(name,is_active,skill_type,skill_path)` so agent-attach + dep checks mirror reality. |
+| **OQ-A1…A5** | Signature-level choices | **Resolved** — baked into `api-design.md`: A1 own `knex({...,searchPath})` from CRHQ cfg · A2 single small `yaml` dep (frontmatter hand-rolled) · A3 `install_entry` via `spawnSync('node',…)` subprocess (all modes) · A4 `ts`/ids minted at CLI entry, threaded into lib · A5 snapshot = names+counts+join pairs+files (deepen only if it misses drift) | — |
 
 ## Reference installers (studied this session)
 

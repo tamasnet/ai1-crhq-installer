@@ -24,7 +24,7 @@ existing CommonJS scaffold is migrated to **ESM `.mjs`** (required by C1).
 **Exit:** schema + sandbox-privilege confirmed; D-8/9/10/15/17 decided. **First build-phase
 task:** scaffold `lib/` (incl. `sandbox.mjs`) and self-test with `--sandbox --lifecycle`.
 
-## Phase 1 — Core library (`lib/`) — authoritative map: `utility-design.md` Part C
+## Phase 1 — Core library (`lib/`) — map: `utility-design.md` Part C · signatures: `api-design.md`
 
 - [ ] `db.mjs` — **static hardcoded** `import getDb from server/db/knex.js` (C1) + `INSTALL_SCHEMA`
       `searchPath` (B4) + `closeDb()`.
