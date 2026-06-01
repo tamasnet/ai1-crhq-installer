@@ -10,28 +10,13 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { provisionSandbox, runLifecycle } from '../scripts/lib/sandbox.mjs';
-import { getDb, closeDb } from '../scripts/lib/db.mjs';
-import { makeLogger } from '../scripts/lib/log.mjs';
+import { closeDb } from '../scripts/lib/db.mjs';
 import { loadManifest, ManifestError } from '../scripts/lib/manifest.mjs';
 import { upsertSkill, removeSkill, statusSkill } from '../scripts/lib/core/skill.mjs';
 import { upsertRecipe, removeRecipe, statusRecipe } from '../scripts/lib/core/recipe.mjs';
+import { makeCtx, harness } from './_helpers.mjs';
 
-let passed = 0;
-let failed = 0;
-async function test(name, fn) {
-  try { await fn(); console.log(`  ✓ ${name}`); passed++; }
-  catch (e) { console.log(`  ✗ ${name}\n      ${e.message}`); failed++; }
-}
-
-function makeCtx(over = {}) {
-  return {
-    db: getDb(), BASE: process.env.INSTALL_BASE_DIR, SCHEMA: process.env.INSTALL_SCHEMA,
-    log: makeLogger({ dryRun: !!over.DRY_RUN }),
-    DRY_RUN: false, RESPECT_LOCKS: false, NO_AGENT: false, NO_JOB: false, ONLY: null, mode: 'install',
-    results: [], record(r) { this.results.push(r); return r; },
-    ...over,
-  };
-}
+const { test, done } = harness();
 
 const stamp = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 const sb = await provisionSandbox({ ts: stamp, seed: false });
@@ -184,5 +169,4 @@ try {
   await closeDb();
 }
 
-console.log(`\n${failed === 0 ? '✅' : '❌'} ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+done();

@@ -61,14 +61,17 @@ recipe lifecycle, missing-SKILL.md + version-pin negatives, and a skills+recipes
 `--sandbox --lifecycle`. (Note: `LIKE` doesn't clone the skills lock TRIGGER, so the test
 validates the installer's lock *logic*, not the DB trigger.)
 
-## Phase 3 — Agent install + join sync
+## Phase 3 — Agent install + join sync — ✅ DONE 2026-06-01
 
-- [ ] `upsertAgent`: insert|update by key (minimal columns, rely on defaults).
-- [ ] Sync `agent_skills` (attach only existing+active skills; remove stale; onConflict ignore).
-- [ ] Resolve `recipe_id` by name; sync `agent_recipes`.
+- [x] `upsertAgent`: insert|update by key (minimal columns, rely on defaults).
+- [x] Sync `agent_skills` (attach only existing+active skills; remove stale; onConflict ignore).
+- [x] Resolve `recipe_id` by name; sync `agent_recipes`.
 
-**Test:** sandbox lifecycle with agent referencing the sample skill+recipe → all asserts green
-(agent has skills + recipe; clean uninstall).
+**Test:** `tests/agent.test.mjs` (`npm test`) — 11 assertions green: minimal-row + DB defaults
+(provider/icon/default_model), recipe name→uuid resolution, attach filtering (missing + inactive
+skills skipped), add/remove-stale skill sync, recipe sync + stale removal, field update, dry-run
+zero-write, `--no-agent`, status, clean removal of row + all join links, and a full
+skill+recipe+agent `--sandbox --lifecycle`. (Shared test helper extracted to `tests/_helpers.mjs`.)
 
 ## Phase 4 — Jobs (background_jobs)
 
