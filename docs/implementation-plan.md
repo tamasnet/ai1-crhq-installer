@@ -102,16 +102,22 @@ preflight pass + unwritable-BASE→PreflightError; install_entry runs with corre
 for install/dry-run+pkg-flag/uninstall/status/`--only`. Plus `--sandbox --lifecycle` over
 `examples/bundle` green and `--dry-run` clean "would…" output (both re-verified post-preflight).
 
-## Phase 6 — Services (deploy-project)
+## Phase 6 — Services (deploy-project) — ✅ DONE 2026-06-01 (live apply pending smoke test)
 
-- [ ] `service.mjs`: validate `service.yaml`; emit `/opt/projects/user/<name>/`, `.env`,
-      `ecosystem.config.cjs`, nginx vhost; allocate port; PM2 start/reload (never touch
-      `crhq-satellite`).
-- [ ] `--dry-run` runs the **build step** but **skips the deploy-project apply** (D-2a) —
-      no nginx/PM2/port/reload.
-- [ ] Decide D-2b (shell out vs inline templates) before coding.
+- [x] **D-2b resolved → inline templates** (deploy-project ships no callable scripts; it's a
+      runbook). `core/service.mjs` emits `.env` / `ecosystem.config.cjs` / nginx vhost via pure
+      renderers, allocates a port (`nextFreePort`), and drives pm2/nginx directly.
+- [x] `service.mjs`: render artifacts + build step + live `applyService` (copy source, write
+      `.env` chmod 640, ecosystem, vhost; pm2 start+save; nginx reload). Never touches
+      `crhq-satellite`; binds 127.0.0.1 only (deploy-project Rule 1).
+- [x] `--dry-run` runs build + render, **skips apply** (D-2a). **`--sandbox` skips services
+      entirely** (not modelled) — verified no live writes when a service package runs in sandbox.
 
-**Test:** dry-run in sandbox; one explicit live service smoke test outside the sandbox.
+**Test:** `tests/service.test.mjs` (`npm test`) — 9 assertions green: renderEnv / renderEcosystem
+(secrets excluded) / renderNginx (127.0.0.1, crhq host, TLS, no 0.0.0.0; ssl:false; white-label),
+`nextFreePort`, dry-run no-write, sandbox-skip, secret hygiene (GAP 9).
+⚠️ **Pending:** the live `applyService`/`removeService` paths are implemented but unverified — they
+need the one explicit live service smoke test (requires authorization; not run this session).
 
 ## Phase 7 — Package manifest + sample
 

@@ -5,9 +5,12 @@ A **generic, manifest-driven installer** (a CRHQ skill) that deploys a bundle of
 self-sandboxing. It generalizes the canon installers (requirements / dev-handoff / plaud) into
 one reusable utility.
 
-**Status:** Phase 1 **built and verified** — the ESM core `lib/` + built-in `--sandbox` are in
-place and `--sandbox --lifecycle` over `examples/bundle` is green. The legacy CommonJS
-`scripts/*.js` stubs have been replaced by the ESM design below. Next: Phase 2.
+**Status:** Phases 1–6 **built and verified** — the ESM core `lib/` + `lib/core/*` (skills,
+recipes, agents, jobs, services) + the generic runner (`install.mjs`: preflight + `install_entry`)
++ built-in `--sandbox`. `npm test` = 52 assertions green; `--sandbox --lifecycle` over
+`examples/bundle` is green. Services use inline templates (D-2b); the **live** service apply is
+implemented but pending one explicit smoke test. Remaining: Phase 7 (complete `examples/bundle` +
+rewrite `SKILL.md`/`README.md` to the DB-direct design), Phase 8 (install gate).
 
 ## Read first (the contracts — in `docs/`)
 1. `docs/README.md` — orientation + key decisions
@@ -38,4 +41,6 @@ Self-test (no live writes): `node scripts/install.mjs <package> --sandbox --life
   (isolated schema + temp dir via `--sandbox`).
 - Never modify or read the *contents* of core satellite files (`server/`, …); importing
   `server/db/knex.js` at runtime is the one sanctioned exception (C1).
-- Open build-phase decisions: **D-2b** (services: shell-out vs inline) · **OQ-14** (sandbox FK/seed).
+- Build-phase decisions resolved: **D-2b** → inline templates (deploy-project has no callable
+  scripts); **OQ-14** → sandbox seeds live skills and does not re-create intra-schema FKs (guarded
+  join inserts + explicit join cleanup make them unnecessary).

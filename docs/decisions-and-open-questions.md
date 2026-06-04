@@ -11,7 +11,7 @@ Living log. Updated after studying the canon installers + sandbox harnesses.
 | **D-1b** | Skill fs ops derive from `INSTALL_BASE_DIR` (the **skill-parent dir**) — see D-19 for resolution | Firm (user-requested) | C2 — configurable; legacy fallback for harness compat (D-15). |
 | **D-1c** | Schema configurable via `process.env.INSTALL_SCHEMA \|\| process.env.SANDBOX_SCHEMA` → knex `searchPath` (native in `getDb()`, B4 Mode 2) | Firm | Delivers "configurable DB schema"; legacy fallback keeps the canon loader-hook harness working. |
 | **D-2** | Services = **reuse deploy-project conventions** | Provisional | Avoids duplicating nginx/PM2/SSL/port logic. |
-| **D-2b** | Services: shell out to deploy-project scripts **vs** inline templates | **Open** | Decide after reading whether deploy-project exposes reusable scripts. |
+| **D-2b** | Services: shell out to deploy-project scripts **vs** inline templates | **Resolved (2026-06-01)** → **inline templates** | `deploy-project` exposes **no reusable scripts** (no `scripts/` dir — it's a procedural runbook), so there is nothing to shell out to. `core/service.mjs` inlines the nginx-vhost / `ecosystem.config.cjs` / `.env` templates + port allocation, honoring its security rules (127.0.0.1 binding, chmod 640 `.env`, never touch `crhq-satellite`). |
 | **D-3** | Idempotent; flags `--dry-run`/`--status`/`--uninstall`/`--respect-locks` (+ `--no-agent`/`--no-job`) | Firm | Canon C4; required by the sandbox lifecycle. |
 | **D-4** | Install order skills → recipes → agents → jobs → services; uninstall reverses | Firm | Dependency order (C13). |
 | **D-5** | Locked skills: **auto-unlock then update by default; `--respect-locks` to skip** | **Revised** | Aligns with canon (was "refuse unless --force"). |

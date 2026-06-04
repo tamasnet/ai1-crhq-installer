@@ -1,0 +1,7 @@
+name: service-pkg
+version: 0.1.0
+description: Fixture package exercising the service (nginx + PM2) component.
+components:
+  services:
+    - path: services/demo
+      version: 1.0.0
