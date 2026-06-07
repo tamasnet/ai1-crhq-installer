@@ -5,12 +5,12 @@ A **generic, manifest-driven installer** (a CRHQ skill) that deploys a bundle of
 self-sandboxing. It generalizes the canon installers (requirements / dev-handoff / plaud) into
 one reusable utility.
 
-**Status:** Phases 1–6 **built and verified** — the ESM core `lib/` + `lib/core/*` (skills,
-recipes, agents, jobs, services) + the generic runner (`install.mjs`: preflight + `install_entry`)
-+ built-in `--sandbox`. `npm test` = 52 assertions green; `--sandbox --lifecycle` over
-`examples/bundle` is green. Services use inline templates (D-2b); the **live** service apply is
-implemented but pending one explicit smoke test. Remaining: Phase 7 (complete `examples/bundle` +
-rewrite `SKILL.md`/`README.md` to the DB-direct design), Phase 8 (install gate).
+**Status:** **All phases (1–8) complete.** ESM core `lib/` + `lib/core/*` (skills, recipes, agents,
+jobs, services) + generic runner (`install.mjs`: preflight + `install_entry`) + built-in `--sandbox`.
+`npm test` = 52 assertions green; zero runtime deps (`yaml` vendored — no `npm install`). Deployed to
+`/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/` and registered as a live skill; the
+live service apply/remove paths were smoke-tested end-to-end (incl. the white-label vhost) and
+cleaned up. D-2b → inline templates; OQ-14 → seed skills, no FK recreation.
 
 ## Read first (the contracts — in `docs/`)
 1. `docs/README.md` — orientation + key decisions

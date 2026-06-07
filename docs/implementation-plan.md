@@ -131,10 +131,18 @@ need the one explicit live service smoke test (requires authorization; not run t
 **Verified:** `--sandbox --lifecycle examples/bundle` green (service sandbox-skipped); plain
 `--sandbox examples/bundle` runs the `install_entry` with zero live service writes.
 
-## Phase 8 — Install gate (ONLY when told)
+## Phase 8 — Install gate — ✅ DONE 2026-06-07 (user-authorized live)
 
-- [ ] Provide the one-liner to install onto the live satellite + run `--status`.
-- [ ] **Wait for explicit user instruction.** Until then, all testing is sandbox-only.
+- [x] Deployed to the canonical path `/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/`
+      (rsync) and registered in the live DB via `POST /api/skills` → discoverable at
+      `/api/skills/ai1-crhq-installer`. Read-only `--status` against live confirmed connectivity.
+- [x] **Live service smoke test PASSED** — real `--only=services` install of `ai1-sample-svc`
+      deployed via PM2 + nginx; served on `:4310`, through nginx, and over the public **white-label**
+      URL `https://myzone-tamas-ai1-sample.crhq.ai`; `.env` chmod 640. `--only=services --uninstall`
+      left the box clean (PM2 process + vhost + project dir removed; nginx still valid). Validated
+      the previously-untested `applyService`/`removeService` paths, incl. the WL vhost branch.
+- Two fixes surfaced by the smoke test: sample `server.js` → CommonJS (runs as bare `node server.js`);
+  `removeService` now removes the project dir (was leaving `.env` behind).
 
 ## Testing strategy (summary)
 
@@ -151,4 +159,4 @@ need the one explicit live service smoke test (requires authorization; not run t
 - [x] `examples/bundle/` complete sample (with its `ai1-package.yaml`)
 - [x] Updated `SKILL.md` + `README.md`
 - [x] Green `--sandbox --lifecycle` over the sample bundle
-- [ ] Phase 8 — install gate (live install one-liner; ONLY when told) + live service smoke test
+- [x] Phase 8 — install gate: deployed + registered on live; live service smoke test passed + cleaned up

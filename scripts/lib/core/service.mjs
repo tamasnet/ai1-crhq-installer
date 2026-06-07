@@ -182,6 +182,7 @@ export function removeService(ctx, nameOrDef) {
   sh(ctx, 'pm2', ['save'], { allowFail: true });
   removeTree(join(NGINX_DIR, `${name}.conf`), { dryRun: false });
   sh(ctx, 'sudo', ['nginx', '-s', 'reload'], { allowFail: true });
+  removeTree(join(USER_PROJECTS, name), { dryRun: false });   // remove project dir (incl. .env)
   return out(name, VERDICT.OK, 'removed');
 }
 
