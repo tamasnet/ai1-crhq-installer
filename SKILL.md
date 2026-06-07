@@ -1,118 +1,156 @@
 ---
 name: ai1-crhq-installer
-description: Install CRHQ resources (skills, agents, recipes) and services (nginx + PM2 web apps) into a CRHQ satellite from a manifest or source folder. Use when a user wants to bulk-install or update a packaged set of CRHQ resources, or deploy a service that should run alongside a satellite.
+description: Install a versioned package of CRHQ resources — skills, recipes, agents, background jobs — and standalone services (nginx + PM2 web apps) into a CRHQ satellite from a declarative ai1-package.yaml manifest. DB-direct via knex, idempotent, and sandbox-testable. Use to bulk-install or update a packaged set of CRHQ resources, deploy a service alongside a satellite, or build/test such a package.
 ---
 
 # Ai1 CRHQ Installer
 
-Install a bundle of CRHQ resources and/or services into the local CRHQ satellite.
+A **DB-direct, manifest-driven** installer that deploys a **package** — a versioned bundle of
+components — into a CRHQ satellite. Idempotent, sandbox-testable, and self-contained except for its
+CRHQ dependencies (`server/db/knex.js`, the database, and nginx/PM2 for services).
 
-## What this skill installs
+## What it installs
 
-| Type | Registered with CRHQ? | Mechanism |
-|------|-----------------------|-----------|
-| **Skill** | yes | `POST /api/skills` (or `PUT /api/settings/skills/<name>`) |
-| **Agent** | yes | CRHQ agents API |
-| **Recipe** | yes | CRHQ recipes API |
-| **Service** | no | nginx vhost + PM2 process (web app) |
+| Component | Stored in | Sandbox-testable? |
+|-----------|-----------|-------------------|
+| **skill** | `skills` table + assets under `INSTALL_BASE_DIR/<key>/` | ✅ |
+| **recipe** | `recipes` table | ✅ |
+| **agent** | `agents` + `agent_skills` + `agent_recipes` | ✅ |
+| **job** | `background_jobs` table | ✅ |
+| **service** | nginx vhost + PM2 process (not DB-resident) | ❌ — skipped under `--sandbox` |
 
-Skills, agents, and recipes are first-class CRHQ resources. **Services** are standalone web applications hosted on the same VPS — configured via nginx and supervised by PM2 — that do **not** appear in the CRHQ UI.
+Skills, recipes, agents and jobs are written **directly to the database via knex** — not REST, which
+can't be intercepted for sandbox isolation. Services are standalone web apps deployed via nginx +
+PM2; they do not appear in the CRHQ UI.
 
 ## Quick start
 
 ```bash
-# Install everything declared in a manifest
-node /opt/projects/user/ai1-crhq-installer/scripts/install.js <path-to-manifest.json>
-
-# Install one resource type
-node /opt/projects/user/ai1-crhq-installer/scripts/install-skill.js <path-to-skill-folder>
-node /opt/projects/user/ai1-crhq-installer/scripts/install-agent.js <path-to-agent.json>
-node /opt/projects/user/ai1-crhq-installer/scripts/install-recipe.js <path-to-recipe.json>
-node /opt/projects/user/ai1-crhq-installer/scripts/install-service.js <path-to-service-folder>
+node scripts/install.mjs <package> --dry-run              # preview; zero writes
+node scripts/install.mjs <package> --sandbox --lifecycle  # isolated full-lifecycle self-test
+node scripts/install.mjs <package>                        # real install (writes live DB; deploys services)
+node scripts/install.mjs <package> --status              # report per-component state
+node scripts/install.mjs <package> --uninstall           # remove (reverse order)
 ```
 
-## Manifest format
+`<package>` is a directory containing an `ai1-package.yaml` (or a path to the file itself; defaults
+to `.`). See `examples/bundle/` for a complete sample with every component type.
 
-A manifest is a JSON file that declares the resources to install:
+## The package manifest (`ai1-package.yaml`)
 
-```json
-{
-  "name": "my-bundle",
-  "version": "1.0.0",
-  "resources": {
-    "skills":   [{ "path": "skills/my-skill" }],
-    "agents":   [{ "path": "agents/my-agent.json" }],
-    "recipes":  [{ "path": "recipes/my-recipe.json" }],
-    "services": [{ "path": "services/my-service" }]
-  }
-}
+A package is a versioned directory with a single `ai1-package.yaml` at its root declaring an
+**explicit `components` inventory** (a file present but not listed is not installed). Minimal shape:
+
+```yaml
+name: my-bundle
+version: 1.0.0
+description: ...
+installer: ">=0.1.0"            # optional min installer version
+components:
+  skills:
+    - path: skills/my-skill     # dir with SKILL.md (+ optional scripts/)
+      version: 0.1.0            # REQUIRED — must equal SKILL.md frontmatter version
+  recipes:
+    - path: recipes/my-recipe.md
+  agents:
+    - path: agents/my-agent.yaml
+  jobs:
+    - path: jobs/my-job.yaml
+  services:
+    - path: services/my-svc     # dir with service.yaml + app source
+      version: 1.0.0            # REQUIRED — must equal service.yaml version
+install_entry: scripts/install.mjs   # optional hook for steps the installer can't infer
 ```
 
-Paths are resolved relative to the manifest file.
+Install order is **skills → recipes → agents → jobs → services**; uninstall reverses.
+Full specification: [`docs/package-manifest-spec.md`](./docs/package-manifest-spec.md).
 
-See `examples/manifest.example.json` for a complete sample.
+## Component conventions (summary)
 
-## Resource conventions
+- **Skill** — `skills/<key>/SKILL.md`: YAML frontmatter (`name`, `version`, `description`) + a
+  Markdown body that becomes `skills.content`; optional `scripts/`. Assets copy to
+  `INSTALL_BASE_DIR/<key>/`; the row is `skill_type:'user'`, `skill_path:'db://skills/<name>'`.
+- **Recipe** — `recipes/<name>.md`: frontmatter (`name`, `description`) + body → `recipes.content`.
+- **Agent** — `agents/<key>.yaml`: `key`/`name`/`mode`/`default_model`/`icon`/`skills:[]`/`recipes:[]`.
+  Only existing+active skills attach; recipe names resolve to ids; stale links are removed on re-run.
+- **Job** — `jobs/<name>.yaml`: `name`/`schedule`/`script`/`requires:[]`. `schedule` accepts a cron
+  expression or an alias (`hourly`, `daily`, `every-15-min`, `every-30-min`). `script` resolves to
+  `INSTALL_BASE_DIR/<script>`; `requires` skill dirs must exist first (prereq guard).
+- **Service** — `services/<name>/service.yaml`: `name`/`version`/`start`/`port?`/`build?`/`env`/
+  `nginx`, plus the app source. Deployed via an nginx reverse proxy (127.0.0.1) + a PM2 process.
 
-### Skills
-- Folder containing `SKILL.md` (frontmatter `name`, `description`) and optional `scripts/`
-- Skill content (the body of `SKILL.md` minus frontmatter) is registered via the CRHQ skills API
-- Scripts are copied to `/opt/projects/crhq-satellite/skills/<name>/scripts/`
+Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manifest-spec.md).
 
-### Agents
-- JSON file describing the agent: `{ name, description, systemPrompt, model, ... }`
-- Registered via CRHQ agents API
+## Flags
 
-### Recipes
-- JSON file describing the recipe: `{ name, description, steps, ... }`
-- Registered via CRHQ recipes API
+| Flag | Effect |
+|------|--------|
+| `--dry-run` | Preview; zero DB/fs writes (services: build only, no apply). |
+| `--status` | Report per-component install state. |
+| `--uninstall` | Remove components in reverse order. |
+| `--respect-locks` | Skip locked skills instead of auto-unlocking them. |
+| `--no-agent` / `--no-job` | Skip agents / jobs. |
+| `--only=<type>` | Process one type (`skills`/`recipes`/`agents`/`jobs`/`services`). |
+| `--sandbox` | Provision an isolated schema (cloned from live) + temp dir, install there, tear down. Services are skipped. |
+| `--keep` | With `--sandbox`: keep the schema + temp dir for inspection. |
+| `--lifecycle` | With `--sandbox`: run install → status → idempotency → uninstall → reinstall assertions. |
+| `--json` | Machine-readable result output. |
 
-### Services
-- Folder containing `service.json` plus the application source
-- `service.json` schema:
-  ```json
-  {
-    "name": "my-service",
-    "port": 4300,
-    "start": "node server.js",
-    "cwd": "./",
-    "env": { "NODE_ENV": "production" },
-    "nginx": {
-      "subdomain": "my-service",
-      "ssl": true
-    }
-  }
-  ```
-- Installer copies the source to `/opt/projects/user/<name>/`, writes an nginx vhost in `/etc/nginx/projects.d/`, and starts a PM2 process named `<name>`
+Result verdicts: `INSTALL-OK | ALREADY-INSTALLED | INSTALL-PARTIAL | INSTALL-FAIL | PREREQ-MISSING
+| LOCKED-ROW`. Exit codes: `0` ok/already · `1` fail/prereq/lock · `2` transport (DB/manifest/preflight).
+
+## Configuration (environment)
+
+- `INSTALL_BASE_DIR` — parent dir for skill `<key>` folders (default
+  `/opt/projects/crhq-satellite/user-skills`; legacy fallback `CRHQ_BASE_DIR` + `/user-skills`).
+- `INSTALL_SCHEMA` — Postgres schema for DB writes (applied as a knex `searchPath`; legacy fallback
+  `SANDBOX_SCHEMA`). Set automatically by `--sandbox`.
+
+## Library API
+
+The installer is also a library. `scripts/lib/index.mjs` exports `createContext` plus the
+`upsert*`/`remove*`/`status*` primitives, so a package's `install_entry` can reuse the canon instead
+of re-implementing it:
+
+```js
+import { createContext, requireSkills, upsertSkill }
+  from '/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/scripts/lib/index.mjs';
+const ctx = await createContext(process.argv);   // honors --dry-run/--status/--uninstall/...
+try { /* package-specific steps */ ctx.report(); } finally { await ctx.close(); }
+```
+
+See [`docs/utility-design.md`](./docs/utility-design.md) Part B and
+[`docs/api-design.md`](./docs/api-design.md) for the full surface.
 
 ## Safety
 
-- The installer **never** modifies core satellite files (`server.js`, `server/`, `providers/`, etc.)
-- Each install step is idempotent: re-running with the same input produces the same result
-- Use `--dry-run` to preview what would be installed without making changes
-- Use `--force` to overwrite existing resources
+- DB writes go only through the hardcoded `server/db/knex.js` import (sandbox-interceptable), never
+  via REST.
+- Idempotent — re-running produces zero drift. Locked skills auto-unlock (or `--respect-locks` to skip).
+- Never modifies core satellite files. Services bind `127.0.0.1` only, lock down `.env` (chmod 640),
+  and never touch the `crhq-satellite` process.
+- Until you explicitly install for real, **all testing is sandbox-only** (isolated schema + temp dir).
 
 ## Layout
 
 ```
 ai1-crhq-installer/
-├── SKILL.md                  # this file
+├── SKILL.md
 ├── scripts/
-│   ├── install.js            # main entry point — reads a manifest
-│   ├── install-skill.js
-│   ├── install-agent.js
-│   ├── install-recipe.js
-│   ├── install-service.js
-│   └── lib/                  # shared helpers (API client, fs helpers, logging)
-└── examples/
-    ├── manifest.example.json
-    └── service.example.json
+│   ├── install.mjs        # CLI entry — generic manifest runner
+│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, run, sandbox,
+│       └── core/          #   index  +  core/{skill,recipe,agent,job,service}
+├── examples/bundle/       # complete sample package (every component type)
+├── tests/                 # sandbox-backed suites (npm test)
+└── docs/                  # design + spec (package-manifest-spec, api-design, …)
 ```
 
-## Development
-
-This skill lives in `/opt/projects/user/ai1-crhq-installer/`. It is **not** installed into the local satellite yet — install it explicitly when ready:
+## Development & testing
 
 ```bash
-node scripts/install-skill.js /opt/projects/user/ai1-crhq-installer
+npm install     # one dependency: yaml
+npm test        # all sandbox-backed suites
 ```
+
+This skill lives in `/opt/projects/user/ai1-crhq-installer/` and is **not** installed into the local
+satellite yet — install it explicitly when ready (see `docs/implementation-plan.md` Phase 8).

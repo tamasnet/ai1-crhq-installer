@@ -1,5 +1,6 @@
 # Changelog — ai1-sample-bundle
 
 ## 0.1.0
-- Initial sample bundle: one skill, recipe, agent, and job. Used to exercise the installer's
-  `--sandbox --lifecycle` suite.
+- Complete reference bundle: skill, recipe, agent, hourly job, service (nginx + PM2), and an
+  `install_entry` hook — one of every `ai1-crhq-installer` component type. Used to exercise
+  `--sandbox --lifecycle`.

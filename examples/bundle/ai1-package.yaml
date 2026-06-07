@@ -1,14 +1,24 @@
+# Complete sample package for ai1-crhq-installer — exercises every component type.
+# Run it isolated:   node scripts/install.mjs examples/bundle --sandbox --lifecycle
 name: ai1-sample-bundle
 version: 0.1.0
 description: >
-  Minimal sample package used to exercise the installer end-to-end (skill + recipe + agent + job)
-  under --sandbox --lifecycle. Phase 7 will round this out (add a service, full metadata).
+  Reference package demonstrating every ai1-crhq-installer component type: a skill, a recipe, an
+  agent that wires them together, an hourly background job, and a service (nginx + PM2). Built to be
+  run under --sandbox --lifecycle; a real (non-sandbox) install also deploys the service live.
 installer: ">=0.1.0"
+
+triggers:
+  - /ai1-sample-bundle
+  - "install ai1 sample"
+
 category: example
 classification: internal
 complexity: beginner
+foundational: false
 status: mvp-draft
 
+# Install order = type order below, then array order within a type. Uninstall reverses.
 components:
   skills:
     - path: skills/ai1-sample-skill
@@ -19,3 +29,12 @@ components:
     - path: agents/ai1-sample-agent.yaml
   jobs:
     - path: jobs/ai1-sample-job.yaml
+  services:
+    - path: services/ai1-sample-svc
+      version: 0.1.0
+
+# Optional package-specific hook, invoked after the declarative pass (all modes).
+install_entry: scripts/install.mjs
+install_flags:
+  - name: --skip-extra
+    description: Example package-specific flag (forwarded to install_entry).

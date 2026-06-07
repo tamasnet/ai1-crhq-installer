@@ -119,12 +119,17 @@ for install/dry-run+pkg-flag/uninstall/status/`--only`. Plus `--sandbox --lifecy
 ⚠️ **Pending:** the live `applyService`/`removeService` paths are implemented but unverified — they
 need the one explicit live service smoke test (requires authorization; not run this session).
 
-## Phase 7 — Package manifest + sample
+## Phase 7 — Package manifest + sample — ✅ DONE 2026-06-01
 
-- [ ] `ai1-package.yaml` for the sample package (per `package-manifest-spec.md`) — identity,
-      `components` inventory, optional `install_entry`/`install_flags`.
-- [ ] Complete `examples/bundle/` exercising every component type (skill+recipe+agent+job+service).
-- [ ] Update `SKILL.md` + `README.md` to match the final DB-direct/sandbox design.
+- [x] `examples/bundle/ai1-package.yaml` — full identity + metadata (triggers/category/…),
+      `components` inventory, `install_entry: scripts/install.mjs` + `install_flags`.
+- [x] `examples/bundle/` now exercises **every** component type: skill + recipe + agent + job +
+      **service** (`services/ai1-sample-svc/`) + the `install_entry` hook.
+- [x] `SKILL.md` + `README.md` rewritten from the old REST-stub design to the final
+      DB-direct/sandbox design (manifest, flags, component conventions, library API, safety).
+
+**Verified:** `--sandbox --lifecycle examples/bundle` green (service sandbox-skipped); plain
+`--sandbox examples/bundle` runs the `install_entry` with zero live service writes.
 
 ## Phase 8 — Install gate (ONLY when told)
 
@@ -141,8 +146,9 @@ need the one explicit live service smoke test (requires authorization; not run t
 
 ## Deliverables checklist
 
-- [ ] `lib/{index,context,db,manifest,parse,fs,log,prereq,sandbox}.mjs` + `lib/core/{skill,recipe,agent,job,service}.mjs`
-- [ ] `scripts/install.mjs` generic runner (incl. `--sandbox`)
-- [ ] `examples/bundle/` complete sample (with its `ai1-package.yaml`)
-- [ ] Updated `SKILL.md` + `README.md`
-- [ ] Green `--sandbox --lifecycle` over the sample bundle
+- [x] `lib/{index,context,db,manifest,parse,fs,log,prereq,preflight,run,sandbox}.mjs` + `lib/core/{skill,recipe,agent,job,service}.mjs`
+- [x] `scripts/install.mjs` generic runner (incl. `--sandbox` + `install_entry`)
+- [x] `examples/bundle/` complete sample (with its `ai1-package.yaml`)
+- [x] Updated `SKILL.md` + `README.md`
+- [x] Green `--sandbox --lifecycle` over the sample bundle
+- [ ] Phase 8 — install gate (live install one-liner; ONLY when told) + live service smoke test
