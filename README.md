@@ -8,8 +8,9 @@ See [`SKILL.md`](./SKILL.md) for full usage and [`docs/`](./docs/) for the desig
 
 ## Quick start
 
+No `npm install` needed — zero runtime dependencies (`yaml` is vendored; knex/pg come from the satellite).
+
 ```bash
-npm install
 node scripts/install.mjs examples/bundle --sandbox --lifecycle   # isolated full-lifecycle self-test
 node scripts/install.mjs examples/bundle --dry-run               # preview, zero writes
 ```

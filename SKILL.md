@@ -139,7 +139,8 @@ ai1-crhq-installer/
 ├── scripts/
 │   ├── install.mjs        # CLI entry — generic manifest runner
 │   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, run, sandbox,
-│       └── core/          #   index  +  core/{skill,recipe,agent,job,service}
+│       ├── core/          #   index  +  core/{skill,recipe,agent,job,service}
+│       └── vendor/        #   yaml.mjs — vendored single-file YAML parser (zero npm install)
 ├── examples/bundle/       # complete sample package (every component type)
 ├── tests/                 # sandbox-backed suites (npm test)
 └── docs/                  # design + spec (package-manifest-spec, api-design, …)
@@ -147,8 +148,11 @@ ai1-crhq-installer/
 
 ## Development & testing
 
+**No `npm install` required** — the installer has **zero runtime dependencies**. `yaml` is vendored
+as a single bundled file (`scripts/lib/vendor/yaml.mjs`); knex/pg resolve from the satellite at
+runtime via the hardcoded `server/db/knex.js` import.
+
 ```bash
-npm install     # one dependency: yaml
 npm test        # all sandbox-backed suites
 ```
 

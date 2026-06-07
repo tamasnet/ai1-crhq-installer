@@ -1,5 +1,7 @@
-// parse.mjs — frontmatter splitting (hand-rolled, D-6) + YAML parsing (the single allowed dep).
-import { parse as parseYaml } from 'yaml';
+// parse.mjs — frontmatter splitting (hand-rolled, D-6) + YAML parsing. YAML uses a vendored
+// single-file bundle of `yaml` (scripts/lib/vendor/yaml.mjs) so the skill installs with ZERO
+// `npm install` — no runtime dependencies. knex/pg are resolved from the satellite at runtime.
+import { parse as parseYaml } from './vendor/yaml.mjs';
 
 export function loadYaml(text) {
   const v = parseYaml(text);
