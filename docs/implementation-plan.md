@@ -67,22 +67,23 @@ validates the installer's lock *logic*, not the DB trigger.)
 - [x] Sync `agent_skills` (attach only existing+active skills; remove stale; onConflict ignore).
 - [x] Resolve `recipe_id` by name; sync `agent_recipes`.
 
-**Test:** `tests/agent.test.mjs` (`npm test`) — 11 assertions green: minimal-row + DB defaults
+**Test:** `tests/agent.test.mjs` (`npm test`) — 10 assertions green: minimal-row + DB defaults
 (provider/icon/default_model), recipe name→uuid resolution, attach filtering (missing + inactive
 skills skipped), add/remove-stale skill sync, recipe sync + stale removal, field update, dry-run
-zero-write, `--no-agent`, status, clean removal of row + all join links, and a full
+zero-write, status, clean removal of row + all join links, and a full
 skill+recipe+agent `--sandbox --lifecycle`. (Shared test helper extracted to `tests/_helpers.mjs`.)
 
 ## Phase 4 — Jobs (background_jobs) — ✅ DONE 2026-06-01
 
 - [x] `upsertJob`: insert|update by name; `id = job-<ts>-<rand>`, `job_type:'script'`,
       `script_path:'node'`, `script_args:'<abs> <args>'`, cron/timezone/limits/enabled.
-- [x] `--no-job` toggle; prereq-check pattern (C12) where a job depends on another skill.
+- [x] Prereq-check pattern (C12) where a job depends on another skill. (Per-type scoping is via
+      `--only`, not a dedicated job toggle — see D-21.)
 
-**Test:** `tests/job.test.mjs` (`npm test`) — 10 assertions green: id minting + canon columns
+**Test:** `tests/job.test.mjs` (`npm test`) — 9 assertions green: id minting + canon columns
 (`job_type`/`script_path`/`run_count`), `script_args` resolved under `INSTALL_BASE_DIR` (+ args),
 schedule-alias expansion (`hourly`/`daily`/`every-15-min`) + raw-cron passthrough, idempotent
-re-run with stable id, update preserves id, **C12 `requires` prereq → PrereqError**, `--no-job`,
+re-run with stable id, update preserves id, **C12 `requires` prereq → PrereqError**,
 dry-run zero-write, status, removal, and a skill+job `--sandbox --lifecycle` (present post-install,
 gone post-uninstall).
 
@@ -91,17 +92,19 @@ gone post-uninstall).
 - [x] Parse flags + manifest; build plan; **preflight** (`lib/preflight.mjs` — DB reachable; BASE
       writable for write modes; failure = transport exit 2).
 - [x] Dispatch **skills → recipes → agents → jobs → services**; uninstall reverses (via `runPlan`).
-- [x] `--only=<type>`, `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--no-agent`/`--no-job`, `--json`.
+- [x] `--only=<types>` (multi-valued — comma-separated/repeatable; D-21), `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--json`.
 - [x] `--include=<pat>` / `--exclude=<pat>` component-name filter (added 2026-06-11, D-20; `lib/filter.mjs`).
+- [x] Removed `--no-agent`/`--no-job` — subsumed by multi-valued `--only` (2026-06-11, D-21).
 - [x] Aggregate summary; continue-and-report with non-zero exit on any failure.
 - [x] **`install_entry` hook (A4 / OQ-U2)** — after the declarative pass, spawn `node <entry>` as a
       subprocess for all modes, forwarding mode + standard + package-specific flags (sandbox-internal
       flags and the package path are not forwarded; INSTALL_SCHEMA/BASE_DIR inherited via env).
 
-**Test:** `tests/runner.test.mjs` (`npm test`) — 7 assertions green via the real CLI (spawnSync):
+**Test:** `tests/runner.test.mjs` (`npm test`) — 8 assertions green via the real CLI (spawnSync):
 preflight pass + unwritable-BASE→PreflightError; install_entry runs with correct flag forwarding
-for install/dry-run+pkg-flag/uninstall/status/`--only`. Plus `--sandbox --lifecycle` over
-`examples/bundle` green and `--dry-run` clean "would…" output (both re-verified post-preflight).
+for install/dry-run+pkg-flag/uninstall/status/`--only` (incl. multi-valued `--only=skills,recipes`).
+Plus `--sandbox --lifecycle` over `examples/bundle` green and `--dry-run` clean "would…" output (both
+re-verified post-preflight). Type/name selection itself is covered by `tests/filter.test.mjs`.
 
 ## Phase 6 — Services (deploy-project) — ✅ DONE 2026-06-01 (live apply pending smoke test)
 

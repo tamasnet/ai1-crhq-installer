@@ -276,8 +276,9 @@ requires: [plaud-ingest]       # optional: skill keys whose install dir must exi
 
 Install: upsert `background_jobs` by name — `id='job-<ts>-<rand>'`, `job_type:'script'`,
 `script_path:'node'`, `script_args=join(INSTALL_BASE_DIR, script)[+ ' ' + args]`, `run_count:0`.
-Halts with a two-ways-forward message + `--no-job` escape if a `requires` skill is absent
-(deeper dynamic-import-chain checks remain the package's `install_entry` job).
+Halts with a two-ways-forward message if a `requires` skill is absent — install the skill, or scope
+the run to the other types with `--only` (e.g. omit `jobs`). Deeper dynamic-import-chain checks
+remain the package's `install_entry` job.
 
 ### 5.5 Service (nginx + PM2 web app) — `services/<name>/`
 Layout: `service.yaml` + the application source. **Not DB-resident** — deployed via the
@@ -323,10 +324,14 @@ reload. **Dry-run runs the build step (incl. `build`) but skips the deploy-proje
 - Finer control than this ordering implies → use `install_entry`.
 
 **Standard flags — utility-owned, never declared in the manifest:**
-`--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--no-agent`, `--no-job`,
-`--only=<type>`, `--include=<pat>`, `--exclude=<pat>`. The utility forwards them to `install_entry`
-(argv) so package-specific steps can honor them. `install_flags` is ONLY for package-specific flags
-(e.g. `--no-ingest`).
+`--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--only=<types>`, `--include=<pat>`,
+`--exclude=<pat>`. The utility forwards them to `install_entry` (argv) so package-specific steps can
+honor them. `install_flags` is ONLY for package-specific flags (e.g. `--no-ingest`).
+
+`--only=<types>` restricts which component **types** run — one or more of
+`skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated (e.g.
+`--only=skills,recipes`). Order within a type and across types always follows the canonical install
+order. (This replaces the former `--no-agent`/`--no-job` toggles, D-21.)
 
 `--include`/`--exclude` select a subset of components **by name** (skills/recipes/jobs/services by
 `name`, agents by `key`). The value is a regex; a value with no regex metacharacter is an exact

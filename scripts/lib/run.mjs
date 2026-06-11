@@ -26,7 +26,12 @@ const DISPATCH = {
 
 export async function runPlan(ctx, plan) {
   const verb = ctx.mode === 'uninstall' ? 'remove' : ctx.mode === 'status' ? 'status' : 'upsert';
-  const types = ctx.ONLY ? [ctx.ONLY] : ORDER;
+  // --only restricts which component TYPES run. Accepts an array (multiple/comma-separated values)
+  // or a single string (library callers). Intersect with ORDER so install order is preserved no
+  // matter how the values were listed; unknown type names simply select nothing.
+  const only = Array.isArray(ctx.ONLY) ? ctx.ONLY : (ctx.ONLY ? [ctx.ONLY] : []);
+  const onlySet = only.length ? new Set(only) : null;
+  const types = onlySet ? ORDER.filter((t) => onlySet.has(t)) : ORDER;
   const seq = ctx.mode === 'uninstall' ? [...types].reverse() : types;
 
   // --include/--exclude name filter (compiled once; an invalid pattern throws FilterError → usage
@@ -37,18 +42,15 @@ export async function runPlan(ctx, plan) {
 
   // What this run will install — lets dry-run preview the planned end state so a component's
   // bundle-mates (a skill it depends on) count as satisfied even though nothing is written yet.
-  // The planned sets reflect the POST-filter plan, so a skill excluded by --exclude is not treated
-  // as a satisfied dependency this run.
-  const willRun = (t) => (ctx.ONLY ? ctx.ONLY === t : true)
-    && !(t === 'agents' && ctx.NO_AGENT) && !(t === 'jobs' && ctx.NO_JOB);
+  // The planned sets reflect the POST-filter plan (and the --only type scope), so a skill excluded
+  // by --exclude or --only is not treated as a satisfied dependency this run.
+  const willRun = (t) => types.includes(t);
   ctx.plannedSkills = new Set(willRun('skills') ? select('skills', plan.skills).map((s) => s.name) : []);
   ctx.plannedRecipes = new Set(willRun('recipes') ? select('recipes', plan.recipes).map((r) => r.name) : []);
 
   let considered = 0;
   let selected = 0;
   for (const type of seq) {
-    if (type === 'agents' && ctx.NO_AGENT) continue;
-    if (type === 'jobs' && ctx.NO_JOB) continue;
     const fn = DISPATCH[type]?.[verb];
     if (!fn) continue;
     const list = plan[type] || [];
@@ -69,8 +71,7 @@ export async function runPlan(ctx, plan) {
   // Zero-match guard (warn + continue, exit 0): a filter that selects nothing is usually a typo, but
   // "nothing to do" is not a failure. List what was available so the mistake is easy to spot.
   if (hasFilter(filterSpec) && selected === 0 && considered > 0) {
-    const avail = seq.flatMap((t) => (DISPATCH[t]?.[verb] && !(t === 'agents' && ctx.NO_AGENT) && !(t === 'jobs' && ctx.NO_JOB)
-      ? (plan[t] || []).map((d) => nameOf(t, d)) : []));
+    const avail = seq.flatMap((t) => (DISPATCH[t]?.[verb] ? (plan[t] || []).map((d) => nameOf(t, d)) : []));
     ctx.log.warn(`--include/--exclude matched 0 of ${considered} component(s) — nothing to do. Available: ${avail.join(', ') || '(none)'}`);
   }
   return ctx.results;

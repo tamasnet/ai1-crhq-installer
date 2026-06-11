@@ -101,12 +101,6 @@ try {
     assert.equal((await agentRow(agentDef.key)).name, 'Renamed Agent');
   });
 
-  await test('--no-agent: nothing written', async () => {
-    const r = await upsertAgent(makeCtx({ NO_AGENT: true }), { ...agentDef, key: 'ai1-noagent', name: 'No Agent' });
-    assert.equal(r.action, 'skipped');
-    assert.equal(await agentRow('ai1-noagent'), undefined);
-  });
-
   await test('dry-run: resolves links but writes nothing', async () => {
     const r = await upsertAgent(makeCtx({ DRY_RUN: true }), { ...agentDef, key: 'ai1-dry-agent' });
     assert.equal(r.verdict, 'INSTALL-OK');

@@ -65,4 +65,10 @@ await test('--only=skills forwarded', () => {
   assert.match(r.stdout, /ENTRY-ARGV:.*--only=skills/);
 });
 
+await test('--only with multiple (comma-separated) types forwarded', () => {
+  const r = cli(['--only=skills,recipes']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /ENTRY-ARGV:.*--only=skills,recipes/);
+});
+
 done();

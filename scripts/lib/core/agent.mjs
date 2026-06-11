@@ -4,9 +4,8 @@
 import { VERDICT } from '../log.mjs';
 
 export async function upsertAgent(ctx, def) {
-  const { db, log, DRY_RUN, NO_AGENT } = ctx;
+  const { db, log, DRY_RUN } = ctx;
   const key = def.key;
-  if (NO_AGENT) { log.info(`agent ${key} skipped (--no-agent)`); return res(key, VERDICT.ALREADY, 'skipped'); }
 
   const row = await db('agents').where({ key }).first();
   const fields = { name: def.name, description: def.description || '', mode: def.mode || 'cli', is_active: true };

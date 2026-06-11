@@ -56,8 +56,10 @@ real tree.
 ## C4 — Standard flags
 
 Required: `--dry-run`, `--status`, `--uninstall`, `--respect-locks`.
-Optional/contextual: `--no-agent` (canon's `--skip-agent` is a legacy alias), `--no-job`, `--schedule <cron|alias>`,
-and similar per-bundle toggles.
+Optional/contextual (canon): `--no-agent` (canon's `--skip-agent` is a legacy alias), `--no-job`,
+`--schedule <cron|alias>`, and similar per-bundle toggles.
+**This installer diverges (D-21):** it drops the `--no-agent`/`--no-job` toggles in favor of a
+multi-valued `--only=<types>` (comma-separated/repeatable), which expresses any type subset.
 
 ## C5 — Lock handling (PG trigger blocks updates on locked rows)
 

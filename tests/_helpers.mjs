@@ -8,7 +8,7 @@ export function makeCtx(over = {}) {
   return {
     db: getDb(), BASE: process.env.INSTALL_BASE_DIR, SCHEMA: process.env.INSTALL_SCHEMA,
     log: makeLogger({ dryRun: !!over.DRY_RUN }),
-    DRY_RUN: false, RESPECT_LOCKS: false, NO_AGENT: false, NO_JOB: false, ONLY: null, mode: 'install',
+    DRY_RUN: false, RESPECT_LOCKS: false, ONLY: null, mode: 'install',
     results: [], record(r) { this.results.push(r); return r; },
     ...over,
   };

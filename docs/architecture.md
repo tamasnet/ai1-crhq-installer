@@ -116,9 +116,8 @@ install.mjs [<manifest>] [flags]
   --status         report install state for the manifest
   --uninstall      remove everything in the manifest (reverse order)
   --respect-locks  skip locked skill rows instead of unlocking
-  --no-agent       install skills/recipes/jobs only
-  --no-job         skip background_jobs registration
-  --only=<type>    restrict to skills|recipes|agents|jobs|services
+  --only=<types>   restrict to a subset of skills|recipes|agents|jobs|services
+                   (comma-separated and/or repeatable, e.g. --only=skills,recipes)
   --include=<pat>  process only components whose name matches <pat> (regex; metachar-free = exact ^pat$)
   --exclude=<pat>  skip components whose name matches <pat> (applied after --include)
   --sandbox        run into a throwaway isolated schema + temp dir (self-contained; D-17)

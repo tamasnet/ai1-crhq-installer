@@ -12,9 +12,8 @@ const resolveSchedule = (s) => SCHEDULE_ALIASES[s] || s;
 const mintJobId = () => `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;  // C10
 
 export async function upsertJob(ctx, def) {
-  const { db, log, DRY_RUN, NO_JOB, BASE } = ctx;
+  const { db, log, DRY_RUN, BASE } = ctx;
   const { name } = def;
-  if (NO_JOB) { log.info(`job ${name} skipped (--no-job)`); return res(name, VERDICT.ALREADY, 'skipped'); }
 
   // C12: required skill install dirs must exist. In dry-run nothing is written, so only enforce
   // genuinely-external deps (bundle-mates being installed this run are assumed present).

@@ -101,7 +101,7 @@ Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (can
 `runPlan` builds the matcher from `ctx.INCLUDE`/`ctx.EXCLUDE`, tests each component's `nameOf(type,def)`
 (agents → `key`, else → `name`), and reflects the selection in `ctx.plannedSkills`/`plannedRecipes`.
 A filter selecting 0 of N considered components warns + exits `0` (not an error). The flags compose
-with `--only`, `--no-agent`, `--no-job`, and apply to install/uninstall/status alike.
+with `--only` (type scope) and apply to install/uninstall/status alike.
 
 ---
 
@@ -154,7 +154,7 @@ Builds and returns:
 ctx = {
   // parsed flags
   mode: 'install'|'uninstall'|'status',   // from --uninstall/--status (default install)
-  DRY_RUN, RESPECT_LOCKS, NO_AGENT, NO_JOB, ONLY /* type|null */,
+  DRY_RUN, RESPECT_LOCKS, ONLY /* string[]|null — --only=<types> (comma-separated/repeatable) */,
   INCLUDE, EXCLUDE /* string|null — --include=/--exclude= name filter (regex; see §12) */,
   SANDBOX, KEEP, LIFECYCLE,
   packageArg,                              // manifest path/dir arg (default '.')
@@ -211,10 +211,9 @@ statusRecipe(ctx, nameOrDef) // { present, active }
 upsertAgent(ctx, def)
 // 1. insert|update agents by key {key,name,description,mode,is_active:true,(default_model?,icon?)}
 //    (minimal; rely on DB defaults — integration-ref §2)
-// 2. NO_AGENT? → skip entirely
-// 3. sync agent_skills: for each def.skills → attach IFF skill exists+active; onConflict ignore;
+// 2. sync agent_skills: for each def.skills → attach IFF skill exists+active; onConflict ignore;
 //    remove stale links not in def.skills
-// 4. sync agent_recipes: resolve each name→recipe_id (uuid) ; onConflict ignore; remove stale
+// 3. sync agent_recipes: resolve each name→recipe_id (uuid) ; onConflict ignore; remove stale
 removeAgent(ctx, keyOrDef)    // del agent_skills + agent_recipes + agents row
 statusAgent(ctx, keyOrDef)    // { present, active, skills:[], recipes:[] }
 ```
@@ -222,7 +221,6 @@ statusAgent(ctx, keyOrDef)    // { present, active, skills:[], recipes:[] }
 ### `core/job.mjs`
 ```js
 upsertJob(ctx, def)
-// 0. NO_JOB? → skip
 // 1. prereq: requireSkills(ctx, def.requires) (coarse C12 guard)
 // 2. script_args = join(ctx.BASE, def.script) + (def.args ? ' '+def.args : '')
 // 3. insert|update background_jobs by name {id:`job-<ts>-<rand>` on insert, job_type:'script',
@@ -316,7 +314,10 @@ try {
 
 ```js
 const ORDER = ['skills','recipes','agents','jobs','services'];      // D-4
-const types = ctx.ONLY ? [ctx.ONLY] : ORDER;
+// --only=<types> (string[]|null) restricts which TYPES run; intersect with ORDER to keep install
+// order regardless of how the values were listed (unknown names select nothing). D-21.
+const only  = Array.isArray(ctx.ONLY) ? ctx.ONLY : (ctx.ONLY ? [ctx.ONLY] : []);
+const types = only.length ? ORDER.filter(t => only.includes(t)) : ORDER;
 const seq   = ctx.mode === 'uninstall' ? [...types].reverse() : types;   // reverse on uninstall (C13)
 // --include/--exclude name filter (lib/filter.mjs). nameOf(type,def) is the canonical id (agents→key,
 // else→name). A value with NO regex metacharacter is an exact ^value$ match; otherwise it's compiled
@@ -324,8 +325,6 @@ const seq   = ctx.mode === 'uninstall' ? [...types].reverse() : types;   // reve
 // AND not exclude. Also reflected in ctx.plannedSkills/plannedRecipes so dry-run deps stay accurate.
 const match = makeFilter({ include: ctx.INCLUDE, exclude: ctx.EXCLUDE });
 for (const type of seq) {
-  if (type==='agents'   && ctx.NO_AGENT) continue;
-  if (type==='jobs'     && ctx.NO_JOB)   continue;
   for (const def of (plan[type]||[]).filter(d => match(nameOf(type,d)))) {
     const fn = core[`${ctx.mode==='uninstall'?'remove':ctx.mode==='status'?'status':'upsert'}${Cap(typeSingular)}`];
     try { ctx.record(await fn(ctx, def)); }

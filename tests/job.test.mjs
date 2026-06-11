@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Phase 4 verification — background_jobs install. Self-contained: provisions a sandbox, runs a
 // focused skill+job lifecycle, then exercises upsertJob/removeJob/statusJob with row assertions
-// (id minting, script_args resolution, schedule-alias expansion, C12 requires prereq, --no-job,
-// dry-run). Tears down. Run from the project root:  node tests/job.test.mjs
+// (id minting, script_args resolution, schedule-alias expansion, C12 requires prereq, dry-run).
+// Tears down. Run from the project root:  node tests/job.test.mjs
 import assert from 'node:assert/strict';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -94,12 +94,6 @@ try {
       await upsertJob(ctx, { ...jobDef, name, schedule: sched });
       assert.equal((await jobRow(name)).schedule, expected, `${sched} → ${expected}`);
     }
-  });
-
-  await test('--no-job: nothing written', async () => {
-    const r = await upsertJob(makeCtx({ NO_JOB: true }), { ...jobDef, name: 'ai1-nojob' });
-    assert.equal(r.action, 'skipped');
-    assert.equal(await jobRow('ai1-nojob'), undefined);
   });
 
   await test('dry-run: no row written', async () => {

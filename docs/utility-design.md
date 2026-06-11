@@ -37,7 +37,7 @@ Each item tagged with its source convention for traceability.
       apply** (D-2a).
 
 ### A3. Lifecycle operations
-- [ ] `install` (full, or `--only=<type>`).
+- [ ] `install` (full, or `--only=<types>` for a subset of types).
 - [ ] `uninstall` (reverse order; DB rows + joins + fs trees + jobs + services).
 - [ ] `status` (per component: DB present/active? files present? job registered? service up?).
 - [ ] **Idempotent re-run** — second install produces zero drift (C6; sandbox asserts this).
@@ -69,9 +69,10 @@ Each item tagged with its source convention for traceability.
 
 ### A7. Flag handling
 - [ ] Standard flags (utility-owned): `--dry-run`, `--status`, `--uninstall`, `--respect-locks`,
-      `--no-agent`, `--no-job`, `--only=<type>`, `--include=<pat>`, `--exclude=<pat>`,
-      **`--sandbox`** (+ `--keep`, `--lifecycle`). `--include`/`--exclude` filter by component name
-      (regex; a metacharacter-free value is an exact `^name$` match; case-sensitive).
+      `--only=<types>` (one or more types, comma-separated/repeatable — replaces `--no-agent`/`--no-job`, D-21),
+      `--include=<pat>`, `--exclude=<pat>`, **`--sandbox`** (+ `--keep`, `--lifecycle`).
+      `--include`/`--exclude` filter by component name (regex; a metacharacter-free value is an exact
+      `^name$` match; case-sensitive).
 - [ ] Parse package-specific `install_flags` from the manifest; forward to `install_entry`.
 
 ### A8. Built-in sandbox (self-contained — D-17; replaces external `installer-sandbox`)

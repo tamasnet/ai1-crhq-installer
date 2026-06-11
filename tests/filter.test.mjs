@@ -113,4 +113,28 @@ await test('invalid regex → usage exit 2', () => {
   assert.match(`${r.stderr}${r.stdout}`, /invalid --include/);
 });
 
+// ── CLI --only type selection (multiple values) ──────────────────────────────────────────────
+console.log('\nCLI --only (type selection):');
+
+await test('--only with multiple types selects exactly those types', () => {
+  const r = cli(['--only=skills,jobs']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(picked(r.stdout, 'ai1-sample-skill'));
+  assert.ok(picked(r.stdout, 'ai1-sample-job'));
+  assert.ok(!picked(r.stdout, 'ai1-sample-recipe'));
+  assert.ok(!picked(r.stdout, 'ai1-sample-agent'));
+  assert.ok(!picked(r.stdout, 'ai1-sample-svc'));
+});
+
+await test('--only preserves canonical install order regardless of input order', () => {
+  const out = summary(cli(['--only=jobs,skills']).stdout);
+  assert.ok(out.indexOf('ai1-sample-skill') < out.indexOf('ai1-sample-job'), 'skill processed before job');
+});
+
+await test('--only with an unknown type selects nothing (exit 0)', () => {
+  const r = cli(['--only=bogus']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!picked(r.stdout, 'ai1-sample-skill'));
+});
+
 done();

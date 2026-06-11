@@ -89,8 +89,7 @@ Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manif
 | `--status` | Report per-component install state. |
 | `--uninstall` | Remove components in reverse order. |
 | `--respect-locks` | Skip locked skills instead of auto-unlocking them. |
-| `--no-agent` / `--no-job` | Skip agents / jobs. |
-| `--only=<type>` | Process one type (`skills`/`recipes`/`agents`/`jobs`/`services`). |
+| `--only=<types>` | Process only the listed types — one or more of `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated (e.g. `--only=skills,recipes`). |
 | `--include=<pat>` | Process only components whose name matches `<pat>` (see below). |
 | `--exclude=<pat>` | Skip components whose name matches `<pat>`. Applied after `--include`. |
 | `--sandbox` | Provision an isolated schema (cloned from live) + temp dir, install there, tear down. Services are skipped. |
@@ -105,7 +104,7 @@ Result verdicts: `INSTALL-OK | ALREADY-INSTALLED | INSTALL-PARTIAL | INSTALL-FAI
 
 `--include` / `--exclude` narrow which components a run touches, **by name** — the same identifier the
 summary prints (skills/recipes/jobs/services by `name`, agents by `key`). They apply to every mode
-(install, uninstall, status) and compose with `--only` (type scope) and `--no-agent`/`--no-job`.
+(install, uninstall, status) and compose with `--only` (type scope).
 
 The value is a **regular expression**, with one special case: **if it contains no regex
 metacharacters (`` . ^ $ * + ? ( ) [ ] { } | \ ``) it is an exact, anchored match** — `foo` behaves

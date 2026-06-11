@@ -18,7 +18,7 @@ export function resolveSchema() {
 
 export function parseFlags(argv) {
   const flags = {
-    mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false, NO_AGENT: false, NO_JOB: false,
+    mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false,
     ONLY: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
     JSON: false, packageArg: '.',
   };
@@ -27,13 +27,15 @@ export function parseFlags(argv) {
     else if (a === '--status') flags.mode = 'status';
     else if (a === '--dry-run') flags.DRY_RUN = true;
     else if (a === '--respect-locks') flags.RESPECT_LOCKS = true;
-    else if (a === '--no-agent' || a === '--skip-agent') flags.NO_AGENT = true;
-    else if (a === '--no-job') flags.NO_JOB = true;
     else if (a === '--sandbox') flags.SANDBOX = true;
     else if (a === '--keep') flags.KEEP = true;
     else if (a === '--lifecycle') flags.LIFECYCLE = true;
     else if (a === '--json') flags.JSON = true;
-    else if (a.startsWith('--only=')) flags.ONLY = a.slice('--only='.length);
+    // --only=<type>[,<type>...] selects which component types run (repeatable; comma-separated).
+    else if (a.startsWith('--only=')) {
+      const vals = a.slice('--only='.length).split(',').map((s) => s.trim()).filter(Boolean);
+      if (vals.length) flags.ONLY = [...(flags.ONLY || []), ...vals];
+    }
     else if (a.startsWith('--include=')) flags.INCLUDE = a.slice('--include='.length);
     else if (a.startsWith('--exclude=')) flags.EXCLUDE = a.slice('--exclude='.length);
     else if (a.startsWith('--')) { /* package-specific flag — forwarded to install_entry, ignored here */ }
