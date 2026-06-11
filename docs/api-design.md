@@ -89,6 +89,22 @@ Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (can
 
 ---
 
+## 6a. `lib/filter.mjs` — `--include` / `--exclude` (component selection)
+
+| Export | Signature | Behavior |
+|--------|-----------|----------|
+| `compileMatcher(pattern, label?)` | `(string,string?) => (name)=>boolean` | No regex metacharacter (`` . ^ $ * + ? ( ) [ ] { } \| \ ``) → exact match (`name === pattern`, i.e. `^pattern$`). Otherwise → `new RegExp(pattern).test(name)` (case-sensitive, unanchored). Invalid regex → throw `FilterError`. |
+| `makeFilter({include, exclude})` | `({string?,string?}) => (name)=>boolean` | Selected iff matches `include` (or none) AND not `exclude`. Compiles eagerly (fail-fast). |
+| `hasFilter({include, exclude})` | `=> boolean` | True if either pattern was supplied. |
+| `FilterError` | `class extends Error` | Mapped by `install.mjs` to exit `2` (usage). |
+
+`runPlan` builds the matcher from `ctx.INCLUDE`/`ctx.EXCLUDE`, tests each component's `nameOf(type,def)`
+(agents → `key`, else → `name`), and reflects the selection in `ctx.plannedSkills`/`plannedRecipes`.
+A filter selecting 0 of N considered components warns + exits `0` (not an error). The flags compose
+with `--only`, `--no-agent`, `--no-job`, and apply to install/uninstall/status alike.
+
+---
+
 ## 7. `lib/manifest.mjs`
 
 ```js
@@ -139,6 +155,7 @@ ctx = {
   // parsed flags
   mode: 'install'|'uninstall'|'status',   // from --uninstall/--status (default install)
   DRY_RUN, RESPECT_LOCKS, NO_AGENT, NO_JOB, ONLY /* type|null */,
+  INCLUDE, EXCLUDE /* string|null — --include=/--exclude= name filter (regex; see §12) */,
   SANDBOX, KEEP, LIFECYCLE,
   packageArg,                              // manifest path/dir arg (default '.')
 
@@ -301,15 +318,21 @@ try {
 const ORDER = ['skills','recipes','agents','jobs','services'];      // D-4
 const types = ctx.ONLY ? [ctx.ONLY] : ORDER;
 const seq   = ctx.mode === 'uninstall' ? [...types].reverse() : types;   // reverse on uninstall (C13)
+// --include/--exclude name filter (lib/filter.mjs). nameOf(type,def) is the canonical id (agents→key,
+// else→name). A value with NO regex metacharacter is an exact ^value$ match; otherwise it's compiled
+// as a case-sensitive RegExp (invalid → FilterError → exit 2). Selected iff matches include (or none)
+// AND not exclude. Also reflected in ctx.plannedSkills/plannedRecipes so dry-run deps stay accurate.
+const match = makeFilter({ include: ctx.INCLUDE, exclude: ctx.EXCLUDE });
 for (const type of seq) {
   if (type==='agents'   && ctx.NO_AGENT) continue;
   if (type==='jobs'     && ctx.NO_JOB)   continue;
-  for (const def of plan[type]) {
+  for (const def of (plan[type]||[]).filter(d => match(nameOf(type,d)))) {
     const fn = core[`${ctx.mode==='uninstall'?'remove':ctx.mode==='status'?'status':'upsert'}${Cap(typeSingular)}`];
     try { ctx.record(await fn(ctx, def)); }
     catch (e) { ctx.record(failResult(type, def, e)); /* continue-and-report */ }
   }
 }
+// A filter that selects 0 of N considered components → warn (list available) + exit 0, not an error.
 // after declarative pass: invoke install_entry (if meta.install_entry) for package-specific steps —
 // as a `spawnSync('node', [entry, ...modeAndFlags])` SUBPROCESS (isolation; matches the plaud suite
 // pattern), forwarding mode + standard flags as argv (D-12; runs for all modes — install/uninstall/status)

@@ -69,7 +69,9 @@ Each item tagged with its source convention for traceability.
 
 ### A7. Flag handling
 - [ ] Standard flags (utility-owned): `--dry-run`, `--status`, `--uninstall`, `--respect-locks`,
-      `--no-agent`, `--no-job`, `--only=<type>`, **`--sandbox`** (+ `--keep`, `--lifecycle`).
+      `--no-agent`, `--no-job`, `--only=<type>`, `--include=<pat>`, `--exclude=<pat>`,
+      **`--sandbox`** (+ `--keep`, `--lifecycle`). `--include`/`--exclude` filter by component name
+      (regex; a metacharacter-free value is an exact `^name$` match; case-sensitive).
 - [ ] Parse package-specific `install_flags` from the manifest; forward to `install_entry`.
 
 ### A8. Built-in sandbox (self-contained — D-17; replaces external `installer-sandbox`)

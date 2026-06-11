@@ -8,8 +8,13 @@ import * as agent from './core/agent.mjs';
 import * as job from './core/job.mjs';
 import * as service from './core/service.mjs';
 import { VERDICT } from './log.mjs';
+import { makeFilter, hasFilter } from './filter.mjs';
 
 export const ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services'];
+
+// The canonical identifier a --include/--exclude filter is tested against — the same value the run
+// summary prints (agents are keyed by `key`; everything else by `name`).
+const nameOf = (type, def) => (type === 'agents' ? def.key : def.name);
 
 const DISPATCH = {
   skills: { upsert: skill.upsertSkill, remove: skill.removeSkill, status: skill.statusSkill },
@@ -24,19 +29,33 @@ export async function runPlan(ctx, plan) {
   const types = ctx.ONLY ? [ctx.ONLY] : ORDER;
   const seq = ctx.mode === 'uninstall' ? [...types].reverse() : types;
 
+  // --include/--exclude name filter (compiled once; an invalid pattern throws FilterError → usage
+  // exit before any write). `select` drops components whose canonical name fails the filter.
+  const filterSpec = { include: ctx.INCLUDE, exclude: ctx.EXCLUDE };
+  const match = makeFilter(filterSpec);
+  const select = (type, list) => (list || []).filter((def) => match(nameOf(type, def)));
+
   // What this run will install — lets dry-run preview the planned end state so a component's
   // bundle-mates (a skill it depends on) count as satisfied even though nothing is written yet.
+  // The planned sets reflect the POST-filter plan, so a skill excluded by --exclude is not treated
+  // as a satisfied dependency this run.
   const willRun = (t) => (ctx.ONLY ? ctx.ONLY === t : true)
     && !(t === 'agents' && ctx.NO_AGENT) && !(t === 'jobs' && ctx.NO_JOB);
-  ctx.plannedSkills = new Set(willRun('skills') ? (plan.skills || []).map((s) => s.name) : []);
-  ctx.plannedRecipes = new Set(willRun('recipes') ? (plan.recipes || []).map((r) => r.name) : []);
+  ctx.plannedSkills = new Set(willRun('skills') ? select('skills', plan.skills).map((s) => s.name) : []);
+  ctx.plannedRecipes = new Set(willRun('recipes') ? select('recipes', plan.recipes).map((r) => r.name) : []);
 
+  let considered = 0;
+  let selected = 0;
   for (const type of seq) {
     if (type === 'agents' && ctx.NO_AGENT) continue;
     if (type === 'jobs' && ctx.NO_JOB) continue;
     const fn = DISPATCH[type]?.[verb];
     if (!fn) continue;
-    for (const def of plan[type] || []) {
+    const list = plan[type] || [];
+    considered += list.length;
+    const chosen = select(type, list);
+    selected += chosen.length;
+    for (const def of chosen) {
       try {
         ctx.record(await fn(ctx, def));
       } catch (e) {
@@ -45,6 +64,14 @@ export async function runPlan(ctx, plan) {
         ctx.record({ type: type.replace(/s$/, ''), name, verdict: e.name === 'PrereqError' ? VERDICT.PREREQ : VERDICT.FAIL, action: 'error', detail: e.message });
       }
     }
+  }
+
+  // Zero-match guard (warn + continue, exit 0): a filter that selects nothing is usually a typo, but
+  // "nothing to do" is not a failure. List what was available so the mistake is easy to spot.
+  if (hasFilter(filterSpec) && selected === 0 && considered > 0) {
+    const avail = seq.flatMap((t) => (DISPATCH[t]?.[verb] && !(t === 'agents' && ctx.NO_AGENT) && !(t === 'jobs' && ctx.NO_JOB)
+      ? (plan[t] || []).map((d) => nameOf(t, d)) : []));
+    ctx.log.warn(`--include/--exclude matched 0 of ${considered} component(s) — nothing to do. Available: ${avail.join(', ') || '(none)'}`);
   }
   return ctx.results;
 }

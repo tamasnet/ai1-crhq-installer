@@ -91,6 +91,8 @@ Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manif
 | `--respect-locks` | Skip locked skills instead of auto-unlocking them. |
 | `--no-agent` / `--no-job` | Skip agents / jobs. |
 | `--only=<type>` | Process one type (`skills`/`recipes`/`agents`/`jobs`/`services`). |
+| `--include=<pat>` | Process only components whose name matches `<pat>` (see below). |
+| `--exclude=<pat>` | Skip components whose name matches `<pat>`. Applied after `--include`. |
 | `--sandbox` | Provision an isolated schema (cloned from live) + temp dir, install there, tear down. Services are skipped. |
 | `--keep` | With `--sandbox`: keep the schema + temp dir for inspection. |
 | `--lifecycle` | With `--sandbox`: run install → status → idempotency → uninstall → reinstall assertions. |
@@ -98,6 +100,31 @@ Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manif
 
 Result verdicts: `INSTALL-OK | ALREADY-INSTALLED | INSTALL-PARTIAL | INSTALL-FAIL | PREREQ-MISSING
 | LOCKED-ROW`. Exit codes: `0` ok/already · `1` fail/prereq/lock · `2` transport (DB/manifest/preflight).
+
+### Selecting a subset (`--include` / `--exclude`)
+
+`--include` / `--exclude` narrow which components a run touches, **by name** — the same identifier the
+summary prints (skills/recipes/jobs/services by `name`, agents by `key`). They apply to every mode
+(install, uninstall, status) and compose with `--only` (type scope) and `--no-agent`/`--no-job`.
+
+The value is a **regular expression**, with one special case: **if it contains no regex
+metacharacters (`` . ^ $ * + ? ( ) [ ] { } | \ ``) it is an exact, anchored match** — `foo` behaves
+like `^foo$`. To match a substring or set, include a metacharacter. Matching is **case-sensitive**.
+A component is processed iff it matches `--include` (or none was given) **and** does not match
+`--exclude`. A filter that matches **zero** components is not an error: the run warns (listing the
+available names) and exits `0`. An invalid regex is a usage error (exit `2`).
+
+```bash
+node scripts/install.mjs <pkg> --include=my-skill                 # exact match — just that skill
+node scripts/install.mjs <pkg> --include='^acme-'                 # everything whose name starts acme-
+node scripts/install.mjs <pkg> --include='skill|recipe'           # substring/alternation (regex)
+node scripts/install.mjs <pkg> --exclude='-job$' --status         # status of all but *-job components
+node scripts/install.mjs <pkg> --only=skills --include='^acme-'   # acme- skills only
+```
+
+Because `--include` / `--exclude` start with `--`, they are also **forwarded to a package's
+`install_entry`** (like the other standard flags). The declarative pass enforces them; a hook chooses
+whether to honor them for its own steps.
 
 ## Configuration (environment)
 
@@ -138,7 +165,7 @@ ai1-crhq-installer/
 ├── SKILL.md
 ├── scripts/
 │   ├── install.mjs        # CLI entry — generic manifest runner
-│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, run, sandbox,
+│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, run, sandbox,
 │       ├── core/          #   index  +  core/{skill,recipe,agent,job,service}
 │       └── vendor/        #   yaml.mjs — vendored single-file YAML parser (zero npm install)
 ├── examples/bundle/       # complete sample package (every component type)

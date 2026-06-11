@@ -7,7 +7,7 @@ one reusable utility.
 
 **Status:** **All phases (1–8) complete.** ESM core `lib/` + `lib/core/*` (skills, recipes, agents,
 jobs, services) + generic runner (`install.mjs`: preflight + `install_entry`) + built-in `--sandbox`.
-`npm test` = 52 assertions green; zero runtime deps (`yaml` vendored — no `npm install`). Deployed to
+`npm test` = 65 assertions green; zero runtime deps (`yaml` vendored — no `npm install`). Deployed to
 `/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/` and registered as a live skill; the
 live service apply/remove paths were smoke-tested end-to-end (incl. the white-label vhost) and
 cleaned up. D-2b → inline templates; OQ-14 → seed skills, no FK recreation.
@@ -27,7 +27,8 @@ cleaned up. D-2b → inline templates; OQ-14 → seed skills, no FK recreation.
   dir (D-19): `INSTALL_BASE_DIR || join(CRHQ_BASE_DIR,'user-skills') || '/opt/projects/crhq-satellite/user-skills'`.
 - **`getDb()` is schema-configurable:** honor `INSTALL_SCHEMA` (`|| SANDBOX_SCHEMA`) → knex `searchPath`.
 - **Idempotent** upserts; emit canon completion strings (C7); standard flags
-  `--dry-run / --status / --uninstall / --respect-locks / --no-agent / --no-job / --only / --sandbox [--keep --lifecycle]`.
+  `--dry-run / --status / --uninstall / --respect-locks / --no-agent / --no-job / --only / --include / --exclude / --sandbox [--keep --lifecycle]`.
+  `--include`/`--exclude` filter components by name (regex; a metacharacter-free value is an exact `^name$` match; case-sensitive).
 
 ## Build target
 `scripts/install.mjs` (CLI) + `scripts/lib/` per `api-design.md`:

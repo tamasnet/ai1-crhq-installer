@@ -324,8 +324,14 @@ reload. **Dry-run runs the build step (incl. `build`) but skips the deploy-proje
 
 **Standard flags — utility-owned, never declared in the manifest:**
 `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--no-agent`, `--no-job`,
-`--only=<type>`. The utility forwards them to `install_entry` (argv) so package-specific
-steps can honor them. `install_flags` is ONLY for package-specific flags (e.g. `--no-ingest`).
+`--only=<type>`, `--include=<pat>`, `--exclude=<pat>`. The utility forwards them to `install_entry`
+(argv) so package-specific steps can honor them. `install_flags` is ONLY for package-specific flags
+(e.g. `--no-ingest`).
+
+`--include`/`--exclude` select a subset of components **by name** (skills/recipes/jobs/services by
+`name`, agents by `key`). The value is a regex; a value with no regex metacharacter is an exact
+`^name$` match (case-sensitive). Selected iff it matches `--include` (or none given) and not
+`--exclude`; these compose with `--only`. A filter matching zero components warns and exits `0`.
 
 ---
 

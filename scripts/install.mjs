@@ -9,7 +9,7 @@ import { existsSync } from 'fs';
 import { spawnSync } from 'child_process';
 import {
   createContext, loadManifest, runPlan, preflight, sandbox, closeDb,
-  ManifestError, PrereqError, PreflightError, VERDICT,
+  ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
 } from './lib/index.mjs';
 
 const stamp = () => `${Date.now()}${Math.floor(Math.random() * 1000)}`;  // C10
@@ -71,6 +71,7 @@ function runInstallEntry(ctx, meta, packageRoot, rawArgv) {
 
 function handleFatal(e) {
   if (e instanceof ManifestError) { console.error(`❌ manifest error: ${e.message}`); process.exitCode = 2; }
+  else if (e instanceof FilterError) { console.error(`❌ ${e.message}`); process.exitCode = 2; }
   else if (e instanceof PreflightError) { console.error(`❌ preflight failed: ${e.message}`); process.exitCode = 2; }
   else if (e instanceof PrereqError) { console.error(`❌ prereq missing: ${e.message}`); process.exitCode = 1; }
   else { console.error(`❌ fatal: ${e.stack || e.message}`); process.exitCode = 2; }

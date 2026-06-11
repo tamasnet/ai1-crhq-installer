@@ -19,7 +19,8 @@ export function resolveSchema() {
 export function parseFlags(argv) {
   const flags = {
     mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false, NO_AGENT: false, NO_JOB: false,
-    ONLY: null, SANDBOX: false, KEEP: false, LIFECYCLE: false, JSON: false, packageArg: '.',
+    ONLY: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
+    JSON: false, packageArg: '.',
   };
   for (const a of argv) {
     if (a === '--uninstall') flags.mode = 'uninstall';
@@ -33,6 +34,8 @@ export function parseFlags(argv) {
     else if (a === '--lifecycle') flags.LIFECYCLE = true;
     else if (a === '--json') flags.JSON = true;
     else if (a.startsWith('--only=')) flags.ONLY = a.slice('--only='.length);
+    else if (a.startsWith('--include=')) flags.INCLUDE = a.slice('--include='.length);
+    else if (a.startsWith('--exclude=')) flags.EXCLUDE = a.slice('--exclude='.length);
     else if (a.startsWith('--')) { /* package-specific flag — forwarded to install_entry, ignored here */ }
     else flags.packageArg = a;
   }

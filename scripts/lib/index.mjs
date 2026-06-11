@@ -10,6 +10,7 @@ export { makeLogger, VERDICT, SEVERITY } from './log.mjs';
 export { requireSkills, requireFiles, PrereqError } from './prereq.mjs';
 export { preflight, PreflightError } from './preflight.mjs';
 export { loadManifest, validateManifest, ManifestError } from './manifest.mjs';
+export { makeFilter, compileMatcher, hasFilter, FilterError } from './filter.mjs';
 export { runPlan, ORDER } from './run.mjs';
 export * as sandbox from './sandbox.mjs';
 export { upsertSkill, removeSkill, statusSkill } from './core/skill.mjs';

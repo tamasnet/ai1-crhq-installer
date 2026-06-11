@@ -92,6 +92,7 @@ gone post-uninstall).
       writable for write modes; failure = transport exit 2).
 - [x] Dispatch **skills → recipes → agents → jobs → services**; uninstall reverses (via `runPlan`).
 - [x] `--only=<type>`, `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--no-agent`/`--no-job`, `--json`.
+- [x] `--include=<pat>` / `--exclude=<pat>` component-name filter (added 2026-06-11, D-20; `lib/filter.mjs`).
 - [x] Aggregate summary; continue-and-report with non-zero exit on any failure.
 - [x] **`install_entry` hook (A4 / OQ-U2)** — after the declarative pass, spawn `node <entry>` as a
       subprocess for all modes, forwarding mode + standard + package-specific flags (sandbox-internal
@@ -154,7 +155,7 @@ need the one explicit live service smoke test (requires authorization; not run t
 
 ## Deliverables checklist
 
-- [x] `lib/{index,context,db,manifest,parse,fs,log,prereq,preflight,run,sandbox}.mjs` + `lib/core/{skill,recipe,agent,job,service}.mjs`
+- [x] `lib/{index,context,db,manifest,parse,fs,log,prereq,preflight,filter,run,sandbox}.mjs` + `lib/core/{skill,recipe,agent,job,service}.mjs`
 - [x] `scripts/install.mjs` generic runner (incl. `--sandbox` + `install_entry`)
 - [x] `examples/bundle/` complete sample (with its `ai1-package.yaml`)
 - [x] Updated `SKILL.md` + `README.md`
