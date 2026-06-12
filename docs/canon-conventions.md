@@ -50,10 +50,11 @@ the real tree.
 
 ## C4 — Standard flags
 
-Required: `--dry-run`, `--status`, `--uninstall`, `--respect-locks`. Type/name scoping is
-via `--only=<types>` (multi-valued) plus `--include`/`--exclude`; skill registration type
-via `--install-skills-as-user`. The full CLI surface is `architecture.md` §5; package
-manifests may add package-specific flags only (`install_flags`).
+Required: `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--help`. Type/name scoping
+is via `--type=<types>` (multi-valued; formerly `--only`) plus `--include`/`--exclude`; skill
+registration type via `--install-skills-as-user`. The full CLI surface is `architecture.md` §5;
+package manifests may add package-specific flags only (`install_flags`). Options are validated
+(`lib/flags.mjs`): an unsupported option or a value flag with no value fails with a usage exit `2`.
 
 ## C5 — Lock handling (PG trigger blocks updates on locked rows)
 

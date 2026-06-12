@@ -131,6 +131,21 @@ wraps the call so a log write failure warns instead of failing the install.
 | `hasFilter({include, exclude})` | `=> boolean` | True if either pattern was supplied. |
 | `FilterError` | `class extends Error` | Mapped by `install.mjs` to exit `2` (usage). |
 
+## 6d. `lib/flags.mjs` — supported-option contract (dependency-free)
+
+The single source of truth for which CLI options each mode accepts. Kept free of `db`/`log` imports
+so `manifest.mjs` can reuse `STANDARD_FLAG_NAMES` without pulling in the knex layer.
+
+| Export | Signature | Behavior |
+|--------|-----------|----------|
+| `FLAG_SPEC` | `{ install:{bool[],value[]}, backup:{bool[],value[]} }` | Standard flags per mode. `bool` = present/absent; `value` = require `--flag=<v>`. |
+| `STANDARD_FLAG_NAMES` | `Set<string>` | All standard flag names (+ `--help`). Used for the "not supported by `<mode>`" message and to forbid `install_flags` shadowing a standard flag. |
+| `validateFlags(argv,{mode,declared})` | `=> void \| throws UsageError` | Reject the first unsupported option, or a value flag with no value (bare `--flag` / empty `--flag=`), or a value on a boolean flag. `declared` = package-specific `install_flags` names accepted in `install` mode. Positionals and `--help` are skipped. |
+| `wantsHelp(argv)` | `(string[]) => boolean` | True if `--help` is present (CLIs short-circuit to `usage()` + exit `0`). |
+| `usage(mode)` | `(string) => string` | The help text for `install` / `backup`. |
+| `declaredFlagNames(meta)` | `(meta) => string[]` | Package-specific flag names from `meta.install_flags`. |
+| `UsageError` | `class extends Error` | Mapped by both CLIs to exit `2` (usage). |
+
 ---
 
 ## 7. `lib/manifest.mjs`
@@ -184,7 +199,7 @@ ctx = {
   // parsed flags
   mode: 'install'|'uninstall'|'status'|'backup',   // --uninstall/--status (default install); 'backup' set by its CLI entry
   DRY_RUN, RESPECT_LOCKS, INSTALL_SKILLS_AS_USER, JSON,
-  ONLY /* string[]|null — --only=<types> (comma-separated/repeatable) */,
+  TYPE /* string[]|null — --type=<types> (comma-separated/repeatable; formerly --only) */,
   INCLUDE, EXCLUDE /* string|null — --include=/--exclude= name filter (regex; see §6c) */,
   NAME /* string|null — --name= (backup package name, D-27) */,
   SANDBOX, KEEP, LIFECYCLE,
@@ -293,7 +308,7 @@ The shared plan dispatcher used by both the CLI and the sandbox lifecycle suite.
 
 ```js
 export const ORDER = ['skills','recipes','agents','jobs','services'];
-// --only=<types> restricts which TYPES run; intersected with ORDER so canonical install
+// --type=<types> restricts which TYPES run; intersected with ORDER so canonical install
 // order holds regardless of input order (unknown names select nothing).
 // mode picks the primitive: install→upsert*, --uninstall→remove* (types reversed), --status→status*.
 // --include/--exclude: each def's `name` (the canonical id for every type) tested against the
@@ -336,12 +351,18 @@ diffState(a, b)                 // → string[] of differences
 
 ```js
 const argv = process.argv.slice(2);
+if (wantsHelp(argv)) { console.log(usage('install')); process.exit(0); }   // --help short-circuits
 let sb = null;
 try {
+  // Load the manifest FIRST (no DB/sandbox needed) so install_flags are known, then validate the
+  // options — an unsupported option or a value flag with no value → UsageError → exit 2, before
+  // any side effect (no sandbox provisioned, no DB opened).
+  const { meta, plan, packageRoot } = loadManifest(packageArgOf(argv));
+  validateFlags(argv, { mode:'install', declared: declaredFlagNames(meta) });
+
   if (hasFlag(argv,'--sandbox')) sb = await sandbox.provisionSandbox({ ts: stamp() });  // sets env first
 
   const ctx  = await createContext(argv);          // reads env (sandbox-redirected if sb)
-  const { meta, plan, packageRoot } = loadManifest(ctx.packageArg);
   await preflight(ctx);                            // DB reachable; BASE writable → else exit 2
 
   if (sb && ctx.LIFECYCLE) {
@@ -356,7 +377,7 @@ try {
   }
   ctx.report();                                     // completion string + exit code
 } catch (e) {
-  handleFatal(e);                                   // ManifestError/PrereqError/Preflight/Filter → exit code
+  handleFatal(e);                                   // Usage/Manifest/Prereq/Preflight/Filter → exit code
 } finally {
   if (sb) await sb.teardown(hasFlag(argv,'--keep'));
   await closeDb();
@@ -382,6 +403,7 @@ RunResult = { type, name, verdict /* VERDICT.* */, action?, detail? }
 | component exported (backup) | `BACKUP-OK` | 0 |
 | not expressible in the format (backup) | `BACKUP-SKIP` | 0 |
 | component export failed (backup) | `BACKUP-FAIL` | 1 |
+| unsupported option / value flag with no value (`UsageError`) | (usage) | 2 |
 | DB unreachable / BASE unwritable / manifest unreadable / bad filter | (transport/usage) | 2 |
 
 `ctx.report()` sets `process.exitCode` to the max severity across `ctx.results`. `--json`
@@ -402,7 +424,7 @@ runBackup(ctx, { now })   // → { dir, meta, results }
 // 1. discover (D-25): active org/user skills · active recipes · non-system active agents ·
 //    non-system jobs — ordered by name (deterministic output). Reads via ctx.db (getDb()), so
 //    INSTALL_SCHEMA still applies — tests point it at a sandbox schema; there is no backup sandbox.
-// 2. select: --only ∩ BACKUP_TYPES (warn if 'services' requested) + --include/--exclude on the
+// 2. select: --type ∩ BACKUP_TYPES (warn if 'services' requested) + --include/--exclude on the
 //    canonical name per type (skills/recipes/jobs: name; agents: key) — same semantics as runPlan,
 //    incl. the zero-match warn.
 // 3. export each component into a STAGING dir (`<dest>.staging-<pid>`) via core export*
@@ -414,7 +436,9 @@ runBackup(ctx, { now })   // → { dir, meta, results }
 //    the previous backup is left untouched.
 ```
 
-`scripts/backup.mjs` control flow: reject install-lifecycle flags (usage exit 2) →
-`createContext(argv, { mode:'backup' })` → `preflight` (DB + `BACKUP_BASE` writable) →
+`scripts/backup.mjs` control flow: `--help`? print `usage('backup')` + exit 0 →
+`validateFlags(argv,{mode:'backup'})` (install-lifecycle flags report "not supported by backup";
+unsupported option / missing value → usage exit 2) → `createContext(argv, { mode:'backup' })` →
+`preflight` (DB + `BACKUP_BASE` writable) →
 `runBackup(ctx, { now: new Date() })` → `ctx.report()` (`✅ Backup complete.`), `closeDb()` in
 `finally`. Restore is simply `install.mjs ${BACKUP_BASE_DIR}/<name>`.

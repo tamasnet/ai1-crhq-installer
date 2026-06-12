@@ -1,23 +1,36 @@
 #!/usr/bin/env node
-// ai1-crhq-installer — generic manifest runner (CLI entry). Thin by design: provision the sandbox
-// (if asked) BEFORE building context so the env redirect takes effect, preflight, load + validate
-// the manifest, run the plan (or the --sandbox --lifecycle suite), invoke the package install_entry,
-// report, tear down. Control flow per api-design §11. Lifecycle hygiene (C8): db destroyed on every
-// exit path.
+// ai1-crhq-installer — generic manifest runner (CLI entry). Thin by design: print --help and exit;
+// else load + validate the manifest and validate the CLI options (unsupported option / missing value
+// → usage exit 2) BEFORE any side effect; provision the sandbox (if asked) BEFORE building context
+// so the env redirect takes effect; preflight; run the plan (or the --sandbox --lifecycle suite);
+// invoke the package install_entry; report; tear down. Control flow per api-design §11. Lifecycle
+// hygiene (C8): db destroyed on every exit path.
 import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { spawnSync } from 'child_process';
 import {
-  createContext, loadManifest, runPlan, preflight, sandbox, closeDb,
-  updateInstallLog, ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
+  createContext, loadManifest, runPlan, preflight, sandbox, closeDb, updateInstallLog,
+  validateFlags, usage, wantsHelp, declaredFlagNames, UsageError,
+  ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
 } from './lib/index.mjs';
 
 const stamp = () => `${Date.now()}${Math.floor(Math.random() * 1000)}`;  // C10
 const has = (argv, f) => argv.includes(f);
+// The package path is the (last) positional — same rule parseFlags uses. Needed up front so the
+// manifest's declared install_flags can be read before flags are validated.
+const packageArgOf = (argv) => argv.filter((a) => !a.startsWith('--')).pop() || '.';
 
 const argv = process.argv.slice(2);
+if (wantsHelp(argv)) { console.log(usage('install')); process.exit(0); }
+
 let sb = null;
 try {
+  // Load the manifest first (no DB / sandbox needed) so option validation knows which
+  // package-specific flags (install_flags) are permitted, then reject any unsupported option or
+  // missing value BEFORE provisioning a sandbox or touching the DB.
+  const { meta, plan, packageRoot } = loadManifest(packageArgOf(argv));
+  validateFlags(argv, { mode: 'install', declared: declaredFlagNames(meta) });
+
   if (has(argv, '--sandbox')) {
     sb = await sandbox.provisionSandbox({ ts: stamp() });   // sets INSTALL_SCHEMA / INSTALL_BASE_DIR
   }
@@ -27,7 +40,6 @@ try {
 
   await preflight(ctx);   // DB reachable + (write modes) BASE writable — else transport exit 2
 
-  const { meta, plan, packageRoot } = loadManifest(ctx.packageArg);
   ctx.log.info(`package ${meta.name} v${meta.version} — mode=${ctx.mode}${ctx.DRY_RUN ? ' (dry-run)' : ''}`);
 
   if (sb && ctx.LIFECYCLE) {
@@ -82,7 +94,8 @@ function recordInstallLog(ctx, meta, plan, packageRoot) {
 }
 
 function handleFatal(e) {
-  if (e instanceof ManifestError) { console.error(`❌ manifest error: ${e.message}`); process.exitCode = 2; }
+  if (e instanceof UsageError) { console.error(`❌ ${e.message}`); process.exitCode = 2; }
+  else if (e instanceof ManifestError) { console.error(`❌ manifest error: ${e.message}`); process.exitCode = 2; }
   else if (e instanceof FilterError) { console.error(`❌ ${e.message}`); process.exitCode = 2; }
   else if (e instanceof PreflightError) { console.error(`❌ preflight failed: ${e.message}`); process.exitCode = 2; }
   else if (e instanceof PrereqError) { console.error(`❌ prereq missing: ${e.message}`); process.exitCode = 1; }

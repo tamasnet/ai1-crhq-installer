@@ -266,7 +266,7 @@ requires: [plaud-ingest]       # optional: skill keys that must be installed fir
 | `requires` | – | skill keys whose install must exist before the job registers (coarse guard against a job that fails every tick) |
 
 If a `requires` skill is absent the installer halts with a two-ways-forward message —
-install the skill, or scope the run to the other types with `--only`. Deeper
+install the skill, or scope the run to the other types with `--type`. Deeper
 dynamic-import-chain checks are the package's `install_entry` job.
 
 ### 5.5 Service (standalone web app) — `services/<name>/`
@@ -314,20 +314,26 @@ apply** — no proxy, process-manager, or port changes.
 
 **Standard flags — installer-owned, never declared in the manifest:**
 `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--install-skills-as-user`,
-`--only=<types>`, `--include=<pat>`, `--exclude=<pat>`. The installer forwards them to
-`install_entry` (argv) so package-specific steps can honor them. `install_flags` is ONLY for
-package-specific flags (e.g. `--no-ingest`).
+`--type=<types>`, `--include=<pat>`, `--exclude=<pat>`, `--json`, `--help`. The installer forwards
+the run-shaping flags to `install_entry` (argv) so package-specific steps can honor them.
+`install_flags` is ONLY for package-specific flags (e.g. `--no-ingest`).
+
+**Strict validation.** The installer accepts the standard flags **plus** exactly the flags this
+manifest declares in `install_flags`. Any other option — or a value flag (`--type`/`--include`/
+`--exclude`) given no value — is rejected with a message and a usage exit (`2`); the run does not
+proceed. `--help` prints usage and exits `0`. `install_flags` is therefore enforced, not merely
+forwarded, and a declared name may not shadow a standard flag.
 
 - `--install-skills-as-user` registers every skill as an unlocked `user` skill, overriding
   the org default and any per-skill `install_type` (§5.1).
-- `--only=<types>` restricts which component **types** run — one or more of
+- `--type=<types>` restricts which component **types** run — one or more of
   `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated
-  (e.g. `--only=skills,recipes`). Order within a type and across types always follows the
+  (e.g. `--type=skills,recipes`). Order within a type and across types always follows the
   canonical install order.
 - `--include`/`--exclude` select a subset of components **by `name`** (the same field across
   every component type). The value is a regex; a value with no regex metacharacter is an
   exact `^name$` match (case-sensitive). A component is selected iff it matches `--include`
-  (or none is given) and does not match `--exclude`; these compose with `--only`. A filter
+  (or none is given) and does not match `--exclude`; these compose with `--type`. A filter
   matching zero components warns and exits `0`.
 
 ---

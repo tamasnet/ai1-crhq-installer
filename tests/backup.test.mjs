@@ -79,7 +79,7 @@ try {
 
   // ── seed: install the example bundle + out-of-scope/unrepresentable rows ─────────────────
   const { plan } = loadManifest('examples/bundle');
-  await runPlan(makeCtx({ ONLY: DB_TYPES }), plan);
+  await runPlan(makeCtx({ TYPE: DB_TYPES }), plan);
   const db = makeCtx().db;
   const now = new Date();
   const base = { is_active: true, is_global: false, created_at: now, updated_at: now };
@@ -191,7 +191,7 @@ try {
     });
     const before = await snap();
 
-    await runPlan(makeCtx({ mode: 'uninstall', ONLY: DB_TYPES }), plan);
+    await runPlan(makeCtx({ mode: 'uninstall', TYPE: DB_TYPES }), plan);
     assert.equal(await db('skills').where({ name: 'ai1-sample-skill' }).first(), undefined);
 
     const { plan: bplan } = loadManifest(outDir);
@@ -218,8 +218,8 @@ try {
   // ── filters ──────────────────────────────────────────────────────────────────────────────
   console.log('\nfilters:');
 
-  await test('--only=skills limits inventory to skills', async () => {
-    const { meta } = await runBackup(bctx({ ONLY: ['skills'] }), { now: NOW });
+  await test('--type=skills limits inventory to skills', async () => {
+    const { meta } = await runBackup(bctx({ TYPE: ['skills'] }), { now: NOW });
     assert.deepEqual(Object.keys(meta.components), ['skills']);
     assert.ok(!existsSync(join(outDir, 'recipes')));
   });

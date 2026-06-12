@@ -56,6 +56,7 @@ ai1-crhq-installer/
 │       ├── prereq.mjs           # requireSkills, requireFiles (C12)
 │       ├── preflight.mjs        # DB reachable + BASE writable, before any component work
 │       ├── filter.mjs           # --include/--exclude name matcher
+│       ├── flags.mjs            # supported-option contract: validateFlags + --help usage (dependency-free)
 │       ├── install-log.mjs      # ${PACKAGES_DIR}/install.json — record of installed components
 │       ├── run.mjs              # runPlan: ordered dispatch shared by CLI + lifecycle suite
 │       ├── sandbox.mjs          # --sandbox: provision (LIKE-clone) + seed + redirect + teardown
@@ -74,9 +75,11 @@ ai1-crhq-installer/
 
 ```
 install.mjs <package> [flags]
+  → (--help? print usage, exit 0)
+  → loadManifest(packageArg)    # validate → ordered plan (no DB; read first so install_flags are known)
+  → validateFlags(argv)         # reject unsupported option / missing value → usage exit 2, before any side effect
   → (--sandbox? provision isolated schema + temp dir, set env)
-  → createContext(argv)         # the ONLY place flags are parsed and env resolved
-  → loadManifest(packageArg)    # validate → ordered plan
+  → createContext(argv)         # the ONLY place accepted flags are parsed and env resolved
   → preflight(ctx)              # DB reachable; BASE writable (write modes) — fail = exit 2
   → runPlan(ctx, plan)          # skills → recipes → agents → jobs → services (uninstall reverses)
   → update install log          # ${PACKAGES_DIR}/install.json — skipped in dry-run/status
@@ -97,19 +100,26 @@ install.mjs [<package>] [flags]          # <package> = dir with ai1-package.yaml
   --uninstall      remove everything in the manifest (reverse order)
   --respect-locks  skip locked skill rows instead of unlocking
   --install-skills-as-user  register all skills as unlocked user skills (default: org, locked)
-  --only=<types>   restrict to a subset of skills|recipes|agents|jobs|services
-                   (comma-separated and/or repeatable, e.g. --only=skills,recipes)
+  --type=<types>   restrict to a subset of skills|recipes|agents|jobs|services
+                   (comma-separated and/or repeatable, e.g. --type=skills,recipes)
   --include=<pat>  process only components whose name matches <pat> (regex; metachar-free = exact ^pat$)
   --exclude=<pat>  skip components whose name matches <pat> (applied after --include)
   --json           machine-readable result report
   --sandbox        run into a throwaway isolated schema + temp dir (self-contained)
     --keep         preserve the sandbox (schema + temp dir) for inspection
     --lifecycle    run install→status→idempotency→uninstall→reinstall assertions
+  --help           print usage and exit 0
 
 backup.mjs [<backup-base-dir>] [flags]   # reverse of install — see §10; default base = BACKUP_BASE_DIR
   --name=<pkg>     package (and output dir) name; default <satellite-id>-backup (D-27)
-  --only / --include / --exclude / --json   same semantics as install (services never apply)
+  --type / --include / --exclude / --json   same semantics as install (services never apply)
+  --help           print usage and exit 0
                    # no --dry-run/--status/--uninstall/--sandbox: live, read-only, non-destructive
+
+Option validation (lib/flags.mjs): both CLIs reject an unsupported option, or a value flag given
+no value (a bare --type or empty --type=), with a message + usage exit 2 — before any side effect.
+In install, the supported set is the standard flags PLUS the package manifest's declared
+install_flags (forwarded to install_entry); any other option is rejected. --help short-circuits.
 ```
 
 ## 6. Configuration

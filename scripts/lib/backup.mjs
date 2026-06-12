@@ -63,9 +63,9 @@ export async function runBackup(ctx, { now = new Date() } = {}) {
 
   const found = await discover(db);
 
-  // --only (type scope; `services` never applies) + --include/--exclude (name filter) — the
+  // --type (type scope; `services` never applies) + --include/--exclude (name filter) — the
   // same semantics as runPlan, tested against the same canonical name per type.
-  const only = Array.isArray(ctx.ONLY) ? ctx.ONLY : (ctx.ONLY ? [ctx.ONLY] : []);
+  const only = Array.isArray(ctx.TYPE) ? ctx.TYPE : (ctx.TYPE ? [ctx.TYPE] : []);
   const onlySet = only.length ? new Set(only) : null;
   if (onlySet?.has('services')) log.warn('services are not DB-resident — backup does not cover them; ignoring');
   const types = onlySet ? BACKUP_TYPES.filter((t) => onlySet.has(t)) : BACKUP_TYPES;

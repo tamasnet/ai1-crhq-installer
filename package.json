@@ -9,7 +9,7 @@
   },
   "scripts": {
     "install-bundle": "node scripts/install.mjs",
-    "test": "node tests/skill-recipe.test.mjs && node tests/agent.test.mjs && node tests/job.test.mjs && node tests/runner.test.mjs && node tests/service.test.mjs && node tests/filter.test.mjs && node tests/install-log.test.mjs && node tests/backup.test.mjs"
+    "test": "node tests/skill-recipe.test.mjs && node tests/agent.test.mjs && node tests/job.test.mjs && node tests/runner.test.mjs && node tests/service.test.mjs && node tests/filter.test.mjs && node tests/options.test.mjs && node tests/install-log.test.mjs && node tests/backup.test.mjs"
   },
   "engines": {
     "node": ">=18"

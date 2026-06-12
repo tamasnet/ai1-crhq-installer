@@ -26,10 +26,10 @@ const DISPATCH = {
 
 export async function runPlan(ctx, plan) {
   const verb = ctx.mode === 'uninstall' ? 'remove' : ctx.mode === 'status' ? 'status' : 'upsert';
-  // --only restricts which component TYPES run. Accepts an array (multiple/comma-separated values)
+  // --type restricts which component TYPES run. Accepts an array (multiple/comma-separated values)
   // or a single string (library callers). Intersect with ORDER so install order is preserved no
   // matter how the values were listed; unknown type names simply select nothing.
-  const only = Array.isArray(ctx.ONLY) ? ctx.ONLY : (ctx.ONLY ? [ctx.ONLY] : []);
+  const only = Array.isArray(ctx.TYPE) ? ctx.TYPE : (ctx.TYPE ? [ctx.TYPE] : []);
   const onlySet = only.length ? new Set(only) : null;
   const types = onlySet ? ORDER.filter((t) => onlySet.has(t)) : ORDER;
   const seq = ctx.mode === 'uninstall' ? [...types].reverse() : types;
@@ -42,8 +42,8 @@ export async function runPlan(ctx, plan) {
 
   // What this run will install — lets dry-run preview the planned end state so a component's
   // bundle-mates (a skill it depends on) count as satisfied even though nothing is written yet.
-  // The planned sets reflect the POST-filter plan (and the --only type scope), so a skill excluded
-  // by --exclude or --only is not treated as a satisfied dependency this run.
+  // The planned sets reflect the POST-filter plan (and the --type type scope), so a skill excluded
+  // by --exclude or --type is not treated as a satisfied dependency this run.
   const willRun = (t) => types.includes(t);
   ctx.plannedSkills = new Set(willRun('skills') ? select('skills', plan.skills).map((s) => s.name) : []);
   ctx.plannedRecipes = new Set(willRun('recipes') ? select('recipes', plan.recipes).map((r) => r.name) : []);

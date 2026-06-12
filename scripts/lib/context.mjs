@@ -27,7 +27,7 @@ export function resolveBackupBase() {
 export function parseFlags(argv) {
   const flags = {
     mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false, INSTALL_SKILLS_AS_USER: false,
-    ONLY: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
+    TYPE: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
     JSON: false, NAME: null, packageArg: '.',
   };
   for (const a of argv) {
@@ -40,10 +40,10 @@ export function parseFlags(argv) {
     else if (a === '--keep') flags.KEEP = true;
     else if (a === '--lifecycle') flags.LIFECYCLE = true;
     else if (a === '--json') flags.JSON = true;
-    // --only=<type>[,<type>...] selects which component types run (repeatable; comma-separated).
-    else if (a.startsWith('--only=')) {
-      const vals = a.slice('--only='.length).split(',').map((s) => s.trim()).filter(Boolean);
-      if (vals.length) flags.ONLY = [...(flags.ONLY || []), ...vals];
+    // --type=<type>[,<type>...] selects which component types run (repeatable; comma-separated).
+    else if (a.startsWith('--type=')) {
+      const vals = a.slice('--type='.length).split(',').map((s) => s.trim()).filter(Boolean);
+      if (vals.length) flags.TYPE = [...(flags.TYPE || []), ...vals];
     }
     else if (a.startsWith('--include=')) flags.INCLUDE = a.slice('--include='.length);
     else if (a.startsWith('--exclude=')) flags.EXCLUDE = a.slice('--exclude='.length);

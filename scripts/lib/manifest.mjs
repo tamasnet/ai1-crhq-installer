@@ -3,6 +3,7 @@
 import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname, isAbsolute, resolve } from 'path';
 import { loadYaml, parseFrontmatter } from './parse.mjs';
+import { STANDARD_FLAG_NAMES } from './flags.mjs';
 
 export class ManifestError extends Error {
   constructor(message) { super(message); this.name = 'ManifestError'; }
@@ -49,6 +50,19 @@ export function validateManifest(meta) {
       if (!entry || !entry.path) throw new ManifestError(`components.${type}[] entry missing 'path'`);
       if ((type === 'skills' || type === 'services') && !entry.version) {
         throw new ManifestError(`components.${type}[${entry.path}] requires a version pin`);
+      }
+    }
+  }
+  // install_flags (optional): package-specific CLI flags the installer accepts and forwards to
+  // install_entry. Each must be a `--`-prefixed name and must NOT shadow a standard flag.
+  if (meta.install_flags != null) {
+    if (!Array.isArray(meta.install_flags)) throw new ManifestError('install_flags must be a list');
+    for (const f of meta.install_flags) {
+      if (!f || typeof f.name !== 'string' || !f.name.startsWith('--')) {
+        throw new ManifestError("install_flags[] entry needs a string 'name' starting with '--'");
+      }
+      if (STANDARD_FLAG_NAMES.has(f.name)) {
+        throw new ManifestError(`install_flags cannot re-declare a standard flag: ${f.name}`);
       }
     }
   }

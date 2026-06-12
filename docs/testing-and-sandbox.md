@@ -61,9 +61,10 @@ Sandbox-backed suites, one per area (a reachable satellite DB is required):
 | `tests/skill-recipe.test.mjs` | skill row fields, org+locked default + `install_type`/`--install-skills-as-user` overrides, asset copy + idempotency, C5 lock handling both ways, dry-run zero-write, removal, recipe lifecycle, negatives (missing SKILL.md, version pin, invalid `install_type`) |
 | `tests/agent.test.mjs` | minimal-row + DB defaults, recipe name→uuid resolution, attach filtering (missing/inactive skipped), stale-link sync both directions, clean removal of row + joins |
 | `tests/job.test.mjs` | id minting + canon columns, `script_args` under `INSTALL_BASE_DIR`, schedule aliases + raw cron, stable id across re-runs, C12 `requires` → `PrereqError` |
-| `tests/runner.test.mjs` | preflight pass/fail, `install_entry` flag forwarding across all modes, multi-valued `--only` |
+| `tests/runner.test.mjs` | preflight pass/fail, `install_entry` flag forwarding across all modes (incl. a declared package flag), multi-valued `--type` |
 | `tests/service.test.mjs` | template renderers (127.0.0.1 binding, TLS, white-label branch, secrets excluded), `nextFreePort`, dry-run no-write, sandbox-skip, secret hygiene |
-| `tests/filter.test.mjs` | `--include`/`--exclude` matcher semantics (exact vs regex, compose with `--only`, zero-match exit 0, invalid regex exit 2) |
+| `tests/filter.test.mjs` | `--include`/`--exclude` matcher semantics (exact vs regex, compose with `--type`, zero-match exit 0, invalid regex exit 2) |
+| `tests/options.test.mjs` | CLI option validation (D-30) for both entries: `--help` usage/exit 0, unsupported option + value-flag-without-value → exit 2, backup's "not supported by backup", undeclared package flag rejected — **DB-free** |
 | `tests/install-log.test.mjs` | install.json bookkeeping (D-24): entry shape, ALREADY date preservation, dry-run/status no-write, partial + full uninstall removal, corrupt-log recovery, `PACKAGES_DIR` override — **DB-free** |
 
 Each suite provisions its own sandbox; several also run a scoped `--sandbox --lifecycle`.
@@ -75,7 +76,7 @@ Each suite provisions its own sandbox; several also run a scoped `--sandbox --li
 
 - **Services aren't sandbox-covered** (no nginx/PM2 model) — `--sandbox` skips them
   entirely. The live apply/remove paths are verified by an explicit, authorized,
-  non-sandbox smoke test (`--only=services` install + uninstall of the sample service).
+  non-sandbox smoke test (`--type=services` install + uninstall of the sample service).
 - The sandbox **seeds** prerequisite skills from live; if a package's agent references a
   skill not present on the satellite, attach is skipped (by design) — keep agents' skills
   within the installed/seeded set or have the package install them first.

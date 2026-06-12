@@ -42,7 +42,7 @@ to `.`). See `examples/bundle/` for a complete sample with every component type.
 node scripts/backup.mjs                          # → ${BACKUP_BASE_DIR:-~/backups}/<satellite-id>-backup/
 node scripts/backup.mjs /path/to/backups         # positional arg overrides BACKUP_BASE_DIR
 node scripts/backup.mjs --name=my-snapshot       # package/dir name override
-node scripts/backup.mjs --only=skills,recipes --include='^acme-' --json
+node scripts/backup.mjs --type=skills,recipes --include='^acme-' --json
 node scripts/install.mjs ~/backups/<name>        # RESTORE — a backup is an installable package
 ```
 
@@ -56,8 +56,8 @@ format can't express (e.g. a job whose script lives outside `INSTALL_BASE_DIR`) 
 skill with no recoverable version is pinned `0.0.0` with a warning.
 
 It is **live and read-only against the DB** by design — there is no `--dry-run`, `--status`,
-`--uninstall`, or `--sandbox` (those flags are rejected). `--only`/`--include`/`--exclude`/`--json`
-work exactly as for install (`services` are not DB-resident and not covered).
+`--uninstall`, or `--sandbox` (those flags are rejected). `--type`/`--include`/`--exclude`/`--json`
+work exactly as for install (`services` are not DB-resident and not covered); `--help` prints usage.
 
 ## The package manifest (`ai1-package.yaml`)
 
@@ -119,13 +119,20 @@ Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manif
 | `--uninstall` | Remove components in reverse order. |
 | `--respect-locks` | Skip locked skills instead of auto-unlocking them. |
 | `--install-skills-as-user` | Register **all** skills as unlocked `user` skills (overrides the org default and any per-skill `install_type`). |
-| `--only=<types>` | Process only the listed types — one or more of `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated (e.g. `--only=skills,recipes`). |
+| `--type=<types>` | Process only the listed types — one or more of `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated (e.g. `--type=skills,recipes`). |
 | `--include=<pat>` | Process only components whose name matches `<pat>` (see below). |
 | `--exclude=<pat>` | Skip components whose name matches `<pat>`. Applied after `--include`. |
 | `--sandbox` | Provision an isolated schema (cloned from live) + temp dir, install there, tear down. Services are skipped. |
 | `--keep` | With `--sandbox`: keep the schema + temp dir for inspection. |
 | `--lifecycle` | With `--sandbox`: run install → status → idempotency → uninstall → reinstall assertions. |
 | `--json` | Machine-readable result output. |
+| `--help` | Print usage and exit `0`. |
+
+**Option handling.** Both CLIs validate their options before doing any work: an **unsupported
+option**, or a **value flag given no value** (e.g. a bare `--type` or empty `--type=`), prints a
+message and exits `2` without proceeding. In `install`, the supported set is the standard flags above
+**plus** any package-specific flags the manifest declares in `install_flags` (forwarded to
+`install_entry`); anything else is rejected. `--help` short-circuits everything and prints usage.
 
 Result verdicts: `INSTALL-OK | ALREADY-INSTALLED | INSTALL-PARTIAL | INSTALL-FAIL | PREREQ-MISSING
 | LOCKED-ROW`. Exit codes: `0` ok/already · `1` fail/prereq/lock · `2` transport (DB/manifest/preflight).
@@ -134,7 +141,7 @@ Result verdicts: `INSTALL-OK | ALREADY-INSTALLED | INSTALL-PARTIAL | INSTALL-FAI
 
 `--include` / `--exclude` narrow which components a run touches, **by name** — the same identifier the
 summary prints (every component type by its `name`). They apply to every mode
-(install, uninstall, status) and compose with `--only` (type scope).
+(install, uninstall, status) and compose with `--type` (type scope).
 
 The value is a **regular expression**, with one special case: **if it contains no regex
 metacharacters (`` . ^ $ * + ? ( ) [ ] { } | \ ``) it is an exact, anchored match** — `foo` behaves
@@ -148,7 +155,7 @@ node scripts/install.mjs <pkg> --include=my-skill                 # exact match 
 node scripts/install.mjs <pkg> --include='^acme-'                 # everything whose name starts acme-
 node scripts/install.mjs <pkg> --include='skill|recipe'           # substring/alternation (regex)
 node scripts/install.mjs <pkg> --exclude='-job$' --status         # status of all but *-job components
-node scripts/install.mjs <pkg> --only=skills --include='^acme-'   # acme- skills only
+node scripts/install.mjs <pkg> --type=skills --include='^acme-'   # acme- skills only
 ```
 
 Because `--include` / `--exclude` start with `--`, they are also **forwarded to a package's
