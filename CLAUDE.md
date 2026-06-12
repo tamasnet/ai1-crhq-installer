@@ -37,8 +37,8 @@ Install log: `${PACKAGES_DIR:-~/packages}/install.json` (D-24) — updated on re
 Self-test (no live writes): `node scripts/install.mjs <package> --sandbox --lifecycle`.
 
 ## Safety & workflow
-- **Never `git push`.** Trunk branch is `main`. Commit only when asked; show the diff as an
-  artifact before committing; commit trailer `Co-Authored-By: CRHQ <noreply@crhq.ai>`.
+- **`git push` only when explicitly asked.** Trunk branch is `main`. Commit only when asked;
+  show the diff as an artifact before committing; commit trailer `Co-Authored-By: CRHQ <noreply@crhq.ai>`.
 - **Do not install onto the live satellite** unless explicitly told — all testing is sandbox-only
   (isolated schema + temp dir via `--sandbox`).
 - Never modify or read the *contents* of core satellite files (`server/`, …); importing
