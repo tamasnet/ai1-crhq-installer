@@ -1,6 +1,6 @@
 ---
 name: ai1-crhq-installer
-description: Install a versioned package of CRHQ resources — skills, recipes, agents, background jobs — and standalone services (nginx + PM2 web apps) into a CRHQ satellite from a declarative ai1-package.yaml manifest. DB-direct via knex, idempotent, and sandbox-testable. Use to bulk-install or update a packaged set of CRHQ resources, deploy a service alongside a satellite, or build/test such a package.
+description: Install a versioned package of CRHQ resources — skills, recipes, agents, background jobs — and standalone services (nginx + PM2 web apps) into a CRHQ satellite from a declarative ai1-package.yaml manifest, or back up the satellite's current resources to such a package. DB-direct via knex, idempotent, and sandbox-testable. Use to bulk-install or update a packaged set of CRHQ resources, deploy a service alongside a satellite, build/test such a package, or take a restorable backup of the satellite's skills/recipes/agents/jobs.
 ---
 
 # Ai1 CRHQ Installer
@@ -35,6 +35,29 @@ node scripts/install.mjs <package> --uninstall           # remove (reverse order
 
 `<package>` is a directory containing an `ai1-package.yaml` (or a path to the file itself; defaults
 to `.`). See `examples/bundle/` for a complete sample with every component type.
+
+## Backup (the reverse of install)
+
+```bash
+node scripts/backup.mjs                          # → ${BACKUP_BASE_DIR:-~/backups}/<satellite-id>-backup/
+node scripts/backup.mjs /path/to/backups         # positional arg overrides BACKUP_BASE_DIR
+node scripts/backup.mjs --name=my-snapshot       # package/dir name override
+node scripts/backup.mjs --only=skills,recipes --include='^acme-' --json
+node scripts/install.mjs ~/backups/<name>        # RESTORE — a backup is an installable package
+```
+
+`backup` reads the satellite's current DB state and writes it out as an installable package in
+the same `ai1-package.yaml` manifest format. **Scope:** active `org`/`user` skills (platform
+`system` skills excluded), active recipes, non-system agents, non-system script jobs. Each run
+**overwrites the package dir in place** — but builds in a staging dir and swaps only after the
+generated manifest validates, so a failed run never damages the previous backup. Components the
+format can't express (e.g. a job whose script lives outside `INSTALL_BASE_DIR`) are reported as
+`BACKUP-SKIP` with a warning, never fatally. The version is date-based (e.g. `2026.6.12`); a
+skill with no recoverable version is pinned `0.0.0` with a warning.
+
+It is **live and read-only against the DB** by design — there is no `--dry-run`, `--status`,
+`--uninstall`, or `--sandbox` (those flags are rejected). `--only`/`--include`/`--exclude`/`--json`
+work exactly as for install (`services` are not DB-resident and not covered).
 
 ## The package manifest (`ai1-package.yaml`)
 
@@ -142,6 +165,9 @@ whether to honor them for its own steps.
   updates `${PACKAGES_DIR}/install.json` with per-component name/version/date/source entries;
   dry-run and status never touch it, and uninstalled entries are removed outright. Redirected to a
   throwaway dir by `--sandbox`.
+- `BACKUP_BASE_DIR` — parent dir under which `backup` writes its package dir (default `~/backups`;
+  the CLI's positional argument overrides it). `SATELLITE_ID` (when set) names the default backup
+  package `<satellite-id>-backup`.
 
 ## Library API
 
@@ -175,7 +201,8 @@ ai1-crhq-installer/
 ├── SKILL.md
 ├── scripts/
 │   ├── install.mjs        # CLI entry — generic manifest runner
-│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, run, sandbox,
+│   ├── backup.mjs         # CLI entry — backup (reverse of install): DB state → installable package
+│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, run, backup, sandbox,
 │       ├── core/          #   index  +  core/{skill,recipe,agent,job,service}
 │       └── vendor/        #   yaml.mjs — vendored single-file YAML parser (zero npm install)
 ├── examples/bundle/       # complete sample package (every component type)

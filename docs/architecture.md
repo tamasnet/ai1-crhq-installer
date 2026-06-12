@@ -105,6 +105,11 @@ install.mjs [<package>] [flags]          # <package> = dir with ai1-package.yaml
   --sandbox        run into a throwaway isolated schema + temp dir (self-contained)
     --keep         preserve the sandbox (schema + temp dir) for inspection
     --lifecycle    run install→status→idempotency→uninstall→reinstall assertions
+
+backup.mjs [<backup-base-dir>] [flags]   # reverse of install — see §10; default base = BACKUP_BASE_DIR
+  --name=<pkg>     package (and output dir) name; default <satellite-id>-backup (D-27)
+  --only / --include / --exclude / --json   same semantics as install (services never apply)
+                   # no --dry-run/--status/--uninstall/--sandbox: live, read-only, non-destructive
 ```
 
 ## 6. Configuration
@@ -119,6 +124,8 @@ INSTALL_BASE_DIR || join(CRHQ_BASE_DIR, 'user-skills') || '/opt/projects/crhq-sa
 INSTALL_SCHEMA || SANDBOX_SCHEMA || null
 // Where the install log (install.json) lives:
 PACKAGES_DIR || join(homedir(), 'packages')
+// BACKUP_BASE_DIR = the parent dir under which `backup` writes its package dir (§11):
+BACKUP_BASE_DIR || join(homedir(), 'backups')      // positional CLI arg overrides
 ```
 
 **Install log (D-24):** every real install/uninstall updates `${PACKAGES_DIR}/install.json` —
@@ -176,7 +183,36 @@ fs, not nginx/PM2). Never run PM2 against `crhq-satellite`.
 - Secrets from `service.yaml` `env` → the service `.env` only; never echoed to logs.
 - Prereq checks before writes (C12); halt with an actionable message + exit code.
 
-## 10. Dependencies
+## 10. Backup — the reverse of install (`backup.mjs`)
+
+`backup.mjs` reads the satellite's CRHQ-resident components from the DB and writes them back
+out as an **installable package** in the same `ai1-package.yaml` manifest format, under
+`${BACKUP_BASE_DIR}/<name>/`. Restore = `install.mjs <that dir>`. Always live and
+non-destructive (DB reads only; fs writes only under `BACKUP_BASE_DIR`) — hence no dry-run,
+sandbox, or lock handling. Module: `lib/backup.mjs` + `export*` primitives co-located in
+`lib/core/*` (signatures: `api-design.md` §14).
+
+- **Scope (D-25):** active `org`/`user` skills (not platform `system` skills), active recipes,
+  non-system active agents, non-system jobs. Inactive rows are out of scope (the manifest
+  can't express `is_active:false`).
+- **Reconstruction:** SKILL.md is regenerated from the DB row (DB content authoritative;
+  version recovered from frontmatter in the content or the on-disk SKILL.md, else `0.0.0` +
+  warning) and the skill tree copies from `skill_dir`. Agents reverse the D-23 mapping
+  (`agents.key → name`, `agents.name → display_name`) with joins resolved to names; jobs
+  reverse-resolve `script_args` to a BASE-relative `script`. A component the format can't
+  express (non-script job, script outside `INSTALL_BASE_DIR`, lossy agent fields) is
+  `BACKUP-SKIP`ped/warned, never fatal (D-28).
+- **Overwrite-in-place (D-26):** each run replaces `${BACKUP_BASE_DIR}/<name>/`, but the
+  package is built in a staging dir and swapped in only after it passes the same
+  `loadManifest()` validation an install would run — a failed backup never clobbers the
+  previous good one.
+- **Identity (D-27):** package name defaults to `<satellite-id>-backup` (`SATELLITE_ID` env,
+  else hostname minus `crhq-`); `--name` overrides. Version is date-based (`2026.6.12`),
+  minted at the CLI entry.
+- Services are **out of scope in v1** (not DB-resident; their source of truth is the original
+  package).
+
+## 11. Dependencies
 
 - **CRHQ deps (the only external ones):** `server/db/knex.js` (DB accessor), the satellite
   DB, and nginx/PM2 on the host for services.

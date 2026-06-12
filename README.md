@@ -13,6 +13,7 @@ No `npm install` needed — zero runtime dependencies (`yaml` is vendored; knex/
 ```bash
 node scripts/install.mjs examples/bundle --sandbox --lifecycle   # isolated full-lifecycle self-test
 node scripts/install.mjs examples/bundle --dry-run               # preview, zero writes
+node scripts/backup.mjs                                          # backup: DB state → installable package in ~/backups
 ```
 
 ## Status

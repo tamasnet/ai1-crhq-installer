@@ -41,6 +41,16 @@ history of `decisions-and-open-questions.md`.)
 | **OQ-U3** | `--json` machine-readable report | Cheap; enables automation over the verdict taxonomy. |
 | **D-7 / C7** | `--dry-run` = zero side effects; output contains "would…" and >200 bytes | It's the built-in pre-flight check. |
 
+## Backup (`backup.mjs` — the reverse of install)
+
+| ID | Decision | Why |
+|----|----------|-----|
+| **D-25** | Backup scope = active `org`+`user` skills, active recipes, non-system active agents, non-system jobs; platform `system` components and inactive rows are out of scope; **services excluded in v1** | System components are restored by the platform, not a package; the manifest can't express `is_active:false` (restoring one would silently re-activate it); services aren't DB-resident and their source of truth is the original package. |
+| **D-26** | Output = `${BACKUP_BASE_DIR}/<name>/` (env, default `~/backups`; positional arg overrides), **overwritten in place** each run — built in a staging dir and swapped only after the generated manifest passes the real `loadManifest()` | One current snapshot, user-managed rotation (git/rsync hold history). The stage-validate-swap makes a failed backup unable to clobber the previous good one, and guarantees the output is installable at parse level. |
+| **D-27** | Package identity: name = `<satellite-id>-backup` (`SATELLITE_ID` env, else hostname minus `crhq-`; `--name` overrides); version = date-based (`YYYY.M.D`), minted at the CLI entry; a skill with no recoverable frontmatter version pins `0.0.0` + warning | Multi-satellite backups distinguishable by default; the date names the snapshot; `0.0.0` keeps the manifest valid (skill version pins are required) without inventing fake versions. |
+| **D-28** | Lossiness is explicit, never fatal: a component the format can't express (non-script job, script outside `INSTALL_BASE_DIR`) → `BACKUP-SKIP` (severity 0) + warning; agent fields without manifest equivalents (instructions, capabilities, …) are warned and ride DB defaults on restore | Backup is best-effort over a live DB that contains more shapes than the manifest format models; silent omission would read as "covered", aborting would block the rest of the backup. |
+| **D-29** | YAML **emission** is hand-rolled (`dumpYaml`, ~60 lines): plain scalars only when provably safe, JSON-double-quoted otherwise (valid YAML); round-trip tested against the vendored parser | Extends D-6 — the vendored bundle only exports `parse`, and regenerating it for `stringify` adds weight for shapes we fully control. JSON-escape fallback makes it correct by construction. |
+
 ## Services
 
 | ID | Decision | Why |

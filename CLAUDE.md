@@ -30,11 +30,16 @@ the live service apply/remove paths are smoke-tested.
   **Skills default to org + `locked`** (`skill_type:'org'`); per-skill `install_type: user` in the manifest entry, or `--install-skills-as-user` (wins), registers them unlocked as `user` skills. Assets stay under `INSTALL_BASE_DIR` either way (D-22).
 
 ## Code map
-`scripts/install.mjs` (CLI) + `scripts/lib/` per `api-design.md`:
-`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, install-log, run, sandbox}.mjs`
+`scripts/install.mjs` + `scripts/backup.mjs` (CLIs) + `scripts/lib/` per `api-design.md`:
+`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, install-log, run, backup, sandbox}.mjs`
 + `core/{skill,recipe,agent,job,service}.mjs` + `vendor/yaml.mjs`.
 Install log: `${PACKAGES_DIR:-~/packages}/install.json` (D-24) — updated on real installs/uninstalls only.
 Self-test (no live writes): `node scripts/install.mjs <package> --sandbox --lifecycle`.
+**Backup** (D-25..D-29): `node scripts/backup.mjs [<base-dir>] [--name= --only= --include= --exclude= --json]`
+— reverse of install: reads active org/user skills + recipes + non-system agents/jobs from the DB and
+writes an installable package to `${BACKUP_BASE_DIR:-~/backups}/<name>/` (default name
+`<satellite-id>-backup`), overwrite-in-place via stage→validate→swap. Live + read-only on the DB
+(no dry-run/sandbox); restore = `install.mjs <backup-dir>`.
 
 ## Safety & workflow
 - **`git push` only when explicitly asked.** Trunk branch is `main`. Commit only when asked;

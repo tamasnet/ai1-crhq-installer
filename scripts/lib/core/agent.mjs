@@ -3,6 +3,9 @@
 // def.display_name → agents.name. Minimal insert (other columns ride DB defaults). Only
 // existing+active skills attach; recipe names resolve to uuids. Re-run produces zero drift;
 // stale links are removed.
+import { join } from 'path';
+import { writeIfChanged } from '../fs.mjs';
+import { dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 
 export async function upsertAgent(ctx, def) {
@@ -82,6 +85,41 @@ export async function removeAgent(ctx, nameOrDef) {
   await db('agent_recipes').where({ agent_key: key }).del();
   await db('agents').where({ key }).del();
   return res(key, VERDICT.OK, 'removed');
+}
+
+// exportAgent — backup: write the row back to package form (the reverse of the D-23 mapping:
+// agents.key → `name`, agents.name → `display_name`). Joins resolve to names; an agent_recipes
+// link whose recipe row is gone simply drops out of the join. Fields the manifest can't express
+// (instructions, capabilities, system_prompt_path, non-default provider) are warned about, not
+// exported — they ride DB defaults on restore (D-28).
+export async function exportAgent(ctx, row, { outRoot, relPath }) {
+  const { db, log } = ctx;
+  const key = row.key;
+  const skills = (await db('agent_skills').where({ agent_key: key }).orderBy('skill_name').select('skill_name'))
+    .map((r) => r.skill_name);
+  const recipes = (await db('agent_recipes').where({ agent_key: key })
+    .join('recipes', 'recipes.id', 'agent_recipes.recipe_id').orderBy('recipes.name').select('recipes.name'))
+    .map((r) => r.name);
+
+  const lossy = [];
+  if (row.instructions) lossy.push('instructions');
+  if (row.system_prompt_path) lossy.push('system_prompt_path');
+  if (row.capabilities && JSON.stringify(row.capabilities) !== '[]') lossy.push('capabilities');
+  if (row.provider && row.provider !== 'claude') lossy.push(`provider=${row.provider}`);
+  if (lossy.length) log.warn(`agent ${key}: not representable in the manifest — ${lossy.join(', ')} (DB defaults on restore)`);
+
+  const def = {
+    name: key,
+    display_name: row.name,
+    ...(row.description ? { description: row.description } : {}),
+    mode: row.mode || 'cli',
+    ...(row.default_model ? { default_model: row.default_model } : {}),
+    ...(row.icon ? { icon: row.icon } : {}),
+    ...(skills.length ? { skills } : {}),
+    ...(recipes.length ? { recipes } : {}),
+  };
+  writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: false });
+  return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath } };
 }
 
 export async function statusAgent(ctx, nameOrDef) {

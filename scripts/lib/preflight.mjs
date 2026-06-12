@@ -1,5 +1,6 @@
-// preflight.mjs — fail fast before any component work: confirm the DB is reachable and (for
-// write modes) that INSTALL_BASE_DIR is writable. A failure is a transport-class error → exit 2.
+// preflight.mjs — fail fast before any component work: confirm the DB is reachable and that the
+// directory the mode writes into is writable (INSTALL_BASE_DIR for installs, BACKUP_BASE_DIR for
+// backups). A failure is a transport-class error → exit 2.
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 
@@ -14,14 +15,16 @@ export async function preflight(ctx) {
     throw new PreflightError(`database not reachable: ${e.message}`);
   }
 
-  if (ctx.mode !== 'status') {                 // status is read-only — no write probe needed
-    try {
-      mkdirSync(ctx.BASE, { recursive: true });
-      const probe = join(ctx.BASE, `.ai1-write-probe-${process.pid}`);
-      writeFileSync(probe, 'ok');
-      rmSync(probe, { force: true });
-    } catch (e) {
-      throw new PreflightError(`INSTALL_BASE_DIR not writable (${ctx.BASE}): ${e.message}`);
-    }
+  if (ctx.mode === 'status') return;           // status is read-only — no write probe needed
+
+  // Backup reads the DB and writes only under BACKUP_BASE_DIR; installs write under BASE.
+  const [dir, label] = ctx.mode === 'backup' ? [ctx.BACKUP_BASE, 'BACKUP_BASE_DIR'] : [ctx.BASE, 'INSTALL_BASE_DIR'];
+  try {
+    mkdirSync(dir, { recursive: true });
+    const probe = join(dir, `.ai1-write-probe-${process.pid}`);
+    writeFileSync(probe, 'ok');
+    rmSync(probe, { force: true });
+  } catch (e) {
+    throw new PreflightError(`${label} not writable (${dir}): ${e.message}`);
   }
 }

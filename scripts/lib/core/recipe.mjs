@@ -1,4 +1,7 @@
 // core/recipe.mjs — recipes table (uuid PK auto, name UNIQUE). description/content are NOT NULL.
+import { join } from 'path';
+import { writeIfChanged } from '../fs.mjs';
+import { dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 
 export async function upsertRecipe(ctx, def) {
@@ -28,6 +31,15 @@ export async function removeRecipe(ctx, nameOrDef) {
   if (DRY_RUN) { log.dry(`delete recipe ${name}`); return res(name, VERDICT.OK, 'removed'); }
   await db('recipes').where({ name }).del();
   return res(name, VERDICT.OK, 'removed');
+}
+
+// exportRecipe — backup: write the row back to package form (frontmatter + body .md). The DB
+// has no recipe version column, so no version pin is emitted (it's optional for recipes).
+export async function exportRecipe(ctx, row, { outRoot, relPath }) {
+  const fm = { name: row.name, description: row.description || '' };
+  const md = `---\n${dumpYaml(fm)}---\n\n${(row.content || '').replace(/^\n+/, '')}`;
+  writeIfChanged(join(outRoot, relPath), md, { dryRun: false });
+  return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath } };
 }
 
 export async function statusRecipe(ctx, nameOrDef) {

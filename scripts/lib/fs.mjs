@@ -37,6 +37,14 @@ function writeBufIfChanged(path, buf, dryRun) {
   return true;
 }
 
+// Filesystem-safe file/dir base name for a component name (backup path): keep [A-Za-z0-9._-],
+// map every other run of characters to '-'; never empty or dot-leading. Collisions between two
+// distinct names that sanitize identically are deduped by the caller.
+export function safeName(name) {
+  const s = String(name).replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '');
+  return s || 'unnamed';
+}
+
 export function removeTree(path, { dryRun = false } = {}) {
   if (!path || !existsSync(path)) return false;
   if (dryRun) return true;

@@ -1,7 +1,8 @@
 // core/skill.mjs — skills table (PK name) + assets under INSTALL_BASE_DIR/<key> (C3/C5/C6).
 import { join } from 'path';
-import { existsSync } from 'fs';
-import { copyTree, removeTree } from '../fs.mjs';
+import { existsSync, readFileSync } from 'fs';
+import { copyTree, removeTree, writeIfChanged } from '../fs.mjs';
+import { parseFrontmatter, dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 
 export async function upsertSkill(ctx, def) {
@@ -81,6 +82,41 @@ export async function removeSkill(ctx, nameOrDef) {
   await db('skills').where({ name }).del();
   removeTree(dir, { dryRun: false });
   return result(name, VERDICT.OK, 'removed');
+}
+
+// exportSkill — backup: reconstruct the package-form skill from a live row (the reverse of
+// upsertSkill). The DB row is authoritative for name/description/content; the frontmatter version
+// is recovered from the content's own frontmatter (if it carries one) or the on-disk SKILL.md in
+// skill_dir, else pinned 0.0.0 with a warning (D-27). The skill tree copies from skill_dir first;
+// SKILL.md is regenerated last so DB content wins over a stale file.
+export async function exportSkill(ctx, row, { outRoot, relPath }) {
+  const { log } = ctx;
+  const destDir = join(outRoot, relPath);
+  const files = row.skill_dir && existsSync(row.skill_dir) ? copyTree(row.skill_dir, destDir, { dryRun: false }) : 0;
+
+  let fm = {};
+  let body = row.content || '';
+  const dbParsed = tryFrontmatter(body);
+  if (dbParsed.meta.name || dbParsed.meta.version || dbParsed.meta.description) {
+    ({ meta: fm, body } = dbParsed);                       // content was a full SKILL.md
+  } else if (row.skill_dir && existsSync(join(row.skill_dir, 'SKILL.md'))) {
+    fm = tryFrontmatter(readFileSync(join(row.skill_dir, 'SKILL.md'), 'utf8')).meta;
+  }
+  let version = fm.version != null ? String(fm.version) : null;
+  if (!version) {
+    version = '0.0.0';
+    log.warn(`skill ${row.name}: no recoverable version (content/SKILL.md frontmatter) — pinned 0.0.0`);
+  }
+  const meta = { ...fm, name: row.name, version, description: row.description || fm.description || '' };
+  const md = `---\n${dumpYaml(meta)}---\n\n${body.replace(/^\n+/, '')}`;
+  writeIfChanged(join(destDir, 'SKILL.md'), md, { dryRun: false });
+
+  const entry = { path: relPath, version, ...(row.skill_type === 'user' ? { install_type: 'user' } : {}) };
+  return { ...result(row.name, VERDICT.BACKUP_OK, 'exported', files + 1), entry };
+}
+
+function tryFrontmatter(text) {
+  try { return parseFrontmatter(text); } catch { return { meta: {}, body: text }; }
 }
 
 export async function statusSkill(ctx, nameOrDef) {

@@ -1,7 +1,8 @@
 // context.mjs — the single place flags are parsed and env resolved (D-12). createContext() returns
 // a bound context shared by the CLI runner and any package install_entry hook, so both exercise
 // identical code paths.
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { homedir } from 'os';
 import { getDb, closeDb } from './db.mjs';
 import { makeLogger, SEVERITY } from './log.mjs';
 import { resolvePackagesDir } from './install-log.mjs';
@@ -17,11 +18,17 @@ export function resolveSchema() {
   return process.env.INSTALL_SCHEMA || process.env.SANDBOX_SCHEMA || null;
 }
 
+// BACKUP_BASE_DIR = the parent dir under which `backup` writes its package dir (D-26) — the
+// backup-side mirror of INSTALL_BASE_DIR.
+export function resolveBackupBase() {
+  return process.env.BACKUP_BASE_DIR || join(homedir(), 'backups');
+}
+
 export function parseFlags(argv) {
   const flags = {
     mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false, INSTALL_SKILLS_AS_USER: false,
     ONLY: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
-    JSON: false, packageArg: '.',
+    JSON: false, NAME: null, packageArg: '.',
   };
   for (const a of argv) {
     if (a === '--uninstall') flags.mode = 'uninstall';
@@ -40,20 +47,25 @@ export function parseFlags(argv) {
     }
     else if (a.startsWith('--include=')) flags.INCLUDE = a.slice('--include='.length);
     else if (a.startsWith('--exclude=')) flags.EXCLUDE = a.slice('--exclude='.length);
+    else if (a.startsWith('--name=')) flags.NAME = a.slice('--name='.length);   // backup: package name override (D-27)
     else if (a.startsWith('--')) { /* package-specific flag — forwarded to install_entry, ignored here */ }
     else flags.packageArg = a;
   }
   return flags;
 }
 
-export async function createContext(argv) {
+export async function createContext(argv, opts = {}) {
   const flags = parseFlags(Array.isArray(argv) ? argv : []);
+  if (opts.mode) flags.mode = opts.mode;   // CLI entries pick the mode family (backup.mjs → 'backup')
   const log = makeLogger({ dryRun: flags.DRY_RUN });
   const ctx = {
     ...flags,
     BASE: resolveBase(),
     SCHEMA: resolveSchema(),
     PACKAGES_DIR: resolvePackagesDir(),
+    // Backup destination parent: positional arg (backup mode) > BACKUP_BASE_DIR > ~/backups.
+    BACKUP_BASE: flags.mode === 'backup' && flags.packageArg !== '.'
+      ? resolve(flags.packageArg) : resolveBackupBase(),
     db: getDb(),
     log,
     results: [],
@@ -77,11 +89,12 @@ function report(ctx) {
   const exitCode = mode === 'status' ? 0 : worst;
 
   if (ctx.JSON) {
-    console.log(JSON.stringify({ mode, exitCode, results }, null, 2));
+    console.log(JSON.stringify({ mode, exitCode, ...(ctx.reportExtra || {}), results }, null, 2));
   } else {
     log.summary(results);
     if (exitCode === 0 && mode === 'install') log.installComplete();
     else if (exitCode === 0 && mode === 'uninstall') log.uninstallComplete();
+    else if (exitCode === 0 && mode === 'backup') log.backupComplete();
     else if (mode === 'status') log.info('Status check complete.');
     else log.error(`Completed with ${results.filter((r) => (SEVERITY[r.verdict] ?? 1) > 0).length} failure(s).`);
   }

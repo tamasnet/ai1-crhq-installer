@@ -11,6 +11,9 @@ export const VERDICT = {
   LOCKED: 'LOCKED-ROW',
   STATUS: 'STATUS',          // informational (status mode); never affects exit code
   ABSENT: 'NOT-INSTALLED',   // status: component not present
+  BACKUP_OK: 'BACKUP-OK',    // backup: component exported
+  BACKUP_SKIP: 'BACKUP-SKIP',// backup: component not representable in the manifest — skipped (D-28)
+  BACKUP_FAIL: 'BACKUP-FAIL',// backup: component export failed
 };
 
 // Severity → exit-code contribution (api-design §13). 0 = success/already; 1 = failure class.
@@ -23,6 +26,9 @@ export const SEVERITY = {
   [VERDICT.PREREQ]: 1,
   [VERDICT.PARTIAL]: 1,
   [VERDICT.FAIL]: 1,
+  [VERDICT.BACKUP_OK]: 0,
+  [VERDICT.BACKUP_SKIP]: 0,   // "can't be expressed in the format" is not a failure — it is warned
+  [VERDICT.BACKUP_FAIL]: 1,
 };
 
 export function makeLogger({ dryRun = false } = {}) {
@@ -38,6 +44,7 @@ export function makeLogger({ dryRun = false } = {}) {
     // C7: completion strings the harness greps — do not paraphrase.
     installComplete: () => out('✅ Package installed successfully.'),
     uninstallComplete: () => out('Uninstall complete.'),
+    backupComplete: () => out('✅ Backup complete.'),
     summary(results) {
       out(`${PREFIX} ── summary ──`);
       for (const r of results) {
