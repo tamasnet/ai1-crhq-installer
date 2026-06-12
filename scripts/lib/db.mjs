@@ -1,6 +1,6 @@
 // db.mjs — canonical knex wrapper (C1). DB access goes ONLY through the hardcoded import below
 // so the sandbox loader hook can intercept it; getDb() additionally honors INSTALL_SCHEMA via a
-// native knex searchPath (B4 / OQ-U4), which is how the built-in --sandbox redirects writes.
+// native knex searchPath (OQ-U4), which is how the built-in --sandbox redirects writes.
 import { getDb as getCrhqDb, closeDb as closeCrhqDb } from '/opt/projects/crhq-satellite/server/db/knex.js';
 import { createRequire } from 'module';
 

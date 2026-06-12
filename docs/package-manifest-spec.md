@@ -1,11 +1,14 @@
-# Ai1 Package Manifest — Specification (v0.2)
+# Ai1 Package Manifest — Specification (v1.0)
 
-The `ai1-package.yaml` manifest format consumed by `ai1-crhq-installer`.
+The `ai1-package.yaml` manifest format: how a versioned bundle of agentic resources —
+skills, recipes, agents, jobs, services — is described for coordinated, declarative install
+by a compliant installer. The format itself is platform-independent.
 
-> **Scope discipline:** this spec defines the **declarative manifest only**.
-> Cross-cutting *implementation* concerns — name-PK upserts, idempotency,
-> `INSTALL_BASE_DIR`, the sandbox gate, secret scanning, the verdict taxonomy — are **utility
-> responsibilities, not manifest fields**. They live in `canon-conventions.md`. See §7.
+> **Scope discipline:** this spec defines the **declarative manifest only**. How an installer
+> persists components (database tables, file trees, process managers), its idempotency and
+> safety mechanics, and its testing model are **installer responsibilities, not manifest
+> fields** (§7). The CRHQ implementation of those responsibilities is documented separately
+> in `canon-conventions.md` and `integration-reference.md`.
 
 ---
 
@@ -14,17 +17,27 @@ The `ai1-package.yaml` manifest format consumed by `ai1-crhq-installer`.
 - **Package** — a versioned, self-contained directory tree bundling one or more
   **components** (skills, recipes, agents, jobs, services) for coordinated install.
 - **Package manifest** — a single `ai1-package.yaml` at the tree root; the canonical
-  machine-readable description. This is what `ai1-crhq-installer` consumes.
+  machine-readable description. This is what the installer consumes.
 - **Component** — one bundled item, declared in the manifest's `components` inventory and
   living in its type's directory.
 - **Dependency** — an *external* prerequisite **package** that is **not** bundled, only
-  declared so the utility can verify/await it.
-- **The utility owns the lifecycle.** `ai1-crhq-installer` reads the manifest and performs
-  the standard install/status/uninstall declaratively. A package only ships an
-  `install_entry` script for steps the utility *cannot infer* (OAuth handshake, data seed,
-  starting a process). Standard flags are never re-implemented per package.
+  declared so the installer can verify/await it.
+- **The installer owns the lifecycle.** It reads the manifest and performs the standard
+  install/status/uninstall declaratively. A package only ships an `install_entry` script for
+  steps the installer *cannot infer* (an OAuth handshake, a data seed, starting a process).
+  Standard flags are never re-implemented per package.
 
-The manifest is the runner's input; `install_entry` is the escape hatch.
+The manifest is the installer's input; `install_entry` is the escape hatch.
+
+### Component types
+
+| Type | What it is |
+|------|-----------|
+| **Skill** | A capability the platform's agents can invoke: instructions (`SKILL.md`) plus optional scripts and tests. |
+| **Recipe** | A reusable piece of agent-facing content: a named, described Markdown document. |
+| **Agent** | A configured agent persona: identity plus references to the skills and recipes it uses. |
+| **Job** | A scheduled (cron-style) background task that runs a script shipped by one of the bundled skills. |
+| **Service** | A standalone long-running web application, deployed behind the platform's reverse proxy and process manager. |
 
 ---
 
@@ -54,7 +67,7 @@ The manifest is the runner's input; `install_entry` is the escape hatch.
 **Rules**
 - Root `scripts/` is for package orchestration only; component scripts live in their own
   subtree (e.g. `skills/plaud-ingest/scripts/`).
-- Optional unused component dirs — empty `agents/`, `jobs/`, etc will be ignored.
+- Optional unused component dirs — empty `agents/`, `jobs/`, etc — are ignored.
 - A package with **no `scripts/install.mjs` is valid** (purely declarative).
 - The `components` inventory in the manifest is the **source of truth**: a file present in a
   component dir but *not* listed in `components` is **not installed** (explicit inventory,
@@ -71,7 +84,7 @@ version: 1.0.0                 # semver — the SUITE version
 description: >
   Full Plaud voice-recorder stack. One-command install of OAuth login,
   hourly brain ingest, and the background job that drives it.
-installer: ">=1.0.0"           # min ai1-crhq-installer version (semver range); optional
+installer: ">=1.0.0"           # min installer version (semver range); optional
 
 # ── Components — explicit inventory (required) ────────────────────────────────
 # Install order = the order types appear below, then array order within a type:
@@ -103,7 +116,7 @@ provides_credentials:
   - plaud                       # e.g. via plaud-login
 
 # ── Install interface (optional) ──────────────────────────────────────────────
-# Invoked ONLY for package-specific steps the utility can't infer. The utility
+# Invoked ONLY for package-specific steps the installer can't infer. The installer
 # forwards the standard flags as argv so the script can respect them (e.g. skip
 # side effects on --dry-run). Omit entirely if there are no such steps.
 install_entry: scripts/install.mjs
@@ -134,10 +147,10 @@ install_flags:
 ## 5. Bundled component conventions
 
 **One syntax, two file kinds — no JSON.** Content-bearing components (skill, recipe) are
-**Markdown** (`.md`): YAML frontmatter + a body that becomes a DB `content` column. Config-only
-components (agent, job, service descriptor) are **YAML** (`.yaml`). Each component's fields are
-fully specified below — **a package is self-describing**; the utility maps these to DB columns
-(or, for services, to deploy-project artifacts) itself, so nothing here defers to an external
+**Markdown** (`.md`): YAML frontmatter + a body that becomes the component's content.
+Config-only components (agent, job, service descriptor) are **YAML** (`.yaml`). Each
+component's fields are fully specified below — **a package is self-describing**; the
+installer maps these to its platform's stores itself, so nothing here defers to an external
 "platform definition."
 
 ### 5.1 Skill — `skills/<key>/`
@@ -145,7 +158,7 @@ Layout: `SKILL.md` (flat YAML frontmatter + Markdown body) + optional `scripts/`
 
 ```yaml
 ---
-name: plaud-login              # = skills.name (PK) and the install <key>
+name: plaud-login              # the skill's unique name and its install <key>
 version: 0.4.0                 # must equal components.skills[].version
 description: "OAuth handshake for the Plaud integration…"
 dependencies: []
@@ -154,50 +167,47 @@ provides_credentials: [plaud]
 triggers: [/plaud-login, "connect plaud"]
 updatedAt: 2026-05-14
 ---
-(Markdown body — becomes skills.content)
+(Markdown body — the skill's content/instructions)
 ```
 
-| Frontmatter | Req | Maps to / use |
+| Frontmatter | Req | Meaning / use |
 |-------------|-----|---------------|
-| `name` | ✅ | `skills.name` (PK) + install `<key>`; kebab-case, ≤100 chars |
+| `name` | ✅ | unique skill name + install `<key>`; kebab-case, ≤100 chars |
 | `version` | ✅ | must equal `components.skills[].version` |
-| `description` | ✅ | `skills.description` (third-person, trigger words) |
+| `description` | ✅ | discovery text (third-person, trigger words) |
 | `dependencies` | – | external prereqs (skill keys / package names) |
 | `credentials_needed`,`provides_credentials` | – | credential orchestration |
 | `triggers` | – | agent-facing invocation phrases |
 | `updatedAt` | – | informational |
 
-Install: upsert `skills` (`skill_path='db://skills/<name>'`,
-`skill_dir='${INSTALL_BASE_DIR}/<key>'`, `is_active:true`) + copy the tree to
-`${INSTALL_BASE_DIR}/<key>/` (operator-configured; the manifest is unaware of it — D-19).
+The installer registers the skill and copies the whole skill tree to its configured skill
+install root. The manifest is deliberately **unaware of that location** — it is an
+installer/operator concern.
 
-**Registration type (`install_type`, D-22):** the component entry's optional `install_type`
-controls the row's `skill_type`/`locked`. Default `org` → `skill_type:'org'`, `locked:true`
-(re-installs unlock-then-update, then re-lock; `--respect-locks` skips a locked row). `user` →
-`skill_type:'user'`, `locked:false` (the prior behavior). The global `--install-skills-as-user`
-flag forces **all** skills to `user` and **overrides** any per-skill `install_type`. The value must
-be `org` or `user` (else `ManifestError`). Assets always land in `INSTALL_BASE_DIR` regardless —
-only the DB registration changes (we don't have write access to where real org skills live).
+**Registration type (`install_type`):** the component entry's optional `install_type`
+controls how the skill is registered. `org` (the default) registers it as an
+organization-level skill, **locked** against casual edits; `user` registers it as an
+unlocked user-level skill. The value must be `org` or `user` (anything else is a manifest
+error). The installer's `--install-skills-as-user` flag forces **all** skills to `user`,
+overriding any per-skill `install_type`.
 
 ### 5.2 Recipe — `recipes/<name>.md`
 Markdown file: YAML frontmatter + Markdown body.
 
 ```yaml
 ---
-name: plaud-pipeline           # = recipes.name (UNIQUE)
+name: plaud-pipeline           # unique recipe name (lookup key)
 description: "End-to-end Plaud capture → brain pipeline."
 version: 1.0.0                 # optional; if set, must equal components.recipes[].version
 ---
-(Markdown body — becomes recipes.content)
+(Markdown body — the recipe's content)
 ```
 
-| Frontmatter | Req | Maps to / use |
+| Frontmatter | Req | Meaning / use |
 |-------------|-----|---------------|
-| `name` | ✅ | `recipes.name` (UNIQUE lookup key); ≤200 chars |
-| `description` | ✅ | `recipes.description` (NOT NULL) |
+| `name` | ✅ | unique lookup key; ≤200 chars |
+| `description` | ✅ | required discovery text |
 | `version` | – | optional pin |
-
-Install: upsert `recipes` by name (`id` uuid auto, `content` NOT NULL, `is_active:true`).
 
 ### 5.3 Agent — `agents/<key>.yaml`
 ```yaml
@@ -207,145 +217,150 @@ description: "Runs the Plaud capture + ingest pipeline."
 mode: cli                      # optional, default cli
 default_model: sonnet          # optional, default sonnet
 icon: "🎙️"                     # optional, default 🤖
-skills: [plaud-login, plaud-ingest, memory]   # attach iff installed + active
-recipes: [plaud-pipeline]                      # attach by name → recipes.id
+skills: [plaud-login, plaud-ingest, memory]   # attached iff installed + active
+recipes: [plaud-pipeline]                      # attached by recipe name
 ```
 
-| Field | Req | Maps to / use |
+| Field | Req | Meaning / use |
 |-------|-----|---------------|
-| `key` | ✅ | `agents.key` (PK); ≤50 chars |
-| `name` | ✅ | `agents.name` |
-| `description` | – | `agents.description` |
-| `mode` | – | `agents.mode` (default `cli`) |
-| `default_model` | – | `agents.default_model` (default `sonnet`; **the column is `default_model`, not `model`**) |
-| `icon` | – | `agents.icon` (default `🤖`) |
-| `skills` | – | each → `agent_skills` **iff** the skill is installed + active (else skipped with a warning) |
-| `recipes` | – | each name → resolved to `recipes.id` (uuid) → `agent_recipes` |
+| `key` | ✅ | unique agent key; ≤50 chars |
+| `name` | ✅ | display name |
+| `description` | – | discovery text |
+| `mode` | – | execution mode (default `cli`) |
+| `default_model` | – | model alias (default `sonnet`) |
+| `icon` | – | display icon (default `🤖`) |
+| `skills` | – | skill names to attach; a skill that is not installed + active is **skipped with a warning**, not an error |
+| `recipes` | – | recipe names to attach |
 
-Install: upsert `agents` by `key` (minimal insert; other columns ride DB defaults — e.g.
-`provider='claude'`), then **sync** `agent_skills` and `agent_recipes` (add desired, drop stale,
-`onConflict` ignore). Runs after skills + recipes so bundled components are attachable.
+Agents install after skills and recipes, so the bundled components they reference are
+attachable. Re-installing an agent **syncs** its attachments: desired links are added, stale
+links are removed.
 
 ### 5.4 Job (scheduled / background) — `jobs/<name>.yaml`
 ```yaml
 name: plaud-ingest-crawl
 description: Hourly Plaud sync into brain
 schedule: "0 * * * *"          # cron, or alias: hourly | every-15-min | every-30-min | daily
-script: plaud-ingest/scripts/crawl-plaud.js   # path under the skill-install root: <skill-key>/scripts/<file>
+script: plaud-ingest/scripts/crawl-plaud.js   # path under the skill install root: <skill-key>/scripts/<file>
 args: "--limit 50"             # optional
 timezone: America/Vancouver    # optional, default UTC
 timeout_minutes: 10            # optional, default 30
 max_concurrent: 1              # optional, default 1
 skip_if_running: true          # optional, default true
 enabled: true                  # optional, default true
-requires: [plaud-ingest]       # optional: skill keys whose install dir must exist first
+requires: [plaud-ingest]       # optional: skill keys that must be installed first
 ```
 
-| Field | Req | Maps to / use |
+| Field | Req | Meaning / use |
 |-------|-----|---------------|
-| `name` | ✅ | `background_jobs.name` (lookup key); ≤255 chars |
+| `name` | ✅ | unique job name (lookup key); ≤255 chars |
 | `schedule` | ✅ | cron expression or alias (`hourly`/`every-15-min`/`every-30-min`/`daily`) |
-| `script` | ✅ | path under the skill-install root; resolved to `join(INSTALL_BASE_DIR, script)` |
-| `description` | – | `background_jobs.description` |
+| `script` | ✅ | path under the skill install root (`<skill-key>/scripts/<file>`) — the bundled skill ships the script; the installer resolves the absolute path |
+| `description` | – | discovery text |
 | `args` | – | appended to the script invocation |
 | `timezone` | – | default `UTC` |
 | `timeout_minutes` | – | default `30` |
 | `max_concurrent` | – | default `1` |
 | `skip_if_running` | – | default `true` |
 | `enabled` | – | default `true` |
-| `requires` | – | skill keys whose install dir must exist before registering (coarse C12 guard) |
+| `requires` | – | skill keys whose install must exist before the job registers (coarse guard against a job that fails every tick) |
 
-Install: upsert `background_jobs` by name — `id='job-<ts>-<rand>'`, `job_type:'script'`,
-`script_path:'node'`, `script_args=join(INSTALL_BASE_DIR, script)[+ ' ' + args]`, `run_count:0`.
-Halts with a two-ways-forward message if a `requires` skill is absent — install the skill, or scope
-the run to the other types with `--only` (e.g. omit `jobs`). Deeper dynamic-import-chain checks
-remain the package's `install_entry` job.
+If a `requires` skill is absent the installer halts with a two-ways-forward message —
+install the skill, or scope the run to the other types with `--only`. Deeper
+dynamic-import-chain checks are the package's `install_entry` job.
 
-### 5.5 Service (nginx + PM2 web app) — `services/<name>/`
-Layout: `service.yaml` + the application source. **Not DB-resident** — deployed via the
-`deploy-project` conventions (D-2).
+### 5.5 Service (standalone web app) — `services/<name>/`
+Layout: `service.yaml` + the application source. A service is a long-running process
+deployed behind the platform's process manager and reverse proxy; it is not an
+agent-registry resource.
 
 ```yaml
 name: plaud-broker
 version: 1.0.0                 # REQUIRED — must equal components.services[].version
-port: 4300                     # optional — deploy-project allocates a free port if omitted
+port: 4300                     # optional — installer allocates a free port if omitted
 start: node server.js
 cwd: ./                        # optional, default ./
 build: npm ci && npm run build # optional — command run during the build step
-env:                           # optional → written to the service's .env (secrets never logged)
+env:                           # optional → written to the service's env file (secrets never logged)
   NODE_ENV: production
-nginx:                         # optional
+nginx:                         # optional — reverse-proxy exposure
   subdomain: plaud             # default: <name>
   ssl: true                    # default: true
 ```
 
-| Field | Req | Use |
-|-------|-----|-----|
-| `name` | ✅ | project dir name, PM2 process name, default subdomain |
+| Field | Req | Meaning / use |
+|-------|-----|---------------|
+| `name` | ✅ | service identity: deploy dir name, process name, default subdomain |
 | `version` | ✅ | must equal `components.services[].version` (mirrors skills) |
-| `port` | – | listen port; if omitted, `deploy-project` allocates a free one |
-| `start` | ✅ | PM2 start command |
+| `port` | – | listen port; if omitted, the installer allocates a free one |
+| `start` | ✅ | process start command |
 | `cwd` | – | working dir relative to the service dir (default `./`) |
 | `build` | – | command run during the **build step** (e.g. `npm ci && npm run build`) |
-| `env` | – | key/values written to the service `.env`; **secrets never echoed to logs** |
-| `nginx.subdomain` | – | default `<name>` → `{SATELLITE_ID}-<subdomain>.crhq.ai` |
-| `nginx.ssl` | – | default `true` |
+| `env` | – | key/values written to the service's env file; **secrets never echoed to logs** |
+| `nginx.subdomain` | – | public hostname label under the platform's service domain (default `<name>`) |
+| `nginx.ssl` | – | serve over TLS (default `true`) |
 
-Install (deploy-project, D-2): copy source → `/opt/projects/user/<name>/`, write `.env` from
-`env`, `ecosystem.config.cjs`, and the nginx vhost; allocate the port; PM2 start + save; nginx
-reload. **Dry-run runs the build step (incl. `build`) but skips the deploy-project apply**
-(D-2a). Never run PM2 against `crhq-satellite`.
+**Dry-run semantics:** unlike registry components (whose dry-run is a pure preview), a
+service dry-run **runs the build step** (surfacing build errors) but **skips the deploy
+apply** — no proxy, process-manager, or port changes.
 
 ---
 
 ## 6. Install / uninstall order & standard flags
 
 - **Install order:** skills → recipes → agents → jobs → services; within a type, array order.
-- **Uninstall:** exact reverse. (Matches canon C13.)
+- **Uninstall:** exact reverse.
 - Finer control than this ordering implies → use `install_entry`.
 
-**Standard flags — utility-owned, never declared in the manifest:**
+**Standard flags — installer-owned, never declared in the manifest:**
 `--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--install-skills-as-user`,
-`--only=<types>`, `--include=<pat>`, `--exclude=<pat>`. The utility forwards them to `install_entry`
-(argv) so package-specific steps can honor them. `install_flags` is ONLY for package-specific flags
-(e.g. `--no-ingest`).
+`--only=<types>`, `--include=<pat>`, `--exclude=<pat>`. The installer forwards them to
+`install_entry` (argv) so package-specific steps can honor them. `install_flags` is ONLY for
+package-specific flags (e.g. `--no-ingest`).
 
-`--install-skills-as-user` registers every skill as an unlocked `user` skill, overriding the org
-default and any per-skill `install_type` (§5.1).
-
-`--only=<types>` restricts which component **types** run — one or more of
-`skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated (e.g.
-`--only=skills,recipes`). Order within a type and across types always follows the canonical install
-order. (This replaces the former `--no-agent`/`--no-job` toggles, D-21.)
-
-`--include`/`--exclude` select a subset of components **by name** (skills/recipes/jobs/services by
-`name`, agents by `key`). The value is a regex; a value with no regex metacharacter is an exact
-`^name$` match (case-sensitive). Selected iff it matches `--include` (or none given) and not
-`--exclude`; these compose with `--only`. A filter matching zero components warns and exits `0`.
+- `--install-skills-as-user` registers every skill as an unlocked `user` skill, overriding
+  the org default and any per-skill `install_type` (§5.1).
+- `--only=<types>` restricts which component **types** run — one or more of
+  `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated
+  (e.g. `--only=skills,recipes`). Order within a type and across types always follows the
+  canonical install order.
+- `--include`/`--exclude` select a subset of components **by name** (agents by `key`, all
+  other types by `name`). The value is a regex; a value with no regex metacharacter is an
+  exact `^name$` match (case-sensitive). A component is selected iff it matches `--include`
+  (or none is given) and does not match `--exclude`; these compose with `--only`. A filter
+  matching zero components warns and exits `0`.
 
 ---
 
-## 7. NOT in the manifest — utility responsibilities
+## 7. NOT in the manifest — installer responsibilities
 
-These are enforced by `ai1-crhq-installer` for **every** package; keeping them out of the
-manifest is deliberate. Full detail in `canon-conventions.md`.
+These hold for **every** package; keeping them out of the manifest is deliberate. A
+compliant installer guarantees:
 
-| Concern | Where it lives |
-|---------|----------------|
-| name-PK upsert; never `.returning('id')` | utility — `lib/core/*` |
-| idempotent check-then-upsert; `onConflict.ignore()` | utility — `lib/core/*` (C6) |
-| `INSTALL_BASE_DIR` for all fs ops | utility + any `install_entry` (C2) |
-| publish gate | built-in `--sandbox --lifecycle` (`testing-and-sandbox.md`) |
-| secret-pattern scan before publish | publish gate (not install-time) |
-| install-result taxonomy + exit codes | utility output contract (see §8) |
-| no `sudo` in operator docs | README/INSTALL authoring rule |
-| prereq `existsSync` of a cron's import chain | `install_entry` (+ coarse `requires` in §5) |
-| org install target / agent reachability / write-path | knex DB access / verify live |
+- **Idempotency** — re-running an install converges to the same state with zero drift.
+- **Clean lifecycle** — uninstall removes everything the install created; reinstall
+  reproduces the original state.
+- **Configurable install locations** — where skill trees land and where registry writes go
+  are operator/installer configuration; the manifest never encodes them.
+- **Dry-run** — a preview mode with zero side effects (build-only for services, §5.5).
+- **Prerequisite checks before any write** — halt with an actionable message, not a
+  half-installed package.
+- **Secret hygiene** — service `env` values are written to the service's env file only,
+  never logged; packages are scanned for embedded secrets before publish, not at install.
+- **A machine-parseable result contract** — §8.
+
+How the CRHQ reference implementation delivers these is specified in
+`canon-conventions.md` (conventions C1–C13) and `integration-reference.md` (storage
+mapping).
 
 ---
 
 ## 8. Result taxonomy
 
-Not a manifest field, but the contract the utility prints so installs are machine-parseable:
-`INSTALL-OK | ALREADY-INSTALLED | INSTALL-PARTIAL | INSTALL-FAIL | PREREQ-MISSING | LOCKED-ROW`,
-exit codes `0` ok/already · `1` fail/prereq/lock · `2` transport.
+Not a manifest field, but the output contract a compliant installer prints so installs are
+machine-parseable. Per-component verdicts:
+
+`INSTALL-OK | ALREADY-INSTALLED | INSTALL-PARTIAL | INSTALL-FAIL | PREREQ-MISSING | LOCKED-ROW`
+
+Exit codes: `0` ok/already-installed · `1` fail/prereq/lock · `2` transport (registry
+unreachable, manifest unreadable, usage error).

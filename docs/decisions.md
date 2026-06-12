@@ -1,0 +1,64 @@
+# Decision Record
+
+The settled design decisions and their rationale, kept because code and docs reference the
+IDs. All are resolved; there are no open questions. (The full deliberation history is in git
+history of `decisions-and-open-questions.md`.)
+
+## Core shape
+
+| ID | Decision | Why |
+|----|----------|-----|
+| **D-1** | Install mechanism = **DB-direct via knex**; no REST for writes | REST can't be sandbox-intercepted; matches the satellite's established installers. |
+| **D-1a / C1** | ESM `.mjs` + **hardcoded** knex import path | Only an ESM static import is interceptable by a loader hook. |
+| **D-8** | Product shape = **core library + generic manifest runner** | Packages can be pure manifest *or* a 10-line `install_entry` that imports the lib; one codebase to sandbox-test. |
+| **D-9** | **Jobs** (`background_jobs`) are a first-class component type | Every reference installer registers jobs. |
+| **D-10** | Manifest = **`ai1-package.yaml`** — declarative `components` inventory + optional `install_entry` | Spec: `package-manifest-spec.md`. Cross-cutting implementation concerns deliberately kept OUT of it. |
+| **D-12** | The utility is **both a CLI and a library** (primitives exported via `lib/index.mjs`) | One DB/fs chokepoint; `install_entry` scripts inherit sandbox-correctness for free. |
+| **D-14** | The library is **opt-in**; pre-existing bespoke installers keep working unchanged | Backward compatible. |
+
+## Configuration & paths
+
+| ID | Decision | Why |
+|----|----------|-----|
+| **D-15** | Vendor-neutral env names: `INSTALL_BASE_DIR` / `INSTALL_SCHEMA`, with legacy fallback to `CRHQ_BASE_DIR` / `SANDBOX_SCHEMA` | The manifest is CRHQ-independent, so the utility's public knobs are too; fallback preserves compat with the older external harness. |
+| **D-19 / C2** | `INSTALL_BASE_DIR` = the **skill-parent dir** (not the satellite root); core does `join(INSTALL_BASE_DIR, key)` | No `user-skills` knowledge in core logic — the literal survives only in the legacy shim + default. |
+| **OQ-10 / C3** | `skill_path` = `db://skills/<name>` | Location-independent; doesn't bake the fs layout into the DB. |
+| **D-1c / OQ-U4** | Schema configurability is **native**: `getDb()` applies `INSTALL_SCHEMA` as knex `searchPath` | No loader-hook dependency for sandboxing. |
+| **OQ-U1** | Library import path = canonical absolute path (mirror of the knex.js convention) | Stable, interception-friendly, zero install magic. A `@ai1/installer` alias is a possible later DX upgrade. |
+
+## Behavior
+
+| ID | Decision | Why |
+|----|----------|-----|
+| **D-4 / C13** | Install order skills → recipes → agents → jobs → services; uninstall reverses | Dependency order. |
+| **D-5 / C5** | Locked skills: auto-unlock-then-update by default; `--respect-locks` to skip | Matches canon behavior. |
+| **D-22** | Skills default to **org + `locked`**; per-skill `install_type: user` or global `--install-skills-as-user` (which wins) registers unlocked `user` skills | Org skills are the norm. Only the DB registration changes — assets always land under `INSTALL_BASE_DIR` (no write access to where real org skills live). `install_type` lives in the manifest component entry, not SKILL.md. |
+| **D-21** | `--only=<types>` is multi-valued (comma-separated/repeatable); the old `--no-agent`/`--no-job` toggles are removed | One flag expresses any type subset; `runPlan` intersects with the canonical order. |
+| **D-20** | `--include`/`--exclude` filter by component name; regex, with metacharacter-free values as exact `^name$`; case-sensitive; zero-match = warn + exit 0; invalid regex = exit 2 | Subset installs without editing the manifest. Zero-match is "nothing to do", not a typo-failure. |
+| **OQ-U2** | `install_entry` runs on **all modes** (install/uninstall/status), receiving the mode | Keeps teardown symmetric; the hook decides what to do. |
+| **OQ-U3** | `--json` machine-readable report | Cheap; enables automation over the verdict taxonomy. |
+| **D-7 / C7** | `--dry-run` = zero side effects; output contains "would…" and >200 bytes | It's the built-in pre-flight check. |
+
+## Services
+
+| ID | Decision | Why |
+|----|----------|-----|
+| **D-2 / D-2b** | Services follow the satellite's deploy-project conventions, implemented as **inline templates** in `core/service.mjs` | deploy-project ships no callable scripts (it's a runbook) — so the nginx-vhost / ecosystem / `.env` templates + port allocation are inlined, honoring its security rules (127.0.0.1 binding, chmod 640 `.env`, never touch `crhq-satellite`). |
+| **D-2a** | Service dry-run = run the **build step**, skip the apply | Surfaces build errors without touching nginx/PM2/live state. |
+
+## Sandbox & dependencies
+
+| ID | Decision | Why |
+|----|----------|-----|
+| **D-16 / D-17** | Sandboxing is **built in** (`--sandbox` / `--keep` / `--lifecycle`); the external `installer-sandbox` + `sandbox-install-test` harnesses are not dependencies | Self-contained except CRHQ deps (`server/db/knex.js`, the DB, nginx/PM2). |
+| **D-18** | Sandbox schema is **cloned from live** via `CREATE TABLE … (LIKE public.<t> INCLUDING ALL)` | Zero schema drift (hardcoded DDL had already drifted once); auto-tracks production. |
+| **OQ-14** | Sandbox seeds `skills` rows from live; intra-schema FKs are **not** re-created | Seeding makes agent-attach + dep checks mirror reality; guarded join inserts + explicit join cleanup make FKs unnecessary. |
+| **D-6** | Zero npm runtime deps: frontmatter hand-rolled; `yaml` **vendored** as one bundled file (`lib/vendor/yaml.mjs`) | Zero-`npm install` goal with full YAML compliance. Regenerate via the command in the bundle's header. |
+| **OQ-7** | Importing `server/db/knex.js` at runtime is sanctioned | It's the canon mechanism; the safety boundary forbids *modifying/printing* core files, not importing them. |
+
+## Provenance
+
+The canon (C1–C13) was distilled from the four installers already on the satellite —
+`requirements-installer`, `dev-handoff-installer`, `plaud-installer`, `plaud-ingest` — plus
+the `installer-sandbox` / `sandbox-install-test` harnesses, which this utility generalizes
+and absorbs.

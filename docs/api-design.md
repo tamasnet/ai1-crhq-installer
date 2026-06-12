@@ -1,12 +1,11 @@
-# API Design — signatures & control flow
+# API Reference — modules, signatures & control flow
 
-Implementation-level contract for Phase 1. Pins down `createContext`, the primitive
-signatures, the def shapes, `lib/sandbox.mjs`, and the `install.mjs` control flow so the build
-can start from something precise. Consistent with `utility-design.md` (B2/B3) + the decisions
-log. ESM throughout; primitives are `async (ctx, def) => result`.
+The implementation-level contract for `scripts/lib/` and `scripts/install.mjs`. ESM
+throughout; primitives are `async (ctx, def) => result`. The public surface is the barrel
+`lib/index.mjs`; anything not exported there is internal.
 
 > Naming: `ctx.BASE` is the **resolved `INSTALL_BASE_DIR`** — the parent dir for skill `<key>`
-> directories (D-19). `ctx.SCHEMA` is the resolved `INSTALL_SCHEMA` (or `null`).
+> directories. `ctx.SCHEMA` is the resolved `INSTALL_SCHEMA` (or `null`).
 
 ---
 
@@ -16,7 +15,7 @@ log. ESM throughout; primitives are `async (ctx, def) => result`.
 import { join } from 'path';
 function resolveBase() {
   return process.env.INSTALL_BASE_DIR
-      || (process.env.CRHQ_BASE_DIR && join(process.env.CRHQ_BASE_DIR, 'user-skills'))  // legacy (D-15/D-19)
+      || (process.env.CRHQ_BASE_DIR && join(process.env.CRHQ_BASE_DIR, 'user-skills'))  // legacy
       || '/opt/projects/crhq-satellite/user-skills';
 }
 function resolveSchema() {
@@ -34,14 +33,14 @@ import { getDb } from '/opt/projects/crhq-satellite/server/db/knex.js';  // C1 �
 
 | Export | Signature | Notes |
 |--------|-----------|-------|
-| `getDb()` | `() => Knex` | Memoized **install** connection. If `INSTALL_SCHEMA` set → `searchPath:[schema]` (B4 native). Read env at first call — so `--sandbox` must set env **before** this is first called. |
-| `getAdminDb()` | `() => Knex` | Memoized **admin** connection with **default** search_path (no override). Used by `sandbox.mjs` for `CREATE/DROP SCHEMA` + `LIKE`-clone + cross-schema seed. Separate instance from `getDb()`. |
+| `getDb()` | `() => Knex` | Memoized **install** connection. If `INSTALL_SCHEMA` set → `searchPath:[schema]`. Reads env at first call — `--sandbox` sets env **before** this is first called. |
+| `getAdminDb()` | `() => Knex` | Memoized **admin** connection with **default** search_path. Used by `sandbox.mjs` for `CREATE/DROP SCHEMA` + `LIKE`-clone + cross-schema seed. Separate instance from `getDb()`. |
 | `closeDb()` | `async () => void` | `destroy()` both instances; reset memo. |
 
 > **searchPath mechanism:** `getDb()` applies the schema by building its **own**
 > `knex({ ...cfg, searchPath:[SCHEMA] })` from the same connection config the CRHQ module
 > exposes (not a per-connection `SET search_path`) — one consistent binding, no pool races.
-> The hardcoded `server/db/knex.js` import stays so the legacy loader hook still works.
+> The hardcoded `server/db/knex.js` import also keeps the legacy loader-hook harness working.
 
 ---
 
@@ -61,7 +60,7 @@ export function makeLogger({ dryRun = false } = {}) { /* … */ }
 //   log.summary(results)    → table of {type,name,verdict}
 ```
 
-Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (canon-conventions C7).
+Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (C7).
 
 ---
 
@@ -69,15 +68,15 @@ Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (can
 
 | Export | Signature | Returns |
 |--------|-----------|---------|
-| `parseFrontmatter(md)` | `(string) => { meta, body }` | `meta` = parsed YAML frontmatter object; `body` = everything after the closing `---`. Zero-dep hand-roll (D-6). |
-| `loadYaml(text)` | `(string) => object` | Parse a `.yaml` file's contents using a single small dep (`yaml`). (`parseFrontmatter` stays hand-rolled; this is the one allowed dep — narrows D-6.) |
+| `parseFrontmatter(md)` | `(string) => { meta, body }` | `meta` = parsed YAML frontmatter object; `body` = everything after the closing `---`. Hand-rolled. |
+| `loadYaml(text)` | `(string) => object` | Full YAML parse via the vendored `yaml` bundle (`lib/vendor/yaml.mjs` — regenerate via the command in its header). |
 
 ## 5. `lib/fs.mjs` (all paths absolute; honor `ctx.DRY_RUN` via the `opts.dryRun` arg)
 
 | Export | Signature | Returns |
 |--------|-----------|---------|
 | `copyTree(srcDir, destDir, opts)` | `(string,string,{dryRun}) => number` | entries copied (or would-copy count in dry-run; zero writes). |
-| `writeIfChanged(path, content, opts)` | `(string,string,{dryRun}) => boolean` | true if it wrote (or would). Skips identical content (idempotent, GAP 5). |
+| `writeIfChanged(path, content, opts)` | `(string,string,{dryRun}) => boolean` | true if it wrote (or would). Skips identical content (idempotent). |
 | `removeTree(path, opts)` | `(string,{dryRun}) => boolean` | true if removed (or would). |
 
 ## 6. `lib/prereq.mjs` (C12)
@@ -87,9 +86,14 @@ Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (can
 | `requireSkills(ctx, names)` | `(ctx,string[]) => void` | each must exist + `is_active` in `ctx.db`; else throw `PrereqError(names_missing)` (→ verdict `PREREQ-MISSING`, exit 1). |
 | `requireFiles(ctx, paths)` | `(ctx,string[]) => void` | each must `existsSync`; else `PrereqError`. Paths resolved against `ctx.BASE` when relative. |
 
----
+## 6a. `lib/preflight.mjs`
 
-## 6a. `lib/filter.mjs` — `--include` / `--exclude` (component selection)
+| Export | Signature | Behavior |
+|--------|-----------|----------|
+| `preflight(ctx)` | `async (ctx) => void` | `select 1` against `ctx.db` (DB reachable); for write modes, probe-write under `ctx.BASE`. Failure → `PreflightError` → transport exit `2`, before any component work. |
+| `PreflightError` | `class extends Error` | |
+
+## 6b. `lib/filter.mjs` — `--include` / `--exclude` (component selection)
 
 | Export | Signature | Behavior |
 |--------|-----------|----------|
@@ -97,11 +101,6 @@ Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (can
 | `makeFilter({include, exclude})` | `({string?,string?}) => (name)=>boolean` | Selected iff matches `include` (or none) AND not `exclude`. Compiles eagerly (fail-fast). |
 | `hasFilter({include, exclude})` | `=> boolean` | True if either pattern was supplied. |
 | `FilterError` | `class extends Error` | Mapped by `install.mjs` to exit `2` (usage). |
-
-`runPlan` builds the matcher from `ctx.INCLUDE`/`ctx.EXCLUDE`, tests each component's `nameOf(type,def)`
-(agents → `key`, else → `name`), and reflects the selection in `ctx.plannedSkills`/`plannedRecipes`.
-A filter selecting 0 of N considered components warns + exits `0` (not an error). The flags compose
-with `--only` (type scope) and apply to install/uninstall/status alike.
 
 ---
 
@@ -127,18 +126,18 @@ plan = {
 ### Def shapes (parsed source — install-time fields computed by primitives from `ctx`)
 
 ```js
-SkillDef   = { key, name, description, version, srcDir, content, installType? }  // content = SKILL.md (full md); installType: 'org'|'user' (manifest entry, D-22)
+SkillDef   = { key, name, description, version, srcDir, content, installType? }  // content = SKILL.md (full md); installType: 'org'|'user'
 RecipeDef  = { name, description, content, srcFile }
 AgentDef   = { key, name, description, mode, default_model?, icon?, skills:[], recipes:[], srcFile }
 JobDef     = { name, description, schedule, timezone?, script, args?, timeout_minutes?,
                max_concurrent?, skip_if_running?, enabled?, requires:[], srcFile }
-ServiceDef = { name, version, start, port?, cwd?, build?, env?, nginx?, srcDir }   // port omitted → deploy-project allocates
+ServiceDef = { name, version, start, port?, cwd?, build?, env?, nginx?, srcDir }   // port omitted → allocated at deploy
 ```
 
-`key`/`name`/`version` for a skill come from `SKILL.md` frontmatter (C11); a service's
-`name`/`version` come from `service.yaml`. **`validateManifest` enforces that `version` matches
-the `components[].version` pin for both skills and services** (required), and for recipes if a
-pin is present.
+`key`/`name`/`version` for a skill come from `SKILL.md` frontmatter; a service's
+`name`/`version` come from `service.yaml`. **`validateManifest` enforces that `version`
+matches the `components[].version` pin for both skills and services** (required), and for
+recipes if a pin is present.
 
 ---
 
@@ -154,20 +153,20 @@ Builds and returns:
 ctx = {
   // parsed flags
   mode: 'install'|'uninstall'|'status',   // from --uninstall/--status (default install)
-  DRY_RUN, RESPECT_LOCKS, INSTALL_SKILLS_AS_USER /* --install-skills-as-user: force user skills (D-22) */,
+  DRY_RUN, RESPECT_LOCKS, INSTALL_SKILLS_AS_USER, JSON,
   ONLY /* string[]|null — --only=<types> (comma-separated/repeatable) */,
-  INCLUDE, EXCLUDE /* string|null — --include=/--exclude= name filter (regex; see §12) */,
+  INCLUDE, EXCLUDE /* string|null — --include=/--exclude= name filter (regex; see §6b) */,
   SANDBOX, KEEP, LIFECYCLE,
   packageArg,                              // manifest path/dir arg (default '.')
 
-  // resolved env (D-19/D-15)
+  // resolved env
   BASE,    // resolveBase()   — skill-parent dir
   SCHEMA,  // resolveSchema() — or null
 
   // wired deps
   db,      // getDb()         — install knex (searchPath = SCHEMA)
   log,     // makeLogger({dryRun:DRY_RUN})
-  results: [],                             // accumulator of RunResult (see §11)
+  results: [],                             // accumulator of RunResult (see §12)
 
   // methods
   record(r),          // push a RunResult, mirror to log
@@ -176,8 +175,8 @@ ctx = {
 }
 ```
 
-`createContext` is the **only** place flags are parsed and env resolved — `install.mjs` and any
-`install_entry` share it, so behavior is identical (D-12).
+`createContext` is the **only** place flags are parsed and env resolved — `install.mjs` and
+any `install_entry` share it, so behavior is identical.
 
 ---
 
@@ -189,17 +188,17 @@ All are `async (ctx, def) => RunResult`. They honor `ctx.DRY_RUN` (zero writes, 
 ### `core/skill.mjs`
 ```js
 upsertSkill(ctx, def)  // SkillDef
-// 0. registration type (D-22): asUser = ctx.INSTALL_SKILLS_AS_USER || def.installType==='user'
+// 0. registration type: asUser = ctx.INSTALL_SKILLS_AS_USER || def.installType==='user'
 //    → skill_type = asUser?'user':'org'; locked = !asUser   (default = org + locked)
 // 1. row = db('skills').where({name:def.name}).first()
 // 2. if row.locked: RESPECT_LOCKS ? skip(LOCKED) : (on an actual update) unlock first (C5 — the
 //    live PG trigger forbids UPDATE on a locked row)
-// 3. computed: skillDir = join(ctx.BASE, def.key); skillPath = `db://skills/${def.name}` (D-19)
+// 3. computed: skillDir = join(ctx.BASE, def.key); skillPath = `db://skills/${def.name}`
 // 4. insert|update skills {name,description,content,skill_type,locked,skill_path,skill_dir,
 //                          is_active:true,is_global:false,updated_at,(created_at on insert)}
 // 5. copyTree(def.srcDir, skillDir, {dryRun})   // assets → INSTALL_BASE_DIR/<key> (always)
 // → { type:'skill', name, verdict, action:'created'|'updated'|'skipped', files }
-removeSkill(ctx, nameOrDef)   // del row + removeTree(join(BASE,key))
+removeSkill(ctx, nameOrDef)   // unlock-then-delete (or --respect-locks skips) + removeTree(join(BASE,key))
 statusSkill(ctx, nameOrDef)   // { present, active, filesPresent }
 ```
 
@@ -214,10 +213,10 @@ statusRecipe(ctx, nameOrDef) // { present, active }
 ```js
 upsertAgent(ctx, def)
 // 1. insert|update agents by key {key,name,description,mode,is_active:true,(default_model?,icon?)}
-//    (minimal; rely on DB defaults — integration-ref §2)
+//    (minimal; rely on DB defaults — integration-reference §2)
 // 2. sync agent_skills: for each def.skills → attach IFF skill exists+active; onConflict ignore;
 //    remove stale links not in def.skills
-// 3. sync agent_recipes: resolve each name→recipe_id (uuid) ; onConflict ignore; remove stale
+// 3. sync agent_recipes: resolve each name→recipe_id (uuid); onConflict ignore; remove stale
 removeAgent(ctx, keyOrDef)    // del agent_skills + agent_recipes + agents row
 statusAgent(ctx, keyOrDef)    // { present, active, skills:[], recipes:[] }
 ```
@@ -234,64 +233,66 @@ removeJob(ctx, nameOrDef)     // del background_jobs by name
 statusJob(ctx, nameOrDef)     // { present, enabled, schedule }
 ```
 
-### `core/service.mjs` (non-DB; deploy-project — D-2)
+### `core/service.mjs` (non-DB; inline deploy templates)
 ```js
 installService(ctx, def)
-// build step always runs (validate version pin + run def.build + emit /opt/projects/user/<name>/, .env, ecosystem.config.cjs, nginx vhost)
-// DRY_RUN → stop after build (skip deploy-project apply) (D-2a); else apply: port alloc, pm2 start/save, nginx reload
-removeService(ctx, nameOrDef) // pm2 delete + rm vhost + reload (never touch crhq-satellite)
+// build step always runs (validate version pin + run def.build + render .env / ecosystem.config.cjs / nginx vhost)
+// DRY_RUN → stop after build (skip apply); SANDBOX → skipped entirely.
+// else apply: copy source → /opt/projects/user/<name>/, port alloc, pm2 start/save, nginx reload
+removeService(ctx, nameOrDef) // pm2 delete + rm vhost + rm project dir + reload (never touch crhq-satellite)
 statusService(ctx, nameOrDef) // { dirPresent, pm2Present, vhostPresent }
 ```
 
 ---
 
-## 10. `lib/sandbox.mjs` (D-17/D-18)
+## 10. `lib/run.mjs` — `runPlan(ctx, plan)`
+
+The shared plan dispatcher used by both the CLI and the sandbox lifecycle suite.
+
+```js
+export const ORDER = ['skills','recipes','agents','jobs','services'];
+// --only=<types> restricts which TYPES run; intersected with ORDER so canonical install
+// order holds regardless of input order (unknown names select nothing).
+// mode picks the primitive: install→upsert*, --uninstall→remove* (types reversed), --status→status*.
+// --include/--exclude: nameOf(type,def) (agents→key, else→name) tested against the compiled
+// matcher; selection is reflected in ctx.plannedSkills/plannedRecipes so dry-run dependency
+// previews stay accurate. Zero-match → warn (list available) + exit 0.
+// Continue-and-report: a failing component records INSTALL-FAIL but doesn't abort the rest.
+```
+
+---
+
+## 11. `lib/sandbox.mjs`
 
 ```js
 const TABLES = ['skills','skill_versions','recipes','agents','agent_skills','agent_recipes','background_jobs'];
 
-async function provisionSandbox({ ts, seed = true } = {}) {
-  const admin  = getAdminDb();
-  const schema = `sandbox_${ts}`;               // `ts` is generated at the CLI entry and passed in — keeps lib deterministic/testable
-  const baseDir = `<INSTALL_BASE_DIR-tempdir>`; // e.g. .scratch/sandbox-<ts> (the skill-parent dir, D-19)
-  await admin.raw('CREATE SCHEMA ??', [schema]);
-  for (const t of TABLES)
-    await admin.raw('CREATE TABLE ??.?? (LIKE public.?? INCLUDING ALL)', [schema, t, t]);  // D-18
-  // (optional, OQ-14) re-create intra-schema FKs
-  if (seed)                                      // OQ-14 seed: mirror live utility skills so agent-attach works
-    await admin.raw(
-      'INSERT INTO ??.skills (name,description,skill_path,skill_type,is_active) ' +
-      'SELECT name,description,skill_path,skill_type,is_active FROM public.skills', [schema]);
-  process.env.INSTALL_SCHEMA   = schema;         // redirect BEFORE createContext/getDb (§2/§8)
-  process.env.INSTALL_BASE_DIR = baseDir;
-  mkdirSync(baseDir, { recursive: true });
-  return { schema, baseDir, async teardown(keep){ if(!keep){ await admin.raw('DROP SCHEMA ?? CASCADE',[schema]); rmSync(baseDir,{recursive:true,force:true}); } } };
-}
+provisionSandbox({ ts, seed = true })
+// admin = getAdminDb(); schema = `sandbox_${ts}`; baseDir = temp skill-parent dir
+// CREATE SCHEMA + per table: CREATE TABLE <schema>.<t> (LIKE public.<t> INCLUDING ALL)
+//   — clones live columns/defaults/constraints/indexes; FKs are NOT re-created (guarded join
+//     inserts + explicit join cleanup make them unnecessary)
+// seed: INSERT INTO <schema>.skills SELECT … FROM public.skills  (so agent-attach + dep checks mirror live)
+// set INSTALL_SCHEMA + INSTALL_BASE_DIR BEFORE createContext/getDb run
+// → { schema, baseDir, teardown(keep) }   // teardown: DROP SCHEMA CASCADE + rm tempdir unless keep
 
-async function runLifecycle(ctx, plan) {
-  // install → status → install#2 (snapshot diff == 0) → uninstall (clean) → reinstall (matches#1)
-  // returns { phases:[{name,passed,detail}], passed }
-}
-function snapshotState(adminDb, schema)         // → { skill names, row counts per table, agent_skills/agent_recipes join pairs, file list }
-function diffState(a, b)                        // → string[] of differences (deepen to per-row hashes only if this misses drift)
+runLifecycle(ctx, plan)
+// install → status → install#2 (snapshot diff == 0) → uninstall (clean) → reinstall (matches #1)
+// → { phases:[{name,passed,detail}], passed }
+
+snapshotState(adminDb, schema)  // → { skill names, row counts per table, join pairs, file list }
+diffState(a, b)                 // → string[] of differences
 ```
 
-`withSandbox(argv, run)` convenience: `provision → createContext → run(ctx) → report → teardown`.
-
 > **ID/timestamp generation:** `ts`, the schema name, and `job-<ts>-<rand>` ids are minted at
-> the **CLI entry** (`stamp()`) and threaded into lib calls, so `lib/` stays deterministic for
-> tests. (Canon installers calling `Date.now()` directly is also acceptable — C10.)
+> the **CLI entry** (`stamp()`) and threaded into lib calls, so `lib/` stays deterministic
+> for tests.
 
 ---
 
-## 11. `scripts/install.mjs` — control flow
+## 12. `scripts/install.mjs` — control flow
 
 ```js
-import { createContext } from './lib/context.mjs';
-import { loadManifest }  from './lib/manifest.mjs';
-import * as sandbox      from './lib/sandbox.mjs';
-import * as core         from './lib/index.mjs';   // barrel
-
 const argv = process.argv.slice(2);
 let sb = null;
 try {
@@ -299,50 +300,24 @@ try {
 
   const ctx  = await createContext(argv);          // reads env (sandbox-redirected if sb)
   const { meta, plan, packageRoot } = loadManifest(ctx.packageArg);
+  await preflight(ctx);                            // DB reachable; BASE writable → else exit 2
 
   if (sb && ctx.LIFECYCLE) {
     await sandbox.runLifecycle(ctx, plan);
   } else {
-    await runPlan(ctx, plan);                       // §12
+    await runPlan(ctx, plan);
+    // then: install_entry (if meta.install_entry) as a spawnSync('node', [entry, ...]) SUBPROCESS,
+    // for ALL modes, forwarding mode + standard + package-specific flags as argv (sandbox-internal
+    // flags and the package path are not forwarded; INSTALL_SCHEMA/BASE_DIR inherited via env)
   }
   ctx.report();                                     // completion string + exit code
 } catch (e) {
-  handleFatal(e);                                   // ManifestError/PrereqError/transport → exit code
+  handleFatal(e);                                   // ManifestError/PrereqError/Preflight/Filter → exit code
 } finally {
   if (sb) await sb.teardown(hasFlag(argv,'--keep'));
   await closeDb();
 }
 ```
-
-### §12 `runPlan(ctx, plan)` — order + mode
-
-```js
-const ORDER = ['skills','recipes','agents','jobs','services'];      // D-4
-// --only=<types> (string[]|null) restricts which TYPES run; intersect with ORDER to keep install
-// order regardless of how the values were listed (unknown names select nothing). D-21.
-const only  = Array.isArray(ctx.ONLY) ? ctx.ONLY : (ctx.ONLY ? [ctx.ONLY] : []);
-const types = only.length ? ORDER.filter(t => only.includes(t)) : ORDER;
-const seq   = ctx.mode === 'uninstall' ? [...types].reverse() : types;   // reverse on uninstall (C13)
-// --include/--exclude name filter (lib/filter.mjs). nameOf(type,def) is the canonical id (agents→key,
-// else→name). A value with NO regex metacharacter is an exact ^value$ match; otherwise it's compiled
-// as a case-sensitive RegExp (invalid → FilterError → exit 2). Selected iff matches include (or none)
-// AND not exclude. Also reflected in ctx.plannedSkills/plannedRecipes so dry-run deps stay accurate.
-const match = makeFilter({ include: ctx.INCLUDE, exclude: ctx.EXCLUDE });
-for (const type of seq) {
-  for (const def of (plan[type]||[]).filter(d => match(nameOf(type,d)))) {
-    const fn = core[`${ctx.mode==='uninstall'?'remove':ctx.mode==='status'?'status':'upsert'}${Cap(typeSingular)}`];
-    try { ctx.record(await fn(ctx, def)); }
-    catch (e) { ctx.record(failResult(type, def, e)); /* continue-and-report */ }
-  }
-}
-// A filter that selects 0 of N considered components → warn (list available) + exit 0, not an error.
-// after declarative pass: invoke install_entry (if meta.install_entry) for package-specific steps —
-// as a `spawnSync('node', [entry, ...modeAndFlags])` SUBPROCESS (isolation; matches the plaud suite
-// pattern), forwarding mode + standard flags as argv (D-12; runs for all modes — install/uninstall/status)
-```
-
-Continue-and-report: a failing component is recorded as `INSTALL-FAIL` but doesn't abort the
-rest; the run exits non-zero if any failed.
 
 ---
 
@@ -360,6 +335,7 @@ RunResult = { type, name, verdict /* VERDICT.* */, action?, detail? }
 | component failed | `INSTALL-FAIL` | 1 |
 | missing dependency | `PREREQ-MISSING` | 1 |
 | locked + `--respect-locks` | `LOCKED-ROW` | 1 |
-| DB unreachable / manifest unreadable | (transport) | 2 |
+| DB unreachable / BASE unwritable / manifest unreadable / bad filter | (transport/usage) | 2 |
 
-`ctx.report()` sets `process.exitCode` to the max severity across `ctx.results`.
+`ctx.report()` sets `process.exitCode` to the max severity across `ctx.results`. `--json`
+emits the machine-readable report alongside.

@@ -1,12 +1,8 @@
-# ai1-crhq-installer — Planning Docs
+# ai1-crhq-installer — Documentation
 
-Planning workspace for the `ai1-crhq-installer` skill. **Plan-only — no source code is
-changed from these docs.**
-
-## What we're building
-
-A **DB-direct, sandbox-testable** installer that deploys a bundle of resources into a CRHQ
-satellite:
+Design and reference docs for the `ai1-crhq-installer` skill: a **DB-direct,
+sandbox-testable** installer that deploys a versioned package of resources into a CRHQ
+satellite from a declarative `ai1-package.yaml` manifest.
 
 | Resource | Store | Sandbox-testable? |
 |----------|-------|-------------------|
@@ -14,50 +10,37 @@ satellite:
 | Recipe | `recipes` table (uuid PK) | ✅ |
 | Agent | `agents` + `agent_skills` + `agent_recipes` | ✅ |
 | Job | `background_jobs` table | ✅ |
-| Service | nginx vhost + PM2 (deploy-project) | ❌ (dry-run only) |
+| Service | nginx vhost + PM2 | ❌ (build-only dry-run; skipped in sandbox) |
 
-It generalizes the four bespoke installers already on the satellite
-(`requirements-installer`, `dev-handoff-installer`, `plaud-installer`, `plaud-ingest`),
-which we studied as the canonical pattern.
+For usage, start at the repo root: `SKILL.md` (canonical usage) and `README.md`
+(quick start). `examples/bundle/` is a complete runnable sample package.
 
-## Documents (read in this order)
+## The documents
 
 | Doc | Purpose |
 |-----|---------|
-| [`package-manifest-spec.md`](./package-manifest-spec.md) | **The package manifest format** (`ai1-package.yaml`, v0.2 finalized) — the installer's input contract |
-| [`utility-design.md`](./utility-design.md) | **Utility capabilities list + library API** — CLI + importable primitives; sandbox/configurability |
-| [`api-design.md`](./api-design.md) | **Signatures & control flow** — `createContext`, primitives, def shapes, `lib/sandbox.mjs`, `install.mjs` flow, exit codes |
-| [`architecture.md`](./architecture.md) | Product shape, resource types, layout, flow, services, safety |
-| [`canon-conventions.md`](./canon-conventions.md) | **The build contract** — 13 conventions + sandbox compatibility |
-| [`integration-reference.md`](./integration-reference.md) | **Authoritative DB schema** (7 tables) + knex usage + REST (read-only) |
-| [`testing-and-sandbox.md`](./testing-and-sandbox.md) | The built-in `--sandbox` / `--lifecycle` testing model (self-contained) |
-| [`implementation-plan.md`](./implementation-plan.md) | Phase 0 → Phase 8, tests per phase |
-| [`decisions-and-open-questions.md`](./decisions-and-open-questions.md) | D-1…D-19 + the OQ log |
+| [`package-manifest-spec.md`](./package-manifest-spec.md) | **The package manifest format** (`ai1-package.yaml`, v1.0) — the installer's input contract (platform-independent) |
+| [`architecture.md`](./architecture.md) | Product shape (CLI + library), module layout, control flow, CLI surface, configuration, services, safety boundaries |
+| [`api-design.md`](./api-design.md) | **Module reference** — signatures, def shapes, `createContext`, primitives, `runPlan`, `lib/sandbox.mjs`, exit codes |
+| [`canon-conventions.md`](./canon-conventions.md) | **The build contract** — conventions C1–C13 + the sandbox contract |
+| [`integration-reference.md`](./integration-reference.md) | **Authoritative DB schema** (7 tables, live-verified) + the manifest → CRHQ storage mapping |
+| [`testing-and-sandbox.md`](./testing-and-sandbox.md) | The built-in `--sandbox` / `--lifecycle` testing model + the `npm test` suites |
+| [`decisions.md`](./decisions.md) | Settled design decisions (D-* / OQ-* / C-* rationale index, referenced from code comments) |
 
-## Key decisions (settled)
+## Cornerstones
 
-- **DB-direct via knex** (D-1) — REST can't be sandbox-intercepted; matches the 4 canon installers.
-- **ESM `.mjs` + hardcoded knex import** (C1) + **`INSTALL_BASE_DIR`** for all skill fs ops (C2/D-19).
-- **Product shape = core lib + generic manifest runner** (D-8); manifest is the input,
-  `install_entry` the package-specific hook.
-- **Manifest = `ai1-package.yaml`** (D-10) — declarative `components` (skills/recipes/agents/jobs/
-  services); spec finalized in `package-manifest-spec.md`.
-- **Built-in `--sandbox`** (D-17): self-provisions an isolated schema cloned from live
-  (`CREATE TABLE … LIKE`, D-18) + temp dir, installs there, tears down — **no external harness**.
-  `--lifecycle` runs the full install→…→reinstall assertions.
-- **Vendor-neutral env** (D-15): `INSTALL_BASE_DIR` (the skill-parent dir, D-19) + `INSTALL_SCHEMA`
-  (db `searchPath`), each falling back to legacy `CRHQ_BASE_DIR`/`SANDBOX_SCHEMA`.
-- Auto-unlock locked skills by default; `--respect-locks` to skip (D-5).
-- **Self-contained** except CRHQ deps: `server/db/knex.js`, the DB, and `deploy-project`.
-
-## Still open (build-phase details)
-
-- **D-2b** — services: shell out to `deploy-project` scripts vs inline templates (Phase 6).
-- **OQ-14** — sandbox: re-create intra-schema FKs after `LIKE`? exact prerequisite-skill seeding.
-
-All other decisions (D-*, OQ-*) are resolved — see `decisions-and-open-questions.md`.
+- **DB-direct via knex** — REST can't be sandbox-intercepted. ESM `.mjs` with the hardcoded
+  knex import (C1); all skill fs ops under `INSTALL_BASE_DIR` (C2).
+- **Manifest in, lifecycle owned by the utility** — packages declare `components`; an
+  optional `install_entry` covers only what the utility can't infer.
+- **Built-in `--sandbox`** — self-provisions an isolated schema cloned from live + a temp
+  dir, installs there, tears down; `--lifecycle` runs the full assertion suite. No external
+  harness.
+- **Configurable** — `INSTALL_BASE_DIR` (skill-parent dir) + `INSTALL_SCHEMA`
+  (knex `searchPath`); vendor-neutral names, with legacy `CRHQ_BASE_DIR`/`SANDBOX_SCHEMA` fallbacks.
+- **Zero npm runtime deps** — `yaml` vendored; knex/pg resolve from the satellite.
 
 ## Hard rule
 
-Do **not** install onto the live satellite until explicitly told. All testing until then is
-sandbox-only (isolated schema + temp dir).
+Do **not** install onto the live satellite unless explicitly told. All testing is
+sandbox-only (isolated schema + temp dir via `--sandbox`).

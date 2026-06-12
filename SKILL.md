@@ -151,8 +151,8 @@ const ctx = await createContext(process.argv);   // honors --dry-run/--status/--
 try { /* package-specific steps */ ctx.report(); } finally { await ctx.close(); }
 ```
 
-See [`docs/utility-design.md`](./docs/utility-design.md) Part B and
-[`docs/api-design.md`](./docs/api-design.md) for the full surface.
+See [`docs/api-design.md`](./docs/api-design.md) for the full surface and
+[`docs/architecture.md`](./docs/architecture.md) §1 for the library design.
 
 ## Safety
 
@@ -188,5 +188,5 @@ runtime via the hardcoded `server/db/knex.js` import.
 npm test        # all sandbox-backed suites
 ```
 
-This skill lives in `/opt/projects/user/ai1-crhq-installer/` and is **not** installed into the local
-satellite yet — install it explicitly when ready (see `docs/implementation-plan.md` Phase 8).
+On a satellite this skill is installed at
+`/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/` and registered in the skill registry.

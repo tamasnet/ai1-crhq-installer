@@ -1,118 +1,96 @@
-# Architecture & Design
+# Architecture
 
-> Revised after studying the canon installers + sandbox. The earlier REST/JSON-manifest
-> draft is superseded: installs are **DB-direct** and must be **sandbox-compatible**
-> (see `canon-conventions.md`).
+What `ai1-crhq-installer` is and how it's put together. The manifest format it consumes is
+`package-manifest-spec.md`; module-level signatures are `api-design.md`; the build rules are
+`canon-conventions.md`.
 
-## 1. Goal
+## 1. Product shape: a CLI and a library in one
 
-`ai1-crhq-installer` installs a bundle of resources into a CRHQ satellite:
-**skills, recipes, agents, scheduled jobs** (DB-resident) and **services**
-(nginx + PM2, not in the DB). It must be **idempotent**, **dry-runnable**, and
-**testable in the installer sandbox** without touching the live satellite.
+The utility is a **shared core library** (`scripts/lib/`, exposed via `lib/index.mjs`) with a
+**generic manifest-driven runner** (`scripts/install.mjs`) on top.
 
-## 2. The central design decision (product shape)
+- The **CLI** drives declarative installs from `ai1-package.yaml`: it loads and validates the
+  manifest, builds an ordered plan, and dispatches each component to the matching core
+  primitive.
+- The **library** exports the same primitives (`upsertSkill`, `upsertAgent`, …, plus
+  `createContext` and the parsing/fs/logging helpers) so a package's `install_entry` script —
+  or a standalone bespoke installer — reuses them instead of re-implementing the canon
+  patterns. Import path: the canonical absolute path
+  `/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/scripts/lib/index.mjs`
+  (mirrors the knex.js convention; a package that imports it declares `installer: ">=x"`).
 
-The canon ecosystem has two facts in tension with the original scaffold:
+Both consumers share `createContext` and `runPlan`, so the CLI and a package hook exercise
+identical code paths. The library is opt-in: pre-existing bespoke installers on a satellite
+keep working untouched.
 
-- **Canon installers are bespoke**: each `install.mjs` hardcodes its component arrays;
-  `manifest.yaml`/`skill.json` are *publishing* metadata, not installer input.
-- **Our brief wants a generic installer** that installs "skills, agents, recipes, services."
-
-Three shapes (decision **D-8**, see decisions doc):
-
-| Shape | What it is | Pros | Cons |
-|-------|-----------|------|------|
-| **A. Generic engine** | One `install.mjs` reads a declarative manifest of resources + data files and performs upserts | Matches the brief; DRYs the 4 near-identical installers; one thing to sandbox-test | Diverges from "hardcoded per bundle" canon; manifest schema is new surface |
-| **B. Scaffolder** | Generates a canon-compliant bespoke `install.mjs` + layout for a new bundle | Outputs are 100% canon; each bundle independently testable | It's a codegen tool, not an installer; more indirection |
-| **C. Hybrid (recommended)** | Shared **core library** (`lib/core/*`, exposed via `lib/index.mjs`) of upsert primitives + a **generic manifest-driven `install.mjs`** on top; optional scaffolder later | Bundles can be pure manifest *or* a 10-line bespoke installer that imports the lib; library is reused by both; canon-compliant and sandbox-testable | Slightly more upfront design |
-
-**Recommendation: C.** Build the core library first (the primitives every canon installer
-re-implements by hand), expose a generic manifest runner over it, and keep the door open
-for a scaffolder. Everything below assumes C.
-
-## 3. Resource types
+## 2. Resource types
 
 | Type | Store | Sandbox-testable? | Mechanism |
 |------|-------|-------------------|-----------|
 | Skill | `skills` table + `INSTALL_BASE_DIR/<key>/` fs | ✅ | upsert row + copy assets |
 | Recipe | `recipes` table | ✅ | upsert row (uuid PK) |
 | Agent | `agents` + `agent_skills` + `agent_recipes` | ✅ | upsert + sync joins |
-| Job | `background_jobs` table | ✅ (table is in sandbox DDL) | upsert job row |
-| Service | nginx vhost + PM2 process | ❌ (not DB/fs-in-BASE) | deploy-project conventions; dry-run only in sandbox |
+| Job | `background_jobs` table | ✅ | upsert job row |
+| Service | nginx vhost + PM2 process | ❌ (skipped under `--sandbox`) | inline deploy templates; dry-run = build only |
 
-Jobs were not in the original scaffold but every canon installer registers them — adding a
-`jobs` resource type rounds out the system (confirm via D-9).
+DB resources are written **directly via knex** (no REST — it can't be sandbox-intercepted).
+Services are standalone web apps outside the DB.
 
-## 4. Layout (target, ESM)
+## 3. Layout
 
 ```
 ai1-crhq-installer/
-├── SKILL.md                      # skill doc (frontmatter name/description)
-├── ai1-package.yaml              # the installer dogfoods its own manifest format (1 skill)
-├── package.json                  # type: module
+├── SKILL.md                      # skill doc (canonical usage)
+├── ai1-package.yaml              # the installer dogfoods its own manifest format
+├── package.json                  # type: module; zero runtime deps
 ├── scripts/
-│   ├── install.mjs               # generic entry: load manifest → drive core; flags
-│   └── lib/                      # AUTHORITATIVE module map: utility-design.md Part C
-│       ├── index.mjs            # public API barrel (the stable import surface)
-│       ├── context.mjs          # createContext: flag parse → bound {db,BASE,DRY_RUN,mode,…}
-│       ├── db.mjs               # getDb/closeDb — STATIC hardcoded knex import + INSTALL_SCHEMA (C1)
+│   ├── install.mjs               # generic CLI entry: flags → preflight → plan → dispatch
+│   └── lib/
+│       ├── index.mjs            # public API barrel — the stable import surface
+│       ├── context.mjs          # createContext: flag parse + env resolve → bound ctx
+│       ├── db.mjs               # getDb/getAdminDb/closeDb — hardcoded knex import + INSTALL_SCHEMA searchPath (C1)
 │       ├── manifest.mjs         # load + validate ai1-package.yaml → ordered plan
-│       ├── parse.mjs            # parseFrontmatter, loadYaml (C11)
+│       ├── parse.mjs            # parseFrontmatter (hand-rolled), loadYaml (vendored yaml)
 │       ├── fs.mjs               # copyTree/writeIfChanged/removeTree — INSTALL_BASE_DIR-rooted (C2)
 │       ├── log.mjs              # logging + dry-run markers + completion strings + VERDICT
 │       ├── prereq.mjs           # requireSkills, requireFiles (C12)
-│       ├── sandbox.mjs          # --sandbox: provision (LIKE-clone) + seed + teardown (D-17/18)
-│       └── core/                # per-type primitives (the former monolithic "installer-core")
+│       ├── preflight.mjs        # DB reachable + BASE writable, before any component work
+│       ├── filter.mjs           # --include/--exclude name matcher
+│       ├── run.mjs              # runPlan: ordered dispatch shared by CLI + lifecycle suite
+│       ├── sandbox.mjs          # --sandbox: provision (LIKE-clone) + seed + redirect + teardown
+│       ├── vendor/yaml.mjs      # the yaml package, bundled (zero `npm install`)
+│       └── core/                # per-type primitives
 │           ├── skill.mjs        # upsertSkill / removeSkill / statusSkill
-│           ├── recipe.mjs       #   "        (dry-run, lock, idempotency baked in)
+│           ├── recipe.mjs
 │           ├── agent.mjs        # + agent_skills / agent_recipes join sync
 │           ├── job.mjs
-│           └── service.mjs      # deploy-project emit (D-2)
-└── examples/
-    └── bundle/                   # a complete runnable sample (skill+recipe+agent+job+service)
+│           └── service.mjs      # inline nginx/PM2 deploy templates
+├── examples/bundle/              # complete runnable sample (every component type + install_entry)
+└── tests/                        # sandbox-backed suites (npm test)
 ```
 
-> **Migration note:** the current scaffold is CommonJS `scripts/install.js` +
-> `install-skill.js` … `install-service.js` with `require`. These must become **ESM `.mjs`**
-> because (a) `server/db/knex.js` is ESM and (b) only ESM `import` is interceptable by the
-> sandbox loader hook (C1). The per-type `install-*.js` collapse into `lib/core/*` primitives
-> (exposed via `lib/index.mjs`); they can still be exposed as thin CLI wrappers if we want
-> per-type commands.
-
-## 5. Manifest (installer input)
-
-The generic runner consumes **`ai1-package.yaml`** at the package root — a declarative
-`components` inventory (skills/recipes/agents/jobs/services) plus an optional `install_entry`
-hook for package-specific steps. **The full, finalized format is `package-manifest-spec.md`
-(v0.2)** — that doc is the contract; this section just situates it. (D-10 resolved.)
-
-Paths in `components` resolve relative to the package root. Install order:
-**skills → recipes → agents → jobs → services** (within a type, array order; agents reference
-skills+recipes; jobs reference skill scripts; services independent). Uninstall reverses (C13).
-
-## 6. Core primitives (`lib/core/*`, exposed via `lib/index.mjs`)
-
-Each is `async (ctx, def) => result`, where `ctx` is the object from `createContext`
-(`{ db, BASE, DRY_RUN, RESPECT_LOCKS, mode, log, results }` — see utility-design.md B3):
-
-- `upsertSkill(def)` — unlock-if-needed (C5) → insert|update row → copy `${INSTALL_BASE_DIR}/<key>/`.
-- `upsertRecipe(def)` — insert|update by name (uuid auto).
-- `upsertAgent(def)` — insert|update by key → sync `agent_skills` (existing+active only) →
-  resolve recipe ids → sync `agent_recipes`.
-- `upsertJob(def)` — insert|update `background_jobs` by name; `id = job-<ts>-<rand>`.
-- `installService(def)` — deploy-project emit (separate, non-DB; see §8).
-- `remove*` mirrors for `--uninstall`.
-- `status*` for `--status`.
-
-All write helpers honor `DRY_RUN` (print "would …", zero side effects) and emit the
-canon completion strings via `log` (C7).
-
-## 7. CLI surface
+## 4. Control flow
 
 ```
-install.mjs [<manifest>] [flags]
-  --dry-run        plan only, no writes (DB/fs; build-only for services)
+install.mjs <package> [flags]
+  → (--sandbox? provision isolated schema + temp dir, set env)
+  → createContext(argv)         # the ONLY place flags are parsed and env resolved
+  → loadManifest(packageArg)    # validate → ordered plan
+  → preflight(ctx)              # DB reachable; BASE writable (write modes) — fail = exit 2
+  → runPlan(ctx, plan)          # skills → recipes → agents → jobs → services (uninstall reverses)
+  → install_entry subprocess    # if declared — all modes, standard flags forwarded as argv
+  → ctx.report()                # summary + completion string + exit code
+  → (sandbox teardown unless --keep)
+```
+
+Continue-and-report: a failing component is recorded as `INSTALL-FAIL` but doesn't abort the
+rest; the run exits non-zero if any component failed.
+
+## 5. CLI surface
+
+```
+install.mjs [<package>] [flags]          # <package> = dir with ai1-package.yaml, or the file; default .
+  --dry-run        plan only, zero writes (DB/fs; build-only for services)
   --status         report install state for the manifest
   --uninstall      remove everything in the manifest (reverse order)
   --respect-locks  skip locked skill rows instead of unlocking
@@ -121,47 +99,75 @@ install.mjs [<manifest>] [flags]
                    (comma-separated and/or repeatable, e.g. --only=skills,recipes)
   --include=<pat>  process only components whose name matches <pat> (regex; metachar-free = exact ^pat$)
   --exclude=<pat>  skip components whose name matches <pat> (applied after --include)
-  --sandbox        run into a throwaway isolated schema + temp dir (self-contained; D-17)
+  --json           machine-readable result report
+  --sandbox        run into a throwaway isolated schema + temp dir (self-contained)
     --keep         preserve the sandbox (schema + temp dir) for inspection
     --lifecycle    run install→status→idempotency→uninstall→reinstall assertions
 ```
-If `<manifest>` is omitted, default to `./ai1-package.yaml`.
 
-## 8. Services (reuse deploy-project — D-2)
+## 6. Configuration
 
-Services are **not** DB-resident and **not** covered by the sandbox. The installer:
-- copies source → `/opt/projects/user/<name>/`,
-- writes `.env` from `service.yaml `env`` (never logs secrets),
-- writes `ecosystem.config.cjs` and nginx vhost in `/etc/nginx/projects.d/`,
-- allocates a free port, starts/reloads PM2 `<name>` + nginx.
+Two env knobs, vendor-neutral names, with legacy fallbacks for the older CRHQ harness names:
 
-**Dry-run (D-2a):** the **build step is performed** (validate source/config, surface build
-errors) but the **deploy-project apply is skipped** — no nginx/PM2/port/reload, no live
-changes. This differs from DB resources (whose dry-run is pure preview): services get
-exercised up to, but not including, the live wiring.
+```js
+// INSTALL_BASE_DIR = the parent dir under which each skill's <key> folder is created.
+// Core does join(INSTALL_BASE_DIR, key) — no `user-skills` knowledge in the logic.
+INSTALL_BASE_DIR || join(CRHQ_BASE_DIR, 'user-skills') || '/opt/projects/crhq-satellite/user-skills'
+// DB schema → knex searchPath (null = default schema):
+INSTALL_SCHEMA || SANDBOX_SCHEMA || null
+```
 
-Templates/port rules are owned by `deploy-project`; we reference them. In sandbox/dry-run,
-service steps only **print the plan**. **Open (D-2a):** shell out to deploy-project scripts
-vs template inline.
+Every consumer of the library funnels **all DB access** through `getDb()` (one place the
+schema applies) and **all fs access** through `INSTALL_BASE_DIR`-rooted helpers (one place
+the base path applies). That single-chokepoint property is what makes the built-in sandbox a
+matter of pointing two env vars at an isolated schema and a temp dir.
+
+## 7. Services (inline deploy templates)
+
+Services are not DB-resident and not sandbox-covered. `core/service.mjs` owns the deploy
+inline (the satellite's `deploy-project` skill is a procedural runbook with no callable
+scripts, so its conventions are implemented here, honoring its security rules):
+
+- copy source → `/opt/projects/user/<name>/`
+- write `.env` from `service.yaml` `env` (chmod 640; secrets never logged)
+- write `ecosystem.config.cjs` + the nginx vhost (127.0.0.1 binding;
+  `{SATELLITE_ID}-<subdomain>.crhq.ai`, incl. the white-label branch)
+- allocate a free port if none pinned; PM2 start + save; nginx reload
+
+**Dry-run:** the build step runs (surfacing build errors) but the apply is skipped — no
+nginx/PM2/port/reload. **Sandbox:** services are skipped entirely (the sandbox models DB +
+fs, not nginx/PM2). Never run PM2 against `crhq-satellite`.
+
+## 8. Built-in sandbox
+
+`--sandbox` makes the utility self-testing with no external harness:
+
+1. **Provision** — `CREATE SCHEMA sandbox_<ts>`; for each managed table
+   `CREATE TABLE sandbox_<ts>.<t> (LIKE public.<t> INCLUDING ALL)` — cloned from **live**, so
+   the sandbox can't drift from production. Seed prerequisite `skills` rows copied from live
+   so agent-attach and dependency checks mirror reality. (FKs aren't re-created; guarded
+   join inserts + explicit join cleanup make them unnecessary.)
+2. **Redirect** — set `INSTALL_SCHEMA=sandbox_<ts>` + `INSTALL_BASE_DIR=<tempdir>`.
+3. **Run** — the requested op; with `--lifecycle`, the full assertion suite
+   (see `testing-and-sandbox.md`).
+4. **Teardown** — `DROP SCHEMA … CASCADE` + rm tempdir, unless `--keep`.
 
 ## 9. Safety boundaries (MANDATORY)
 
-- Hardcode the knex import path (C1) — never derive from env — but **never modify** any core
-  file. Importing `server/db/knex.js` at runtime is the sanctioned canon mechanism; reading/
-  editing/printing its contents is not.
-- All skill fs writes go under `${INSTALL_BASE_DIR}` (C2; the skill-parent dir) and
-  `/opt/projects/user/<svc>` for services.
-- Never run PM2 against `crhq-satellite`; service process names are the bundle's own.
-- `--dry-run` = zero side effects. Locked rows respected per `--respect-locks` (C5).
-- Secrets from `service.yaml `env`` → service `.env` only; never echoed to logs.
-- Prereq checks before writes (C12); halt with actionable message + exit code.
+- The knex import path is hardcoded (C1) — never derived from env — but **never modify** any
+  core satellite file. Importing `server/db/knex.js` at runtime is the sanctioned mechanism;
+  reading/editing/printing its contents is not.
+- All skill fs writes go under `${INSTALL_BASE_DIR}` (C2) and `/opt/projects/user/<svc>` for
+  services.
+- Never run PM2 against `crhq-satellite`; service process names are the package's own.
+- `--dry-run` = zero side effects. Locked rows handled per `--respect-locks` (C5).
+- Secrets from `service.yaml` `env` → the service `.env` only; never echoed to logs.
+- Prereq checks before writes (C12); halt with an actionable message + exit code.
 
-## 10. What we reuse vs build
+## 10. Dependencies
 
-- **Reuse (CRHQ deps only):** `server/db/knex.js` (DB accessor), the live DB (schema cloned for
-  sandbox), `deploy-project` (services).
-- **Build:** `lib/core/*` (the DRY primitives) + `lib/index.mjs` barrel, the generic manifest
-  runner, the manifest schema + validator, **`lib/sandbox.mjs` (built-in `--sandbox`, absorbing
-  the external `installer-sandbox`)**, the sample bundle.
-- **Dropped:** external `installer-sandbox` + `sandbox-install-test` dependencies (D-16/D-17) —
-  the utility is self-contained except for the CRHQ deps above.
+- **CRHQ deps (the only external ones):** `server/db/knex.js` (DB accessor), the satellite
+  DB, and nginx/PM2 on the host for services.
+- **Zero npm runtime deps:** `yaml` is vendored as a single bundled file
+  (`scripts/lib/vendor/yaml.mjs`); frontmatter parsing is hand-rolled; knex/pg resolve from
+  the satellite at runtime.
