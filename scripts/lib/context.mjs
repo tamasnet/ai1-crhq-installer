@@ -18,7 +18,7 @@ export function resolveSchema() {
 
 export function parseFlags(argv) {
   const flags = {
-    mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false,
+    mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false, INSTALL_SKILLS_AS_USER: false,
     ONLY: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
     JSON: false, packageArg: '.',
   };
@@ -27,6 +27,7 @@ export function parseFlags(argv) {
     else if (a === '--status') flags.mode = 'status';
     else if (a === '--dry-run') flags.DRY_RUN = true;
     else if (a === '--respect-locks') flags.RESPECT_LOCKS = true;
+    else if (a === '--install-skills-as-user') flags.INSTALL_SKILLS_AS_USER = true;
     else if (a === '--sandbox') flags.SANDBOX = true;
     else if (a === '--keep') flags.KEEP = true;
     else if (a === '--lifecycle') flags.LIFECYCLE = true;

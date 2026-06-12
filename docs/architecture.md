@@ -116,6 +116,7 @@ install.mjs [<manifest>] [flags]
   --status         report install state for the manifest
   --uninstall      remove everything in the manifest (reverse order)
   --respect-locks  skip locked skill rows instead of unlocking
+  --install-skills-as-user  register all skills as unlocked user skills (default: org, locked)
   --only=<types>   restrict to a subset of skills|recipes|agents|jobs|services
                    (comma-separated and/or repeatable, e.g. --only=skills,recipes)
   --include=<pat>  process only components whose name matches <pat> (regex; metachar-free = exact ^pat$)

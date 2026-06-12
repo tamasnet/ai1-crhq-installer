@@ -76,8 +76,14 @@ function loadSkillDef(entry, root) {
     throw new ManifestError(`Skill ${meta.name}: SKILL.md version ${meta.version} != manifest pin ${entry.version}`);
   }
   checkLen('skill name', meta.name, LIMITS.skillName);
+  // install_type (manifest entry, D-22): how the skill registers. Default 'org' (locked); 'user'
+  // installs it unlocked as a user skill. Either way assets land in INSTALL_BASE_DIR.
+  const installType = entry.install_type;
+  if (installType != null && installType !== 'user' && installType !== 'org') {
+    throw new ManifestError(`Skill ${meta.name}: install_type must be 'user' or 'org' (got '${installType}')`);
+  }
   // content = SKILL.md body (frontmatter stripped) — matches the live CRHQ skills.content convention.
-  return { key: meta.name, name: meta.name, description: meta.description || '', version: String(meta.version), srcDir, content: body };
+  return { key: meta.name, name: meta.name, description: meta.description || '', version: String(meta.version), srcDir, content: body, installType };
 }
 
 function loadRecipeDef(entry, root) {

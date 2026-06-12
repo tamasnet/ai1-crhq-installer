@@ -32,15 +32,16 @@ try {
 
   console.log('skills:');
 
-  await test('create: verdict OK, row fields correct, assets copied', async () => {
+  await test('create: default org+locked, row fields correct, assets copied', async () => {
     const r = await upsertSkill(ctx, skillDef);
     assert.equal(r.verdict, 'INSTALL-OK');
     assert.equal(r.action, 'created');
     assert.equal(r.files, 2, 'SKILL.md + scripts/hello.js copied');
     const row = await skillRow();
-    assert.equal(row.skill_type, 'user');
+    assert.equal(row.skill_type, 'org', 'default registration is org (D-22)');
+    assert.equal(row.locked, true, 'org skills install locked');
     assert.equal(row.skill_path, `db://skills/${skillDef.name}`);
-    assert.equal(row.skill_dir, skillDir);
+    assert.equal(row.skill_dir, skillDir, 'still under INSTALL_BASE_DIR');
     assert.equal(row.is_active, true);
     assert.equal(row.is_global, false);
     assert.ok(row.content.includes('# Ai1 Sample Skill'), 'content = SKILL.md body');
@@ -49,16 +50,44 @@ try {
     assert.ok(existsSync(join(skillDir, 'scripts', 'hello.js')));
   });
 
-  await test('idempotent: re-run → ALREADY-INSTALLED, zero files re-copied', async () => {
+  await test('idempotent: re-run → ALREADY-INSTALLED, zero files, stays locked', async () => {
     const r = await upsertSkill(ctx, skillDef);
     assert.equal(r.verdict, 'ALREADY-INSTALLED');
     assert.equal(r.files, 0);
+    assert.equal((await skillRow()).locked, true, 'org skill remains locked across re-install');
   });
 
-  await test('update: changed content → OK, row content updated', async () => {
+  await test('update: changed content → OK, row content updated, stays org+locked', async () => {
     const r = await upsertSkill(ctx, { ...skillDef, content: `${skillDef.content}\nUPDATED-MARKER` });
     assert.equal(r.verdict, 'INSTALL-OK');
-    assert.ok((await skillRow()).content.endsWith('UPDATED-MARKER'));
+    const row = await skillRow();
+    assert.ok(row.content.endsWith('UPDATED-MARKER'));
+    assert.equal(row.skill_type, 'org');
+    assert.equal(row.locked, true, 'unlock-then-update leaves it locked again');
+  });
+
+  await test('install_type: user (manifest entry) → user skill, unlocked', async () => {
+    const def = { ...skillDef, key: 'ai1-user-skill', name: 'ai1-user-skill', installType: 'user' };
+    const r = await upsertSkill(ctx, def);
+    assert.equal(r.verdict, 'INSTALL-OK');
+    const row = await ctx.db('skills').where({ name: 'ai1-user-skill' }).first();
+    assert.equal(row.skill_type, 'user');
+    assert.equal(row.locked, false);
+  });
+
+  await test('--install-skills-as-user flag → user, unlocked (overrides org default)', async () => {
+    const def = { ...skillDef, key: 'ai1-flag-skill', name: 'ai1-flag-skill' };  // no install_type → org by default
+    const r = await upsertSkill(makeCtx({ INSTALL_SKILLS_AS_USER: true }), def);
+    assert.equal(r.verdict, 'INSTALL-OK');
+    const row = await ctx.db('skills').where({ name: 'ai1-flag-skill' }).first();
+    assert.equal(row.skill_type, 'user');
+    assert.equal(row.locked, false);
+  });
+
+  await test('--install-skills-as-user overrides an explicit install_type: org', async () => {
+    const def = { ...skillDef, key: 'ai1-flagorg-skill', name: 'ai1-flagorg-skill', installType: 'org' };
+    await upsertSkill(makeCtx({ INSTALL_SKILLS_AS_USER: true }), def);
+    assert.equal((await ctx.db('skills').where({ name: 'ai1-flagorg-skill' }).first()).skill_type, 'user', 'flag wins');
   });
 
   await test('lock + --respect-locks: skipped, row untouched', async () => {
@@ -71,12 +100,12 @@ try {
     assert.equal(row.locked, true, 'still locked');
   });
 
-  await test('lock default: auto-unlock then update', async () => {
+  await test('locked row: auto-unlock then update, restored to org+locked', async () => {
     const r = await upsertSkill(ctx, skillDef);
     assert.equal(r.verdict, 'INSTALL-OK');
     const row = await skillRow();
-    assert.equal(row.locked, false, 'unlocked');
-    assert.equal(row.skill_type, 'user', 'restored to user');
+    assert.equal(row.skill_type, 'org', 'restored to org default');
+    assert.equal(row.locked, true, 're-locked after the unlock-then-update');
     assert.ok(row.content.includes('# Ai1 Sample Skill'));
   });
 
@@ -155,6 +184,15 @@ try {
     writeFileSync(join(badPkg, 'ai1-package.yaml'),
       'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 0.0.1\n');
     assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /version/.test(e.message));
+  });
+
+  await test('invalid install_type → ManifestError', async () => {
+    const badPkg = join(sb.baseDir, 'badtype');
+    mkdirSync(join(badPkg, 'skills', 'foo'), { recursive: true });
+    writeFileSync(join(badPkg, 'skills', 'foo', 'SKILL.md'), '---\nname: foo\nversion: 0.0.1\ndescription: d\n---\nbody');
+    writeFileSync(join(badPkg, 'ai1-package.yaml'),
+      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 0.0.1\n      install_type: bogus\n');
+    assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /install_type/.test(e.message));
   });
 
   console.log('\nskills+recipes-only lifecycle:');

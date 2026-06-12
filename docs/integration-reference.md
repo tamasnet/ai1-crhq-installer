@@ -33,13 +33,14 @@ Connection (from sandbox harness defaults): pg, `DB_HOST` localhost, `DB_PORT` 5
 | `is_active` | bool default true | |
 | `locked`, `locked_at`, `locked_by` | bool/ts/varchar | PG trigger blocks UPDATE on locked rows → unlock first (C5) |
 | `content` | text | the SKILL.md body (or full md) |
-| `skill_type` | varchar **NOT NULL** default `'system'` | **installers set `'user'`** |
+| `skill_type` | varchar **NOT NULL** default `'system'` | **installer default `'org'` + `locked:true`** (D-22); `install_type: user` / `--install-skills-as-user` → `'user'` + unlocked |
 | `created_at`, `updated_at` | timestamptz | set `new Date()` |
 | `search_embedding` | vector(1536) | leave null; backfilled elsewhere |
 | `hub_version`, `hub_synced_at`, `org_skill_id`, `org_version` | | hub/org sync — leave default |
 
-Insert minimal set used by canon: `name, description, content, skill_type:'user',
-skill_path, skill_dir, is_active:true, is_global:false, created_at, updated_at`.
+Insert minimal set: `name, description, content, skill_type, locked, skill_path, skill_dir,
+is_active:true, is_global:false, created_at, updated_at`. `skill_type`/`locked` come from the
+component's `install_type` — default `'org'`+`locked:true`; `user` → `'user'`+unlocked (D-22).
 
 ### `skill_versions` — version history
 

@@ -7,7 +7,7 @@ one reusable utility.
 
 **Status:** **All phases (1–8) complete.** ESM core `lib/` + `lib/core/*` (skills, recipes, agents,
 jobs, services) + generic runner (`install.mjs`: preflight + `install_entry`) + built-in `--sandbox`.
-`npm test` = 67 assertions green; zero runtime deps (`yaml` vendored — no `npm install`). Deployed to
+`npm test` = 71 assertions green; zero runtime deps (`yaml` vendored — no `npm install`). Deployed to
 `/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/` and registered as a live skill; the
 live service apply/remove paths were smoke-tested end-to-end (incl. the white-label vhost) and
 cleaned up. D-2b → inline templates; OQ-14 → seed skills, no FK recreation.
@@ -27,9 +27,10 @@ cleaned up. D-2b → inline templates; OQ-14 → seed skills, no FK recreation.
   dir (D-19): `INSTALL_BASE_DIR || join(CRHQ_BASE_DIR,'user-skills') || '/opt/projects/crhq-satellite/user-skills'`.
 - **`getDb()` is schema-configurable:** honor `INSTALL_SCHEMA` (`|| SANDBOX_SCHEMA`) → knex `searchPath`.
 - **Idempotent** upserts; emit canon completion strings (C7); standard flags
-  `--dry-run / --status / --uninstall / --respect-locks / --only=<types> / --include / --exclude / --sandbox [--keep --lifecycle]`.
+  `--dry-run / --status / --uninstall / --respect-locks / --install-skills-as-user / --only=<types> / --include / --exclude / --sandbox [--keep --lifecycle]`.
   `--only` takes one or more component types (comma-separated/repeatable) — it replaces the removed `--no-agent`/`--no-job` toggles (D-21).
   `--include`/`--exclude` filter components by name (regex; a metacharacter-free value is an exact `^name$` match; case-sensitive).
+  **Skills default to org + `locked`** (`skill_type:'org'`); per-skill `install_type: user` in the manifest entry, or `--install-skills-as-user` (wins), registers them unlocked as `user` skills. Assets stay under `INSTALL_BASE_DIR` either way (D-22).
 
 ## Build target
 `scripts/install.mjs` (CLI) + `scripts/lib/` per `api-design.md`:

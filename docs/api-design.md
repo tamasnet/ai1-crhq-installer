@@ -127,7 +127,7 @@ plan = {
 ### Def shapes (parsed source — install-time fields computed by primitives from `ctx`)
 
 ```js
-SkillDef   = { key, name, description, version, srcDir, content }      // content = SKILL.md (full md)
+SkillDef   = { key, name, description, version, srcDir, content, installType? }  // content = SKILL.md (full md); installType: 'org'|'user' (manifest entry, D-22)
 RecipeDef  = { name, description, content, srcFile }
 AgentDef   = { key, name, description, mode, default_model?, icon?, skills:[], recipes:[], srcFile }
 JobDef     = { name, description, schedule, timezone?, script, args?, timeout_minutes?,
@@ -154,7 +154,8 @@ Builds and returns:
 ctx = {
   // parsed flags
   mode: 'install'|'uninstall'|'status',   // from --uninstall/--status (default install)
-  DRY_RUN, RESPECT_LOCKS, ONLY /* string[]|null — --only=<types> (comma-separated/repeatable) */,
+  DRY_RUN, RESPECT_LOCKS, INSTALL_SKILLS_AS_USER /* --install-skills-as-user: force user skills (D-22) */,
+  ONLY /* string[]|null — --only=<types> (comma-separated/repeatable) */,
   INCLUDE, EXCLUDE /* string|null — --include=/--exclude= name filter (regex; see §12) */,
   SANDBOX, KEEP, LIFECYCLE,
   packageArg,                              // manifest path/dir arg (default '.')
@@ -188,12 +189,15 @@ All are `async (ctx, def) => RunResult`. They honor `ctx.DRY_RUN` (zero writes, 
 ### `core/skill.mjs`
 ```js
 upsertSkill(ctx, def)  // SkillDef
+// 0. registration type (D-22): asUser = ctx.INSTALL_SKILLS_AS_USER || def.installType==='user'
+//    → skill_type = asUser?'user':'org'; locked = !asUser   (default = org + locked)
 // 1. row = db('skills').where({name:def.name}).first()
-// 2. if row.locked: RESPECT_LOCKS ? skip(LOCKED) : unlock (C5)
+// 2. if row.locked: RESPECT_LOCKS ? skip(LOCKED) : (on an actual update) unlock first (C5 — the
+//    live PG trigger forbids UPDATE on a locked row)
 // 3. computed: skillDir = join(ctx.BASE, def.key); skillPath = `db://skills/${def.name}` (D-19)
-// 4. insert|update skills {name,description,content,skill_type:'user',skill_path,skill_dir,
+// 4. insert|update skills {name,description,content,skill_type,locked,skill_path,skill_dir,
 //                          is_active:true,is_global:false,updated_at,(created_at on insert)}
-// 5. copyTree(def.srcDir, skillDir, {dryRun})   // assets → INSTALL_BASE_DIR/<key>
+// 5. copyTree(def.srcDir, skillDir, {dryRun})   // assets → INSTALL_BASE_DIR/<key> (always)
 // → { type:'skill', name, verdict, action:'created'|'updated'|'skipped', files }
 removeSkill(ctx, nameOrDef)   // del row + removeTree(join(BASE,key))
 statusSkill(ctx, nameOrDef)   // { present, active, filesPresent }

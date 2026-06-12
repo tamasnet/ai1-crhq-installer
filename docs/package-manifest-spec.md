@@ -100,6 +100,7 @@ components:
   skills:
     - path: skills/plaud-login    # relative to package root
       version: 0.4.0              # REQUIRED for skills; must match SKILL.md frontmatter
+      install_type: user          # optional: 'org' (default, locked) | 'user' (unlocked)
     - path: skills/plaud-ingest
       version: 0.2.3
   recipes:
@@ -144,6 +145,7 @@ install_flags:
 | `dependencies`, `credentials_needed`, `provides_credentials` | Optional |
 | `install_entry`, `install_flags` | Optional |
 | `components.skills[].version` | **Required** — must equal that skill's `SKILL.md` `version` |
+| `components.skills[].install_type` | Optional — `org` (default, locked) or `user` (unlocked); see §5.1 |
 | `components.services[].version` | **Required** — must equal that service's `service.yaml` `version` |
 | `components.{recipes,agents,jobs}[].version` | Optional |
 
@@ -194,9 +196,17 @@ updatedAt: 2026-05-14
 | `triggers` | – | agent-facing invocation phrases |
 | `updatedAt` | – | informational |
 
-Install: upsert `skills` (`skill_type:'user'`, `skill_path='db://skills/<name>'`,
+Install: upsert `skills` (`skill_path='db://skills/<name>'`,
 `skill_dir='${INSTALL_BASE_DIR}/<key>'`, `is_active:true`) + copy the tree to
 `${INSTALL_BASE_DIR}/<key>/` (operator-configured; the manifest is unaware of it — D-19).
+
+**Registration type (`install_type`, D-22):** the component entry's optional `install_type`
+controls the row's `skill_type`/`locked`. Default `org` → `skill_type:'org'`, `locked:true`
+(re-installs unlock-then-update, then re-lock; `--respect-locks` skips a locked row). `user` →
+`skill_type:'user'`, `locked:false` (the prior behavior). The global `--install-skills-as-user`
+flag forces **all** skills to `user` and **overrides** any per-skill `install_type`. The value must
+be `org` or `user` (else `ManifestError`). Assets always land in `INSTALL_BASE_DIR` regardless —
+only the DB registration changes (we don't have write access to where real org skills live).
 
 ### 5.2 Recipe — `recipes/<name>.md`
 Markdown file: YAML frontmatter + Markdown body.
@@ -324,9 +334,13 @@ reload. **Dry-run runs the build step (incl. `build`) but skips the deploy-proje
 - Finer control than this ordering implies → use `install_entry`.
 
 **Standard flags — utility-owned, never declared in the manifest:**
-`--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--only=<types>`, `--include=<pat>`,
-`--exclude=<pat>`. The utility forwards them to `install_entry` (argv) so package-specific steps can
-honor them. `install_flags` is ONLY for package-specific flags (e.g. `--no-ingest`).
+`--dry-run`, `--status`, `--uninstall`, `--respect-locks`, `--install-skills-as-user`,
+`--only=<types>`, `--include=<pat>`, `--exclude=<pat>`. The utility forwards them to `install_entry`
+(argv) so package-specific steps can honor them. `install_flags` is ONLY for package-specific flags
+(e.g. `--no-ingest`).
+
+`--install-skills-as-user` registers every skill as an unlocked `user` skill, overriding the org
+default and any per-skill `install_type` (§5.1).
 
 `--only=<types>` restricts which component **types** run — one or more of
 `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated (e.g.

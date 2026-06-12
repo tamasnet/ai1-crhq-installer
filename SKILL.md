@@ -50,6 +50,7 @@ components:
   skills:
     - path: skills/my-skill     # dir with SKILL.md (+ optional scripts/)
       version: 0.1.0            # REQUIRED — must equal SKILL.md frontmatter version
+      install_type: org        # optional: 'org' (default, locked) | 'user' (unlocked)
   recipes:
     - path: recipes/my-recipe.md
   agents:
@@ -69,7 +70,11 @@ Full specification: [`docs/package-manifest-spec.md`](./docs/package-manifest-sp
 
 - **Skill** — `skills/<key>/SKILL.md`: YAML frontmatter (`name`, `version`, `description`) + a
   Markdown body that becomes `skills.content`; optional `scripts/`. Assets copy to
-  `INSTALL_BASE_DIR/<key>/`; the row is `skill_type:'user'`, `skill_path:'db://skills/<name>'`.
+  `INSTALL_BASE_DIR/<key>/`; `skill_path:'db://skills/<name>'`. **By default the row registers as an
+  org skill, `locked`** (`skill_type:'org'`); set the component entry's `install_type: user` — or
+  pass `--install-skills-as-user` — to register it as an unlocked `user` skill instead. Either way
+  the assets live under `INSTALL_BASE_DIR` (we don't write to where real org skills live; only the
+  registration differs).
 - **Recipe** — `recipes/<name>.md`: frontmatter (`name`, `description`) + body → `recipes.content`.
 - **Agent** — `agents/<key>.yaml`: `key`/`name`/`mode`/`default_model`/`icon`/`skills:[]`/`recipes:[]`.
   Only existing+active skills attach; recipe names resolve to ids; stale links are removed on re-run.
@@ -89,6 +94,7 @@ Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manif
 | `--status` | Report per-component install state. |
 | `--uninstall` | Remove components in reverse order. |
 | `--respect-locks` | Skip locked skills instead of auto-unlocking them. |
+| `--install-skills-as-user` | Register **all** skills as unlocked `user` skills (overrides the org default and any per-skill `install_type`). |
 | `--only=<types>` | Process only the listed types — one or more of `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated (e.g. `--only=skills,recipes`). |
 | `--include=<pat>` | Process only components whose name matches `<pat>` (see below). |
 | `--exclude=<pat>` | Skip components whose name matches `<pat>`. Applied after `--include`. |

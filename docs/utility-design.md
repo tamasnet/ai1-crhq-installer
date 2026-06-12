@@ -25,8 +25,8 @@ Each item tagged with its source convention for traceability.
 
 ### A2. Component upserts (DB-direct via knex; idempotent)
 - [ ] **Skill** — parse `SKILL.md` frontmatter; lock handling (C5); insert|update `skills` row
-      (`skill_type:'user'`, `skill_path`, `skill_dir`, all NOT-NULL cols); copy tree to
-      `${INSTALL_BASE_DIR}/<key>/`. (integration-ref §2; C3)
+      (`skill_type`/`locked` from `install_type` — default org+locked, D-22; `skill_path`, `skill_dir`,
+      all NOT-NULL cols); copy tree to `${INSTALL_BASE_DIR}/<key>/`. (integration-ref §2; C3)
 - [ ] **Recipe** — parse `.md` frontmatter+body; insert|update `recipes` (uuid PK auto).
 - [ ] **Agent** — parse `.yaml`; insert|update `agents` by `key` (minimal cols + defaults);
       sync `agent_skills` (attach only existing+active skills); resolve recipe name→uuid; sync
@@ -69,6 +69,7 @@ Each item tagged with its source convention for traceability.
 
 ### A7. Flag handling
 - [ ] Standard flags (utility-owned): `--dry-run`, `--status`, `--uninstall`, `--respect-locks`,
+      `--install-skills-as-user` (force unlocked `user` skills; default is org+locked — D-22),
       `--only=<types>` (one or more types, comma-separated/repeatable — replaces `--no-agent`/`--no-job`, D-21),
       `--include=<pat>`, `--exclude=<pat>`, **`--sandbox`** (+ `--keep`, `--lifecycle`).
       `--include`/`--exclude` filter by component name (regex; a metacharacter-free value is an exact

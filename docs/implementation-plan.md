@@ -49,16 +49,18 @@ primitives unit-exercised via `--sandbox` (self-provisioned isolated schema).
 
 ## Phase 2 — Skill + Recipe install — ✅ DONE 2026-06-01
 
-- [x] `upsertSkill`: unlock-if-needed (C5) → insert|update (`skill_type:'user'`, `skill_path`,
-      `skill_dir`=`${INSTALL_BASE_DIR}/<key>`, `skill_path`=`db://skills/<name>`, NOT-NULL fields set)
-      → copy assets to `${INSTALL_BASE_DIR}/<key>/`.
+- [x] `upsertSkill`: registration type from `install_type` (default org+locked — D-22) → unlock-if-
+      needed before an update (C5) → insert|update (`skill_type`/`locked`, `skill_dir`=`${INSTALL_BASE_DIR}/<key>`,
+      `skill_path`=`db://skills/<name>`, NOT-NULL fields set) → copy assets to `${INSTALL_BASE_DIR}/<key>/`.
 - [x] `upsertRecipe`: insert|update by name (uuid auto).
 - [x] Wire `--dry-run`/`--status`/`--uninstall` for both.
+- [x] `install_type` (manifest entry) + `--install-skills-as-user` → org/user registration (added 2026-06-11, D-22).
 
-**Test:** `tests/skill-recipe.test.mjs` (`npm test`) — 15 assertions green: row-level fields,
+**Test:** `tests/skill-recipe.test.mjs` (`npm test`) — 19 assertions green: row-level fields,
+org+locked default + `install_type: user`/`--install-skills-as-user` overrides (D-22),
 asset copy + idempotency, **C5 lock handling both ways**, dry-run zero-write, status, removal,
-recipe lifecycle, missing-SKILL.md + version-pin negatives, and a skills+recipes-only
-`--sandbox --lifecycle`. (Note: `LIKE` doesn't clone the skills lock TRIGGER, so the test
+recipe lifecycle, missing-SKILL.md + version-pin + invalid-`install_type` negatives, and a
+skills+recipes-only `--sandbox --lifecycle`. (Note: `LIKE` doesn't clone the skills lock TRIGGER, so the test
 validates the installer's lock *logic*, not the DB trigger.)
 
 ## Phase 3 — Agent install + join sync — ✅ DONE 2026-06-01
