@@ -2,10 +2,6 @@
 name: ai1-sample-skill
 version: 0.1.0
 description: "Sample skill used by the ai1-crhq-installer test bundle. Does nothing useful; exists to exercise skill install/uninstall/status and asset copy."
-category: example
-classification: internal
-complexity: beginner
-foundational: false
 ---
 
 # Ai1 Sample Skill

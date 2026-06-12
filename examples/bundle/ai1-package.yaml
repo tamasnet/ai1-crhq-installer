@@ -8,16 +8,6 @@ description: >
   run under --sandbox --lifecycle; a real (non-sandbox) install also deploys the service live.
 installer: ">=0.1.0"
 
-triggers:
-  - /ai1-sample-bundle
-  - "install ai1 sample"
-
-category: example
-classification: internal
-complexity: beginner
-foundational: false
-status: mvp-draft
-
 # Install order = type order below, then array order within a type. Uninstall reverses.
 components:
   skills:
