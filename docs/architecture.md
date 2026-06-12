@@ -56,6 +56,7 @@ ai1-crhq-installer/
 │       ├── prereq.mjs           # requireSkills, requireFiles (C12)
 │       ├── preflight.mjs        # DB reachable + BASE writable, before any component work
 │       ├── filter.mjs           # --include/--exclude name matcher
+│       ├── install-log.mjs      # ${PACKAGES_DIR}/install.json — record of installed components
 │       ├── run.mjs              # runPlan: ordered dispatch shared by CLI + lifecycle suite
 │       ├── sandbox.mjs          # --sandbox: provision (LIKE-clone) + seed + redirect + teardown
 │       ├── vendor/yaml.mjs      # the yaml package, bundled (zero `npm install`)
@@ -78,6 +79,7 @@ install.mjs <package> [flags]
   → loadManifest(packageArg)    # validate → ordered plan
   → preflight(ctx)              # DB reachable; BASE writable (write modes) — fail = exit 2
   → runPlan(ctx, plan)          # skills → recipes → agents → jobs → services (uninstall reverses)
+  → update install log          # ${PACKAGES_DIR}/install.json — skipped in dry-run/status
   → install_entry subprocess    # if declared — all modes, standard flags forwarded as argv
   → ctx.report()                # summary + completion string + exit code
   → (sandbox teardown unless --keep)
@@ -107,7 +109,7 @@ install.mjs [<package>] [flags]          # <package> = dir with ai1-package.yaml
 
 ## 6. Configuration
 
-Two env knobs, vendor-neutral names, with legacy fallbacks for the older CRHQ harness names:
+Env knobs, vendor-neutral names, with legacy fallbacks for the older CRHQ harness names:
 
 ```js
 // INSTALL_BASE_DIR = the parent dir under which each skill's <key> folder is created.
@@ -115,7 +117,16 @@ Two env knobs, vendor-neutral names, with legacy fallbacks for the older CRHQ ha
 INSTALL_BASE_DIR || join(CRHQ_BASE_DIR, 'user-skills') || '/opt/projects/crhq-satellite/user-skills'
 // DB schema → knex searchPath (null = default schema):
 INSTALL_SCHEMA || SANDBOX_SCHEMA || null
+// Where the install log (install.json) lives:
+PACKAGES_DIR || join(homedir(), 'packages')
 ```
+
+**Install log (D-24):** every real install/uninstall updates `${PACKAGES_DIR}/install.json` —
+keyed by package name, one entry per installed component with `{type, name, version?,
+installed_at, source}` (`source` = the component's manifest file relative to the package
+root). Dry-run and status never touch it; uninstalling deletes entries outright, and the
+package key goes with its last component. Bookkeeping only — a log write failure warns, it
+doesn't fail the install.
 
 Every consumer of the library funnels **all DB access** through `getDb()` (one place the
 schema applies) and **all fs access** through `INSTALL_BASE_DIR`-rooted helpers (one place
@@ -147,7 +158,8 @@ fs, not nginx/PM2). Never run PM2 against `crhq-satellite`.
    the sandbox can't drift from production. Seed prerequisite `skills` rows copied from live
    so agent-attach and dependency checks mirror reality. (FKs aren't re-created; guarded
    join inserts + explicit join cleanup make them unnecessary.)
-2. **Redirect** — set `INSTALL_SCHEMA=sandbox_<ts>` + `INSTALL_BASE_DIR=<tempdir>`.
+2. **Redirect** — set `INSTALL_SCHEMA=sandbox_<ts>` + `INSTALL_BASE_DIR=<tempdir>` +
+   `PACKAGES_DIR=<tempdir>` (so the install log never touches the real one).
 3. **Run** — the requested op; with `--lifecycle`, the full assertion suite
    (see `testing-and-sandbox.md`).
 4. **Teardown** — `DROP SCHEMA … CASCADE` + rm tempdir, unless `--keep`.

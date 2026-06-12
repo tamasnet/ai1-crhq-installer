@@ -8,11 +8,11 @@
   },
   "scripts": {
     "install-bundle": "node scripts/install.mjs",
-    "test": "node tests/skill-recipe.test.mjs && node tests/agent.test.mjs && node tests/job.test.mjs && node tests/runner.test.mjs && node tests/service.test.mjs && node tests/filter.test.mjs"
+    "test": "node tests/skill-recipe.test.mjs && node tests/agent.test.mjs && node tests/job.test.mjs && node tests/runner.test.mjs && node tests/service.test.mjs && node tests/filter.test.mjs && node tests/install-log.test.mjs"
   },
   "engines": {
     "node": ">=18"
   },
-  "comment": "No runtime dependencies — yaml is vendored at scripts/lib/vendor/yaml.mjs so the skill installs without npm install. To regenerate that bundle, install yaml as a devDependency and run the esbuild command in its header.",
+  "comment": "No runtime dependencies \u2014 yaml is vendored at scripts/lib/vendor/yaml.mjs so the skill installs without npm install. To regenerate that bundle, install yaml as a devDependency and run the esbuild command in its header.",
   "dependencies": {}
 }

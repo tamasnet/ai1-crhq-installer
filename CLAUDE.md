@@ -31,8 +31,9 @@ the live service apply/remove paths are smoke-tested.
 
 ## Code map
 `scripts/install.mjs` (CLI) + `scripts/lib/` per `api-design.md`:
-`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, run, sandbox}.mjs`
+`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, install-log, run, sandbox}.mjs`
 + `core/{skill,recipe,agent,job,service}.mjs` + `vendor/yaml.mjs`.
+Install log: `${PACKAGES_DIR:-~/packages}/install.json` (D-24) — updated on real installs/uninstalls only.
 Self-test (no live writes): `node scripts/install.mjs <package> --sandbox --lifecycle`.
 
 ## Safety & workflow

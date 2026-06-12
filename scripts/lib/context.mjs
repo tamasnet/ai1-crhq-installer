@@ -4,6 +4,7 @@
 import { join } from 'path';
 import { getDb, closeDb } from './db.mjs';
 import { makeLogger, SEVERITY } from './log.mjs';
+import { resolvePackagesDir } from './install-log.mjs';
 
 // INSTALL_BASE_DIR = the parent dir under which each skill's <key> folder is created (C2/D-19).
 export function resolveBase() {
@@ -52,6 +53,7 @@ export async function createContext(argv) {
     ...flags,
     BASE: resolveBase(),
     SCHEMA: resolveSchema(),
+    PACKAGES_DIR: resolvePackagesDir(),
     db: getDb(),
     log,
     results: [],

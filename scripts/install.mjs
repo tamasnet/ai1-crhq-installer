@@ -9,7 +9,7 @@ import { existsSync } from 'fs';
 import { spawnSync } from 'child_process';
 import {
   createContext, loadManifest, runPlan, preflight, sandbox, closeDb,
-  ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
+  updateInstallLog, ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
 } from './lib/index.mjs';
 
 const stamp = () => `${Date.now()}${Math.floor(Math.random() * 1000)}`;  // C10
@@ -35,6 +35,7 @@ try {
     process.exitCode = res.passed ? 0 : 1;
   } else {
     await runPlan(ctx, plan);
+    recordInstallLog(ctx, meta, plan, packageRoot);  // D-24 — skipped in dry-run/status
     runInstallEntry(ctx, meta, packageRoot, argv);   // A4 / OQ-U2 — runs for install/uninstall/status
     ctx.report();
   }
@@ -67,6 +68,17 @@ function runInstallEntry(ctx, meta, packageRoot, rawArgv) {
     verdict: r.status === 0 ? VERDICT.OK : VERDICT.FAIL,
     action: r.status === 0 ? 'ran' : `exit ${r.status}`,
   });
+}
+
+// Update ${PACKAGES_DIR}/install.json with this run's outcome. Bookkeeping only — a failure
+// here is warned, not fatal: the DB is the source of truth and the install itself succeeded.
+function recordInstallLog(ctx, meta, plan, packageRoot) {
+  try {
+    const p = updateInstallLog(ctx, meta, plan, packageRoot);
+    if (p) ctx.log.info(`install log updated: ${p}`);
+  } catch (e) {
+    ctx.log.warn(`install log not updated: ${e.message}`);
+  }
 }
 
 function handleFatal(e) {

@@ -138,6 +138,10 @@ whether to honor them for its own steps.
   `/opt/projects/crhq-satellite/user-skills`; legacy fallback `CRHQ_BASE_DIR` + `/user-skills`).
 - `INSTALL_SCHEMA` — Postgres schema for DB writes (applied as a knex `searchPath`; legacy fallback
   `SANDBOX_SCHEMA`). Set automatically by `--sandbox`.
+- `PACKAGES_DIR` — where the install log lives (default `~/packages`). Every real install/uninstall
+  updates `${PACKAGES_DIR}/install.json` with per-component name/version/date/source entries;
+  dry-run and status never touch it, and uninstalled entries are removed outright. Redirected to a
+  throwaway dir by `--sandbox`.
 
 ## Library API
 
@@ -171,7 +175,7 @@ ai1-crhq-installer/
 ├── SKILL.md
 ├── scripts/
 │   ├── install.mjs        # CLI entry — generic manifest runner
-│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, run, sandbox,
+│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, run, sandbox,
 │       ├── core/          #   index  +  core/{skill,recipe,agent,job,service}
 │       └── vendor/        #   yaml.mjs — vendored single-file YAML parser (zero npm install)
 ├── examples/bundle/       # complete sample package (every component type)

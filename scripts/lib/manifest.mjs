@@ -95,7 +95,8 @@ function loadRecipeDef(entry, root) {
     throw new ManifestError(`Recipe ${meta.name}: version ${meta.version} != manifest pin ${entry.version}`);
   }
   checkLen('recipe name', meta.name, LIMITS.recipeName);
-  return { name: meta.name, description: meta.description || '', content: body, srcFile };
+  const version = meta.version ?? entry.version;
+  return { name: meta.name, description: meta.description || '', content: body, srcFile, ...(version ? { version: String(version) } : {}) };
 }
 
 function loadAgentDef(entry, root) {

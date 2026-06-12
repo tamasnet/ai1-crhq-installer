@@ -23,8 +23,9 @@ What `--sandbox` does (`lib/sandbox.mjs`):
    `CREATE TABLE sandbox_<ts>.<t> (LIKE public.<t> INCLUDING ALL)` — clones the **live**
    schema, so the sandbox can never drift from production. Seeds prerequisite `skills` rows
    copied from live so agent-attach + dependency checks mirror the real satellite.
-2. **Redirect** — set `INSTALL_SCHEMA=sandbox_<ts>` + `INSTALL_BASE_DIR=<tempdir>`. All DB
-   writes land in the sandbox schema; all fs writes under the temp dir.
+2. **Redirect** — set `INSTALL_SCHEMA=sandbox_<ts>` + `INSTALL_BASE_DIR=<tempdir>` +
+   `PACKAGES_DIR=<tempdir>`. All DB writes land in the sandbox schema; all fs writes
+   (including the install log) under the temp dirs.
 3. **Run** — the requested op (install by default).
 4. **Teardown** — `DROP SCHEMA … CASCADE` + rm tempdir, unless `--keep`.
 
@@ -63,6 +64,7 @@ Sandbox-backed suites, one per area (a reachable satellite DB is required):
 | `tests/runner.test.mjs` | preflight pass/fail, `install_entry` flag forwarding across all modes, multi-valued `--only` |
 | `tests/service.test.mjs` | template renderers (127.0.0.1 binding, TLS, white-label branch, secrets excluded), `nextFreePort`, dry-run no-write, sandbox-skip, secret hygiene |
 | `tests/filter.test.mjs` | `--include`/`--exclude` matcher semantics (exact vs regex, compose with `--only`, zero-match exit 0, invalid regex exit 2) |
+| `tests/install-log.test.mjs` | install.json bookkeeping (D-24): entry shape, ALREADY date preservation, dry-run/status no-write, partial + full uninstall removal, corrupt-log recovery, `PACKAGES_DIR` override — **DB-free** |
 
 Each suite provisions its own sandbox; several also run a scoped `--sandbox --lifecycle`.
 

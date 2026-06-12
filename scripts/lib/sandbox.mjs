@@ -15,6 +15,7 @@ export async function provisionSandbox({ ts, seed = true } = {}) {
   const admin = getAdminDb();
   const schema = `sandbox_${ts}`;
   const baseDir = join(tmpdir(), `ai1-sandbox-${ts}`);
+  const packagesDir = join(tmpdir(), `ai1-sandbox-${ts}-packages`);  // install log lands here, not in the real PACKAGES_DIR (D-24)
 
   await admin.raw('CREATE SCHEMA ??', [schema]);
   for (const t of TABLES) {
@@ -34,14 +35,17 @@ export async function provisionSandbox({ ts, seed = true } = {}) {
 
   process.env.INSTALL_SCHEMA = schema;       // redirect BEFORE createContext/getDb (§2/§8)
   process.env.INSTALL_BASE_DIR = baseDir;
+  process.env.PACKAGES_DIR = packagesDir;
   mkdirSync(baseDir, { recursive: true });
+  mkdirSync(packagesDir, { recursive: true });
 
   return {
-    schema, baseDir,
+    schema, baseDir, packagesDir,
     async teardown(keep = false) {
       if (keep) return;
       await admin.raw('DROP SCHEMA ?? CASCADE', [schema]);
       rmSync(baseDir, { recursive: true, force: true });
+      rmSync(packagesDir, { recursive: true, force: true });
     },
   };
 }

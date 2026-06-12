@@ -93,7 +93,29 @@ Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (C7)
 | `preflight(ctx)` | `async (ctx) => void` | `select 1` against `ctx.db` (DB reachable); for write modes, probe-write under `ctx.BASE`. Failure → `PreflightError` → transport exit `2`, before any component work. |
 | `PreflightError` | `class extends Error` | |
 
-## 6b. `lib/filter.mjs` — `--include` / `--exclude` (component selection)
+## 6b. `lib/install-log.mjs` — `${PACKAGES_DIR}/install.json` (D-24)
+
+| Export | Signature | Behavior |
+|--------|-----------|----------|
+| `resolvePackagesDir()` | `() => string` | `PACKAGES_DIR \|\| join(homedir(),'packages')`. |
+| `installLogPath(dir?)` | `(string?) => string` | `<packagesDir>/install.json`. |
+| `readInstallLog(dir?)` | `(string?) => object` | Parsed log (`{}` if absent); throws on a non-object. |
+| `updateInstallLog(ctx, meta, plan, packageRoot)` | `=> string\|null` | Applies the finished run to the log; returns the path written, or `null` when skipped (dry-run, status, nothing processed). |
+
+Log shape — keyed by package name:
+
+```js
+{ "<package>": { version, installed_at, components: [
+    { type, name, version?, installed_at, source }   // source = component manifest file, relative to package root
+] } }
+```
+
+Rules: only processed `OK`/`ALREADY` results change entries (install upserts — `ALREADY`
+keeps its original date; uninstall deletes, with the package key removed alongside its last
+component). Failures leave the log alone. A corrupt log is warned about and rebuilt. The CLI
+wraps the call so a log write failure warns instead of failing the install.
+
+## 6c. `lib/filter.mjs` — `--include` / `--exclude` (component selection)
 
 | Export | Signature | Behavior |
 |--------|-----------|----------|
@@ -127,7 +149,7 @@ plan = {
 
 ```js
 SkillDef   = { key, name, description, version, srcDir, content, installType? }  // content = SKILL.md (full md); installType: 'org'|'user'
-RecipeDef  = { name, description, content, srcFile }
+RecipeDef  = { name, description, content, srcFile, version? }
 AgentDef   = { name, display_name, description, mode, default_model?, icon?, skills:[], recipes:[], srcFile }  // name → agents.key, display_name → agents.name (D-23)
 JobDef     = { name, description, schedule, timezone?, script, args?, timeout_minutes?,
                max_concurrent?, skip_if_running?, enabled?, requires:[], srcFile }
@@ -155,13 +177,14 @@ ctx = {
   mode: 'install'|'uninstall'|'status',   // from --uninstall/--status (default install)
   DRY_RUN, RESPECT_LOCKS, INSTALL_SKILLS_AS_USER, JSON,
   ONLY /* string[]|null — --only=<types> (comma-separated/repeatable) */,
-  INCLUDE, EXCLUDE /* string|null — --include=/--exclude= name filter (regex; see §6b) */,
+  INCLUDE, EXCLUDE /* string|null — --include=/--exclude= name filter (regex; see §6c) */,
   SANDBOX, KEEP, LIFECYCLE,
   packageArg,                              // manifest path/dir arg (default '.')
 
   // resolved env
-  BASE,    // resolveBase()   — skill-parent dir
-  SCHEMA,  // resolveSchema() — or null
+  BASE,          // resolveBase()        — skill-parent dir
+  SCHEMA,        // resolveSchema()      — or null
+  PACKAGES_DIR,  // resolvePackagesDir() — install-log home (D-24)
 
   // wired deps
   db,      // getDb()         — install knex (searchPath = SCHEMA)
@@ -273,7 +296,7 @@ provisionSandbox({ ts, seed = true })
 //   — clones live columns/defaults/constraints/indexes; FKs are NOT re-created (guarded join
 //     inserts + explicit join cleanup make them unnecessary)
 // seed: INSERT INTO <schema>.skills SELECT … FROM public.skills  (so agent-attach + dep checks mirror live)
-// set INSTALL_SCHEMA + INSTALL_BASE_DIR BEFORE createContext/getDb run
+// set INSTALL_SCHEMA + INSTALL_BASE_DIR + PACKAGES_DIR BEFORE createContext/getDb run
 // → { schema, baseDir, teardown(keep) }   // teardown: DROP SCHEMA CASCADE + rm tempdir unless keep
 
 runLifecycle(ctx, plan)
@@ -306,6 +329,8 @@ try {
     await sandbox.runLifecycle(ctx, plan);
   } else {
     await runPlan(ctx, plan);
+    // update ${PACKAGES_DIR}/install.json from ctx.results (D-24) — skipped in dry-run/status;
+    // a write failure warns, never fails the install
     // then: install_entry (if meta.install_entry) as a spawnSync('node', [entry, ...]) SUBPROCESS,
     // for ALL modes, forwarding mode + standard + package-specific flags as argv (sandbox-internal
     // flags and the package path are not forwarded; INSTALL_SCHEMA/BASE_DIR inherited via env)

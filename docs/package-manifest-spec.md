@@ -347,6 +347,8 @@ compliant installer guarantees:
   half-installed package.
 - **Secret hygiene** — service `env` values are written to the service's env file only,
   never logged; packages are scanned for embedded secrets before publish, not at install.
+- **An install log** — a machine-readable record of installed components (name, version,
+  date, source file), maintained outside the package and removed on uninstall.
 - **A machine-parseable result contract** — §8.
 
 How the CRHQ reference implementation delivers these is specified in
