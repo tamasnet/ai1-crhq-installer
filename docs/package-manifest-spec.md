@@ -33,8 +33,8 @@ The manifest is the runner's input; `install_entry` is the escape hatch.
 ```
 <package-name>/                  ← kebab-case, globally unique
   ai1-package.yaml               ← manifest (REQUIRED)
-  CHANGELOG.md                   ← REQUIRED; semver history
-  README.md                     ← REQUIRED; human docs + usage
+  CHANGELOG.md                   ← optional semver history
+  README.md                      ← optional human docs + usage
 
   skills/<skill-key>/            ← each a complete standalone skill tree
     SKILL.md                     ← flat YAML frontmatter + body
@@ -54,7 +54,7 @@ The manifest is the runner's input; `install_entry` is the escape hatch.
 **Rules**
 - Root `scripts/` is for package orchestration only; component scripts live in their own
   subtree (e.g. `skills/plaud-ingest/scripts/`).
-- **Omit unused component dirs** — never create empty `agents/`, `jobs/`, etc.
+- Optional unused component dirs — empty `agents/`, `jobs/`, etc will be ignored.
 - A package with **no `scripts/install.mjs` is valid** (purely declarative).
 - The `components` inventory in the manifest is the **source of truth**: a file present in a
   component dir but *not* listed in `components` is **not installed** (explicit inventory,
