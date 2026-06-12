@@ -86,7 +86,7 @@ await test('--include regex selects the matching subset', () => {
   assert.ok(!picked(r.stdout, 'ai1-sample-job'));
 });
 
-await test('agents are matched by key', () => {
+await test('agents are matched by name', () => {
   const r = cli(['--include=ai1-sample-agent']);
   assert.equal(r.status, 0, r.stderr);
   assert.ok(picked(r.stdout, 'ai1-sample-agent'));

@@ -13,7 +13,7 @@ const TYPE_ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services'];
 // varchar limits from the live schema (integration-reference §6) — validated here so a too-long
 // value fails fast with a clear message instead of a Postgres error mid-install.
 const LIMITS = {
-  skillName: 100, recipeName: 200, agentKey: 50, agentMode: 10, agentModel: 20,
+  skillName: 100, recipeName: 200, agentName: 50, agentMode: 10, agentModel: 20,
   jobName: 255, jobSchedule: 100, jobTimezone: 50, serviceName: 255,
 };
 
@@ -102,13 +102,17 @@ function loadAgentDef(entry, root) {
   const srcFile = join(root, entry.path);
   if (!existsSync(srcFile)) throw new ManifestError(`Agent not found: ${entry.path}`);
   const a = loadYaml(readFileSync(srcFile, 'utf8'));
-  if (!a.key) throw new ManifestError(`Agent missing 'key': ${entry.path}`);
+  // Agents follow the same name/description pattern as every other component type: `name` is the
+  // canonical identifier (stored as CRHQ agents.key), `display_name` the human label (stored as
+  // agents.name) — D-23.
+  if (a.key) throw new ManifestError(`Agent '${entry.path}': 'key' was renamed — use 'name' (the agent identifier) and 'display_name' (the human label)`);
   if (!a.name) throw new ManifestError(`Agent missing 'name': ${entry.path}`);
-  checkLen('agent key', a.key, LIMITS.agentKey);
+  if (!a.display_name) throw new ManifestError(`Agent missing 'display_name': ${entry.path}`);
+  checkLen('agent name', a.name, LIMITS.agentName);
   if (a.mode) checkLen('agent mode', a.mode, LIMITS.agentMode);
   if (a.default_model) checkLen('agent default_model', a.default_model, LIMITS.agentModel);
   return {
-    key: a.key, name: a.name, description: a.description || '', mode: a.mode || 'cli',
+    name: a.name, display_name: a.display_name, description: a.description || '', mode: a.mode || 'cli',
     default_model: a.default_model, icon: a.icon, skills: a.skills || [], recipes: a.recipes || [], srcFile,
   };
 }

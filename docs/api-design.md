@@ -128,7 +128,7 @@ plan = {
 ```js
 SkillDef   = { key, name, description, version, srcDir, content, installType? }  // content = SKILL.md (full md); installType: 'org'|'user'
 RecipeDef  = { name, description, content, srcFile }
-AgentDef   = { key, name, description, mode, default_model?, icon?, skills:[], recipes:[], srcFile }
+AgentDef   = { name, display_name, description, mode, default_model?, icon?, skills:[], recipes:[], srcFile }  // name → agents.key, display_name → agents.name (D-23)
 JobDef     = { name, description, schedule, timezone?, script, args?, timeout_minutes?,
                max_concurrent?, skip_if_running?, enabled?, requires:[], srcFile }
 ServiceDef = { name, version, start, port?, cwd?, build?, env?, nginx?, srcDir }   // port omitted → allocated at deploy
@@ -212,13 +212,13 @@ statusRecipe(ctx, nameOrDef) // { present, active }
 ### `core/agent.mjs`
 ```js
 upsertAgent(ctx, def)
-// 1. insert|update agents by key {key,name,description,mode,is_active:true,(default_model?,icon?)}
-//    (minimal; rely on DB defaults — integration-reference §2)
+// 1. insert|update agents by key=def.name {key, name:def.display_name, description, mode,
+//    is_active:true, (default_model?, icon?)} (minimal; rely on DB defaults — integration-reference §2)
 // 2. sync agent_skills: for each def.skills → attach IFF skill exists+active; onConflict ignore;
 //    remove stale links not in def.skills
 // 3. sync agent_recipes: resolve each name→recipe_id (uuid); onConflict ignore; remove stale
-removeAgent(ctx, keyOrDef)    // del agent_skills + agent_recipes + agents row
-statusAgent(ctx, keyOrDef)    // { present, active, skills:[], recipes:[] }
+removeAgent(ctx, nameOrDef)   // del agent_skills + agent_recipes + agents row
+statusAgent(ctx, nameOrDef)   // { present, active, skills:[], recipes:[] }
 ```
 
 ### `core/job.mjs`
@@ -254,9 +254,9 @@ export const ORDER = ['skills','recipes','agents','jobs','services'];
 // --only=<types> restricts which TYPES run; intersected with ORDER so canonical install
 // order holds regardless of input order (unknown names select nothing).
 // mode picks the primitive: install→upsert*, --uninstall→remove* (types reversed), --status→status*.
-// --include/--exclude: nameOf(type,def) (agents→key, else→name) tested against the compiled
-// matcher; selection is reflected in ctx.plannedSkills/plannedRecipes so dry-run dependency
-// previews stay accurate. Zero-match → warn (list available) + exit 0.
+// --include/--exclude: each def's `name` (the canonical id for every type) tested against the
+// compiled matcher; selection is reflected in ctx.plannedSkills/plannedRecipes so dry-run
+// dependency previews stay accurate. Zero-match → warn (list available) + exit 0.
 // Continue-and-report: a failing component records INSTALL-FAIL but doesn't abort the rest.
 ```
 

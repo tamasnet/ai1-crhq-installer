@@ -58,51 +58,51 @@ try {
     const r = await upsertAgent(ctx, agentDef);
     assert.equal(r.verdict, 'INSTALL-OK');
     assert.equal(r.action, 'created');
-    const row = await agentRow(agentDef.key);
-    assert.equal(row.name, agentDef.name);
+    const row = await agentRow(agentDef.name);
+    assert.equal(row.name, agentDef.display_name);
     assert.equal(row.mode, 'cli');
     assert.equal(row.is_active, true);
     assert.equal(row.provider, 'claude', 'provider rides DB default');
     assert.equal(row.icon, '🧪', 'icon from def');
     assert.equal(row.default_model, 'sonnet');
-    assert.deepEqual(await skillsOf(agentDef.key), ['ai1-sample-skill']);
-    assert.deepEqual(await recipeIdsOf(agentDef.key), [sampleRecipeId], 'recipe name resolved to uuid');
+    assert.deepEqual(await skillsOf(agentDef.name), ['ai1-sample-skill']);
+    assert.deepEqual(await recipeIdsOf(agentDef.name), [sampleRecipeId], 'recipe name resolved to uuid');
   });
 
   await test('idempotent: re-run → ALREADY, no link drift', async () => {
     const r = await upsertAgent(ctx, agentDef);
     assert.equal(r.verdict, 'ALREADY-INSTALLED');
-    assert.deepEqual(await skillsOf(agentDef.key), ['ai1-sample-skill']);
-    assert.deepEqual(await recipeIdsOf(agentDef.key), [sampleRecipeId]);
+    assert.deepEqual(await skillsOf(agentDef.name), ['ai1-sample-skill']);
+    assert.deepEqual(await recipeIdsOf(agentDef.name), [sampleRecipeId]);
   });
 
   await test('attach filters: missing + inactive skills skipped', async () => {
     const r = await upsertAgent(ctx, { ...agentDef, skills: ['ai1-sample-skill', 'ai1-inactive-skill', 'ghost-skill'] });
     assert.equal(r.verdict, 'ALREADY-INSTALLED', 'desired set unchanged after filtering');
-    assert.deepEqual(await skillsOf(agentDef.key), ['ai1-sample-skill']);
+    assert.deepEqual(await skillsOf(agentDef.name), ['ai1-sample-skill']);
   });
 
   await test('skill sync: add new + remove stale', async () => {
     const r = await upsertAgent(ctx, { ...agentDef, skills: ['ai1-second-skill'] });
     assert.equal(r.verdict, 'INSTALL-OK');
-    assert.deepEqual(await skillsOf(agentDef.key), ['ai1-second-skill'], 'sample removed, second added');
+    assert.deepEqual(await skillsOf(agentDef.name), ['ai1-second-skill'], 'sample removed, second added');
   });
 
   await test('recipe sync: add second, then drop back to one', async () => {
     await upsertAgent(ctx, { ...agentDef, recipes: ['ai1-sample-recipe', 'ai1-second-recipe'] });
-    assert.deepEqual((await recipeIdsOf(agentDef.key)).sort(), [sampleRecipeId, secondRecipeId].sort());
+    assert.deepEqual((await recipeIdsOf(agentDef.name)).sort(), [sampleRecipeId, secondRecipeId].sort());
     await upsertAgent(ctx, { ...agentDef, recipes: ['ai1-second-recipe'] });
-    assert.deepEqual(await recipeIdsOf(agentDef.key), [secondRecipeId], 'stale recipe link removed');
+    assert.deepEqual(await recipeIdsOf(agentDef.name), [secondRecipeId], 'stale recipe link removed');
   });
 
-  await test('field update: changed name → row updated', async () => {
-    const r = await upsertAgent(ctx, { ...agentDef, name: 'Renamed Agent' });
+  await test('field update: changed display_name → row updated', async () => {
+    const r = await upsertAgent(ctx, { ...agentDef, display_name: 'Renamed Agent' });
     assert.equal(r.verdict, 'INSTALL-OK');
-    assert.equal((await agentRow(agentDef.key)).name, 'Renamed Agent');
+    assert.equal((await agentRow(agentDef.name)).name, 'Renamed Agent');
   });
 
   await test('dry-run: resolves links but writes nothing', async () => {
-    const r = await upsertAgent(makeCtx({ DRY_RUN: true }), { ...agentDef, key: 'ai1-dry-agent' });
+    const r = await upsertAgent(makeCtx({ DRY_RUN: true }), { ...agentDef, name: 'ai1-dry-agent' });
     assert.equal(r.verdict, 'INSTALL-OK');
     assert.equal(await agentRow('ai1-dry-agent'), undefined, 'no agent row');
     assert.deepEqual(await skillsOf('ai1-dry-agent'), [], 'no skill links');
@@ -111,7 +111,7 @@ try {
   await test('status: present, active, skills[] + recipes[]', async () => {
     // Set a known state first (each upsert re-syncs the full skills + recipes sets).
     await upsertAgent(ctx, { ...agentDef, skills: ['ai1-second-skill'], recipes: ['ai1-second-recipe'] });
-    const s = await statusAgent(ctx, agentDef.key);
+    const s = await statusAgent(ctx, agentDef.name);
     assert.equal(s.present, true);
     assert.equal(s.active, true);
     assert.deepEqual(s.skills, ['ai1-second-skill']);
@@ -125,9 +125,9 @@ try {
     const r = await removeAgent(ctx, agentDef);
     assert.equal(r.verdict, 'INSTALL-OK');
     assert.equal(r.action, 'removed');
-    assert.equal(await agentRow(agentDef.key), undefined);
-    assert.deepEqual(await skillsOf(agentDef.key), []);
-    assert.deepEqual(await recipeIdsOf(agentDef.key), []);
+    assert.equal(await agentRow(agentDef.name), undefined);
+    assert.deepEqual(await skillsOf(agentDef.name), []);
+    assert.deepEqual(await recipeIdsOf(agentDef.name), []);
     assert.equal((await removeAgent(ctx, agentDef)).verdict, 'ALREADY-INSTALLED', 'absent → ALREADY');
   });
 } finally {

@@ -1,14 +1,16 @@
 // core/agent.mjs — agents table (PK key) + agent_skills / agent_recipes join sync (C6).
-// Minimal insert (other columns ride DB defaults). Only existing+active skills attach; recipe
-// names resolve to uuids. Re-run produces zero drift; stale links are removed.
+// AgentDef uses the common name/description pattern (D-23): def.name → agents.key,
+// def.display_name → agents.name. Minimal insert (other columns ride DB defaults). Only
+// existing+active skills attach; recipe names resolve to uuids. Re-run produces zero drift;
+// stale links are removed.
 import { VERDICT } from '../log.mjs';
 
 export async function upsertAgent(ctx, def) {
   const { db, log, DRY_RUN } = ctx;
-  const key = def.key;
+  const key = def.name;
 
   const row = await db('agents').where({ key }).first();
-  const fields = { name: def.name, description: def.description || '', mode: def.mode || 'cli', is_active: true };
+  const fields = { name: def.display_name, description: def.description || '', mode: def.mode || 'cli', is_active: true };
   if (def.default_model) fields.default_model = def.default_model;
   if (def.icon) fields.icon = def.icon;
 
@@ -70,9 +72,9 @@ export async function upsertAgent(ctx, def) {
   return res(key, drift ? VERDICT.OK : VERDICT.ALREADY, row ? 'updated' : 'created', { skills: desiredSkills, recipes: desiredRecipes.length });
 }
 
-export async function removeAgent(ctx, keyOrDef) {
+export async function removeAgent(ctx, nameOrDef) {
   const { db, DRY_RUN, log } = ctx;
-  const key = typeof keyOrDef === 'string' ? keyOrDef : keyOrDef.key;
+  const key = typeof nameOrDef === 'string' ? nameOrDef : nameOrDef.name;
   const row = await db('agents').where({ key }).first();
   if (!row) return res(key, VERDICT.ALREADY, 'absent');
   if (DRY_RUN) { log.dry(`delete agent ${key} and its links`); return res(key, VERDICT.OK, 'removed'); }
@@ -82,9 +84,9 @@ export async function removeAgent(ctx, keyOrDef) {
   return res(key, VERDICT.OK, 'removed');
 }
 
-export async function statusAgent(ctx, keyOrDef) {
+export async function statusAgent(ctx, nameOrDef) {
   const { db } = ctx;
-  const key = typeof keyOrDef === 'string' ? keyOrDef : keyOrDef.key;
+  const key = typeof nameOrDef === 'string' ? nameOrDef : nameOrDef.name;
   const row = await db('agents').where({ key }).first();
   const skills = row ? (await db('agent_skills').where({ agent_key: key }).select('skill_name')).map((r) => r.skill_name) : [];
   const recipes = row ? (await db('agent_recipes').where({ agent_key: key }).select('recipe_id')).map((r) => r.recipe_id) : [];

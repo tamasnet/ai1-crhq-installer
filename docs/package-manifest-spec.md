@@ -1,4 +1,4 @@
-# Ai1 Package Manifest — Specification (v1.0)
+# Ai1 Package Manifest — Specification (v1.0 DRAFT)
 
 The `ai1-package.yaml` manifest format: how a versioned bundle of agentic resources —
 skills, recipes, agents, jobs, services — is described for coordinated, declarative install
@@ -54,7 +54,7 @@ The manifest is the installer's input; `install_entry` is the escape hatch.
     scripts/                     ← implementation
     tests/                       ← optional
   recipes/<name>.md              ← frontmatter + body (content component)
-  agents/<key>.yaml              ← config component
+  agents/<name>.yaml             ← config component
   jobs/<name>.yaml               ← scheduled (background) job — config component
   services/<name>/               ← service.yaml + app source
 
@@ -209,10 +209,10 @@ version: 1.0.0                 # optional; if set, must equal components.recipes
 | `description` | ✅ | required discovery text |
 | `version` | – | optional pin |
 
-### 5.3 Agent — `agents/<key>.yaml`
+### 5.3 Agent — `agents/<name>.yaml`
 ```yaml
-key: plaud-agent
-name: Plaud Agent
+name: plaud-agent              # canonical identifier — same pattern as every other component
+display_name: Plaud Agent
 description: "Runs the Plaud capture + ingest pipeline."
 mode: cli                      # optional, default cli
 default_model: sonnet          # optional, default sonnet
@@ -223,8 +223,8 @@ recipes: [plaud-pipeline]                      # attached by recipe name
 
 | Field | Req | Meaning / use |
 |-------|-----|---------------|
-| `key` | ✅ | unique agent key; ≤50 chars |
-| `name` | ✅ | display name |
+| `name` | ✅ | unique agent identifier; ≤50 chars |
+| `display_name` | ✅ | human display name |
 | `description` | – | discovery text |
 | `mode` | – | execution mode (default `cli`) |
 | `default_model` | – | model alias (default `sonnet`) |
@@ -324,8 +324,8 @@ package-specific flags (e.g. `--no-ingest`).
   `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated
   (e.g. `--only=skills,recipes`). Order within a type and across types always follows the
   canonical install order.
-- `--include`/`--exclude` select a subset of components **by name** (agents by `key`, all
-  other types by `name`). The value is a regex; a value with no regex metacharacter is an
+- `--include`/`--exclude` select a subset of components **by `name`** (the same field across
+  every component type). The value is a regex; a value with no regex metacharacter is an
   exact `^name$` match (case-sensitive). A component is selected iff it matches `--include`
   (or none is given) and does not match `--exclude`; these compose with `--only`. A filter
   matching zero components warns and exits `0`.

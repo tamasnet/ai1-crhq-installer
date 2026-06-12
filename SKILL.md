@@ -76,7 +76,8 @@ Full specification: [`docs/package-manifest-spec.md`](./docs/package-manifest-sp
   the assets live under `INSTALL_BASE_DIR` (we don't write to where real org skills live; only the
   registration differs).
 - **Recipe** — `recipes/<name>.md`: frontmatter (`name`, `description`) + body → `recipes.content`.
-- **Agent** — `agents/<key>.yaml`: `key`/`name`/`mode`/`default_model`/`icon`/`skills:[]`/`recipes:[]`.
+- **Agent** — `agents/<name>.yaml`: `name` (→ CRHQ agent key)/`display_name`/`mode`/`default_model`/
+  `icon`/`skills:[]`/`recipes:[]`.
   Only existing+active skills attach; recipe names resolve to ids; stale links are removed on re-run.
 - **Job** — `jobs/<name>.yaml`: `name`/`schedule`/`script`/`requires:[]`. `schedule` accepts a cron
   expression or an alias (`hourly`, `daily`, `every-15-min`, `every-30-min`). `script` resolves to
@@ -109,7 +110,7 @@ Result verdicts: `INSTALL-OK | ALREADY-INSTALLED | INSTALL-PARTIAL | INSTALL-FAI
 ### Selecting a subset (`--include` / `--exclude`)
 
 `--include` / `--exclude` narrow which components a run touches, **by name** — the same identifier the
-summary prints (skills/recipes/jobs/services by `name`, agents by `key`). They apply to every mode
+summary prints (every component type by its `name`). They apply to every mode
 (install, uninstall, status) and compose with `--only` (type scope).
 
 The value is a **regular expression**, with one special case: **if it contains no regex

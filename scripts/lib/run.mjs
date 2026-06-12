@@ -13,8 +13,8 @@ import { makeFilter, hasFilter } from './filter.mjs';
 export const ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services'];
 
 // The canonical identifier a --include/--exclude filter is tested against — the same value the run
-// summary prints (agents are keyed by `key`; everything else by `name`).
-const nameOf = (type, def) => (type === 'agents' ? def.key : def.name);
+// summary prints. Every component type carries `name` (for agents it maps to agents.key — D-23).
+const nameOf = (type, def) => def.name;
 
 const DISPATCH = {
   skills: { upsert: skill.upsertSkill, remove: skill.removeSkill, status: skill.statusSkill },
@@ -61,7 +61,7 @@ export async function runPlan(ctx, plan) {
       try {
         ctx.record(await fn(ctx, def));
       } catch (e) {
-        const name = def.name || def.key || '?';
+        const name = def.name || '?';
         ctx.log.error(`${type}:${name} failed: ${e.message}`);
         ctx.record({ type: type.replace(/s$/, ''), name, verdict: e.name === 'PrereqError' ? VERDICT.PREREQ : VERDICT.FAIL, action: 'error', detail: e.message });
       }
