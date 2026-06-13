@@ -116,7 +116,9 @@ function loadRecipeDef(entry, root) {
 function loadAgentDef(entry, root) {
   const srcFile = join(root, entry.path);
   if (!existsSync(srcFile)) throw new ManifestError(`Agent not found: ${entry.path}`);
-  const a = loadYaml(readFileSync(srcFile, 'utf8'));
+  // Agents are a content-bearing component (like skills/recipes): YAML frontmatter for the
+  // scalar/list fields + a Markdown body that becomes the agent's `instructions` (D-32).
+  const { meta: a, body } = parseFrontmatter(readFileSync(srcFile, 'utf8'));
   // Agents follow the same name/description pattern as every other component type: `name` is the
   // canonical identifier (stored as CRHQ agents.key), `display_name` the human label (stored as
   // agents.name) — D-23.
@@ -126,9 +128,13 @@ function loadAgentDef(entry, root) {
   checkLen('agent name', a.name, LIMITS.agentName);
   if (a.mode) checkLen('agent mode', a.mode, LIMITS.agentMode);
   if (a.default_model) checkLen('agent default_model', a.default_model, LIMITS.agentModel);
+  // Body → instructions (leading blank lines trimmed); an empty body rides the DB default.
+  const instructions = body && body.trim() ? body.replace(/^\n+/, '') : undefined;
   return {
     name: a.name, display_name: a.display_name, description: a.description || '', mode: a.mode || 'cli',
-    default_model: a.default_model, icon: a.icon, skills: a.skills || [], recipes: a.recipes || [], srcFile,
+    default_model: a.default_model, icon: a.icon, skills: a.skills || [], recipes: a.recipes || [],
+    instructions, system_prompt_path: a.system_prompt_path, capabilities: a.capabilities, provider: a.provider,
+    srcFile,
   };
 }
 

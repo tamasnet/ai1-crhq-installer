@@ -80,9 +80,11 @@ version_num)`. **Installers don't write this** — it's maintained by the platfo
 | `cloned_from`, `hub_version` | | leave default |
 | `created_at`, `updated_at` | timestamptz | |
 
-Insert is minimal: `key, name, description, mode, is_active, created_at, updated_at` —
-everything else rides on defaults. The update path preserves the existing row (only sets
-name/description/mode/is_active/updated_at).
+Insert sets `key, name, description, mode, is_active, created_at, updated_at` plus any of
+`default_model, icon, provider, system_prompt_path, capabilities, instructions` the manifest
+carries (the agent `.md` frontmatter + body, D-32); anything omitted rides its DB default.
+`capabilities` is `jsonb` — `JSON.stringify` it on write. The update path re-applies the same set
+(only when one drifted) and otherwise preserves the row.
 
 ### `agent_skills` — PK `(agent_key, skill_name)`
 
@@ -114,7 +116,7 @@ implementation realizes them.
 |-----------|---------|
 | **Skill** | upsert `skills` by `name` — `skill_path='db://skills/<name>'`, `skill_dir='${INSTALL_BASE_DIR}/<key>'`, `skill_type`/`locked` from `install_type` (default `'org'`+locked), `is_active:true` — then copy the skill tree to `${INSTALL_BASE_DIR}/<key>/` |
 | **Recipe** | upsert `recipes` by `name` (uuid auto; frontmatter → `description`, body → `content`, `is_active:true`) |
-| **Agent** | upsert `agents` by `key` — the manifest's `name` maps to `agents.key`, `display_name` to `agents.name` (D-23). Minimal insert (other columns ride DB defaults), then **sync** `agent_skills` and `agent_recipes` (add desired, drop stale, `onConflict` ignore); recipe names resolve to `recipes.id` uuids |
+| **Agent** | upsert `agents` by `key` — the manifest's `name` maps to `agents.key`, `display_name` to `agents.name` (D-23); the `.md` body maps to `instructions`, frontmatter to `default_model`/`icon`/`provider`/`system_prompt_path`/`capabilities` (jsonb) when present, else DB defaults (D-32). Then **sync** `agent_skills` and `agent_recipes` (add desired, drop stale, `onConflict` ignore); recipe names resolve to `recipes.id` uuids |
 | **Job** | upsert `background_jobs` by `name` — `id='job-<ts>-<rand>'` on insert, `job_type:'script'`, `script_path:'node'`, `script_args=join(INSTALL_BASE_DIR, script)[+ ' ' + args]`, `run_count:0`; schedule aliases expand to cron |
 | **Service** | not DB-resident — copy source to `/opt/projects/user/<name>/`, write `.env` (chmod 640), `ecosystem.config.cjs`, and the nginx vhost (127.0.0.1 binding; `{SATELLITE_ID}-<subdomain>.crhq.ai`); allocate the port; PM2 start + save; nginx reload. Never touches the `crhq-satellite` PM2 process. |
 

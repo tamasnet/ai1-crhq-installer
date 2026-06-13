@@ -80,7 +80,7 @@ components:
   recipes:
     - path: recipes/my-recipe.md
   agents:
-    - path: agents/my-agent.yaml
+    - path: agents/my-agent.md
   jobs:
     - path: jobs/my-job.yaml
   services:
@@ -102,9 +102,11 @@ Full specification: [`docs/package-manifest-spec.md`](./docs/package-manifest-sp
   the assets live under `INSTALL_BASE_DIR` (we don't write to where real org skills live; only the
   registration differs).
 - **Recipe** — `recipes/<name>.md`: frontmatter (`name`, `description`) + body → `recipes.content`.
-- **Agent** — `agents/<name>.yaml`: `name` (→ CRHQ agent key)/`display_name`/`mode`/`default_model`/
-  `icon`/`skills:[]`/`recipes:[]`.
-  Only existing+active skills attach; recipe names resolve to ids; stale links are removed on re-run.
+- **Agent** — `agents/<name>.md`: YAML frontmatter (`name` → CRHQ agent key, `display_name`, `mode`,
+  `default_model`, `icon`, `provider`, `system_prompt_path`, `capabilities`, `skills:[]`,
+  `recipes:[]`) + a Markdown body that becomes the agent's `instructions`. Omitted frontmatter
+  fields ride DB defaults. Only existing+active skills attach; recipe names resolve to ids; stale
+  links are removed on re-run.
 - **Job** — `jobs/<name>.yaml`: `name`/`schedule`/`script`/`requires:[]`. `schedule` accepts a cron
   expression or an alias (`hourly`, `daily`, `every-15-min`, `every-30-min`). `script` resolves to
   `INSTALL_BASE_DIR/<script>`; `requires` skill dirs must exist first (prereq guard).

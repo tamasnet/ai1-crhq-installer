@@ -65,8 +65,28 @@ try {
     assert.equal(row.provider, 'claude', 'provider rides DB default');
     assert.equal(row.icon, '🧪', 'icon from def');
     assert.equal(row.default_model, 'sonnet');
+    assert.ok(agentDef.instructions && agentDef.instructions.length, 'def carries instructions from the .md body');
+    assert.equal(row.instructions, agentDef.instructions, 'instructions persisted from the Markdown body');
     assert.deepEqual(await skillsOf(agentDef.name), ['ai1-sample-skill']);
     assert.deepEqual(await recipeIdsOf(agentDef.name), [sampleRecipeId], 'recipe name resolved to uuid');
+  });
+
+  await test('full field set: instructions + capabilities + provider + system_prompt_path persist; idempotent', async () => {
+    const full = {
+      ...agentDef, name: 'ai1-full-agent', skills: [], recipes: [],
+      instructions: 'Persona body line one.\nLine two.\n',
+      capabilities: ['search', 'write'], provider: 'openai', system_prompt_path: '/prompts/full.txt',
+    };
+    const r = await upsertAgent(ctx, full);
+    assert.equal(r.verdict, 'INSTALL-OK');
+    const row = await agentRow('ai1-full-agent');
+    assert.equal(row.instructions, full.instructions, 'instructions persisted verbatim');
+    assert.deepEqual(row.capabilities, ['search', 'write'], 'capabilities jsonb round-trips as an array');
+    assert.equal(row.provider, 'openai', 'non-default provider persisted');
+    assert.equal(row.system_prompt_path, '/prompts/full.txt');
+    assert.equal((await upsertAgent(ctx, full)).verdict, 'ALREADY-INSTALLED', 're-run → no drift');
+    assert.equal((await upsertAgent(ctx, { ...full, instructions: 'Changed.\n' })).verdict, 'INSTALL-OK', 'instructions change → drift');
+    await removeAgent(ctx, full);
   });
 
   await test('idempotent: re-run → ALREADY, no link drift', async () => {

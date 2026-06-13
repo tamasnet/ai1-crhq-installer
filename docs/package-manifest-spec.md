@@ -35,7 +35,7 @@ The manifest is the installer's input; `install_entry` is the escape hatch.
 |------|-----------|
 | **Skill** | A capability the platform's agents can invoke: instructions (`SKILL.md`) plus optional scripts and tests. |
 | **Recipe** | A reusable piece of agent-facing content: a named, described Markdown document. |
-| **Agent** | A configured agent persona: identity plus references to the skills and recipes it uses. |
+| **Agent** | A configured agent persona: identity and config plus Markdown `instructions`, and references to the skills and recipes it uses. |
 | **Job** | A scheduled (cron-style) background task that runs a script shipped by one of the bundled skills. |
 | **Service** | A standalone long-running web application, deployed behind the platform's reverse proxy and process manager. |
 
@@ -54,7 +54,7 @@ The manifest is the installer's input; `install_entry` is the escape hatch.
     scripts/                     ← implementation
     tests/                       ← optional
   recipes/<name>.md              ← frontmatter + body (content component)
-  agents/<name>.yaml             ← config component
+  agents/<name>.md               ← frontmatter + body (instructions) — content component
   jobs/<name>.yaml               ← scheduled (background) job — config component
   services/<name>/               ← service.yaml + app source
 
@@ -99,7 +99,7 @@ components:
   recipes:
     - path: recipes/plaud-pipeline.md
   agents:
-    - path: agents/plaud-agent.yaml
+    - path: agents/plaud-agent.md
   jobs:
     - path: jobs/plaud-ingest-crawl.yaml
   services:
@@ -146,9 +146,10 @@ install_flags:
 
 ## 5. Bundled component conventions
 
-**One syntax, two file kinds — no JSON.** Content-bearing components (skill, recipe) are
-**Markdown** (`.md`): YAML frontmatter + a body that becomes the component's content.
-Config-only components (agent, job, service descriptor) are **YAML** (`.yaml`). Each
+**One syntax, two file kinds — no JSON.** Content-bearing components (skill, recipe, agent) are
+**Markdown** (`.md`): YAML frontmatter + a body that becomes the component's content (for an
+agent, the body is its `instructions`). Config-only components (job, service descriptor) are
+**YAML** (`.yaml`). Each
 component's fields are fully specified below — **a package is self-describing**; the
 installer maps these to its platform's stores itself, so nothing here defers to an external
 "platform definition."
@@ -209,16 +210,26 @@ version: 1.0.0                 # optional; if set, must equal components.recipes
 | `description` | ✅ | required discovery text |
 | `version` | – | optional pin |
 
-### 5.3 Agent — `agents/<name>.yaml`
+### 5.3 Agent — `agents/<name>.md`
+Markdown file: YAML frontmatter for the config fields + a Markdown body that becomes the agent's
+**`instructions`** (its persona / system-prompt text). An empty body leaves `instructions` at the
+DB default.
+
 ```yaml
+---
 name: plaud-agent              # canonical identifier — same pattern as every other component
 display_name: Plaud Agent
 description: "Runs the Plaud capture + ingest pipeline."
 mode: cli                      # optional, default cli
 default_model: sonnet          # optional, default sonnet
 icon: "🎙️"                     # optional, default 🤖
+provider: claude               # optional, default claude
+system_prompt_path: prompts/plaud.txt   # optional
+capabilities: [search, recall]          # optional, default []
 skills: [plaud-login, plaud-ingest, memory]   # attached iff installed + active
 recipes: [plaud-pipeline]                      # attached by recipe name
+---
+(Markdown body — the agent's `instructions`)
 ```
 
 | Field | Req | Meaning / use |
@@ -229,12 +240,17 @@ recipes: [plaud-pipeline]                      # attached by recipe name
 | `mode` | – | execution mode (default `cli`) |
 | `default_model` | – | model alias (default `sonnet`) |
 | `icon` | – | display icon (default `🤖`) |
+| `provider` | – | model provider (default `claude`) |
+| `system_prompt_path` | – | path to an external system-prompt file |
+| `capabilities` | – | list of capability tags (default `[]`) |
 | `skills` | – | skill names to attach; a skill that is not installed + active is **skipped with a warning**, not an error |
 | `recipes` | – | recipe names to attach |
+| *(body)* | – | Markdown → the agent's `instructions` |
 
-Agents install after skills and recipes, so the bundled components they reference are
-attachable. Re-installing an agent **syncs** its attachments: desired links are added, stale
-links are removed.
+Every frontmatter field is optional except `name`/`display_name`; an omitted field rides its DB
+default rather than overwriting an existing value. Agents install after skills and recipes, so the
+bundled components they reference are attachable. Re-installing an agent **syncs** its attachments:
+desired links are added, stale links are removed.
 
 ### 5.4 Job (scheduled / background) — `jobs/<name>.yaml`
 ```yaml

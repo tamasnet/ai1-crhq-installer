@@ -16,6 +16,13 @@ export async function upsertAgent(ctx, def) {
   const fields = { name: def.display_name, description: def.description || '', mode: def.mode || 'cli', is_active: true };
   if (def.default_model) fields.default_model = def.default_model;
   if (def.icon) fields.icon = def.icon;
+  // Content/config fields that now ride in the manifest (D-32) — instructions is the Markdown body;
+  // capabilities is jsonb (stringify on the way in). Each is set only when the def carries it, so an
+  // omitted field rides the DB default rather than clobbering an existing value.
+  if (def.instructions != null) fields.instructions = def.instructions;
+  if (def.system_prompt_path != null) fields.system_prompt_path = def.system_prompt_path;
+  if (def.provider != null) fields.provider = def.provider;
+  if (def.capabilities != null) fields.capabilities = JSON.stringify(def.capabilities);
 
   // Resolve desired links (skills must exist + be active; recipes resolve name → uuid). In dry-run,
   // a bundle-mate not yet written counts as satisfied so the preview reflects the planned state.
@@ -40,7 +47,11 @@ export async function upsertAgent(ctx, def) {
     && row.mode === fields.mode
     && row.is_active === true
     && (def.default_model == null || row.default_model === def.default_model)
-    && (def.icon == null || row.icon === def.icon);
+    && (def.icon == null || row.icon === def.icon)
+    && (def.instructions == null || (row.instructions || '') === def.instructions)
+    && (def.system_prompt_path == null || (row.system_prompt_path || '') === def.system_prompt_path)
+    && (def.provider == null || row.provider === def.provider)
+    && (def.capabilities == null || JSON.stringify(row.capabilities ?? []) === JSON.stringify(def.capabilities));
 
   if (DRY_RUN) {
     log.dry(`${row ? 'update' : 'create'} agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)`);
@@ -88,12 +99,14 @@ export async function removeAgent(ctx, nameOrDef) {
 }
 
 // exportAgent — backup: write the row back to package form (the reverse of the D-23 mapping:
-// agents.key → `name`, agents.name → `display_name`). Joins resolve to names; an agent_recipes
-// link whose recipe row is gone simply drops out of the join. Fields the manifest can't express
-// (instructions, capabilities, system_prompt_path, non-default provider) are warned about, not
-// exported — they ride DB defaults on restore (D-28).
+// agents.key → `name`, agents.name → `display_name`). Agents are emitted as Markdown: YAML
+// frontmatter for the scalar/list fields + a body that carries `instructions` (D-32). The
+// formerly-lossy fields (instructions, system_prompt_path, capabilities, non-default provider)
+// now round-trip; each is emitted only when it carries non-default information so restore stays
+// idempotent. Joins resolve to names; an agent_recipes link whose recipe row is gone simply drops
+// out of the join.
 export async function exportAgent(ctx, row, { outRoot, relPath }) {
-  const { db, log } = ctx;
+  const { db } = ctx;
   const key = row.key;
   const skills = (await db('agent_skills').where({ agent_key: key }).orderBy('skill_name').select('skill_name'))
     .map((r) => r.skill_name);
@@ -101,24 +114,22 @@ export async function exportAgent(ctx, row, { outRoot, relPath }) {
     .join('recipes', 'recipes.id', 'agent_recipes.recipe_id').orderBy('recipes.name').select('recipes.name'))
     .map((r) => r.name);
 
-  const lossy = [];
-  if (row.instructions) lossy.push('instructions');
-  if (row.system_prompt_path) lossy.push('system_prompt_path');
-  if (row.capabilities && JSON.stringify(row.capabilities) !== '[]') lossy.push('capabilities');
-  if (row.provider && row.provider !== 'claude') lossy.push(`provider=${row.provider}`);
-  if (lossy.length) log.warn(`agent ${key}: not representable in the manifest — ${lossy.join(', ')} (DB defaults on restore)`);
-
-  const def = {
+  const fm = {
     name: key,
     display_name: row.name,
     ...(row.description ? { description: row.description } : {}),
     mode: row.mode || 'cli',
     ...(row.default_model ? { default_model: row.default_model } : {}),
     ...(row.icon ? { icon: row.icon } : {}),
+    ...(row.provider && row.provider !== 'claude' ? { provider: row.provider } : {}),
+    ...(row.system_prompt_path ? { system_prompt_path: row.system_prompt_path } : {}),
+    ...(row.capabilities && JSON.stringify(row.capabilities) !== '[]' ? { capabilities: row.capabilities } : {}),
     ...(skills.length ? { skills } : {}),
     ...(recipes.length ? { recipes } : {}),
   };
-  writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: !!ctx.DRY_RUN });
+  const body = (row.instructions || '').replace(/^\n+/, '');
+  const md = `---\n${dumpYaml(fm)}---\n${body ? `\n${body.endsWith('\n') ? body : `${body}\n`}` : ''}`;
+  writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
   return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath } };
 }
 

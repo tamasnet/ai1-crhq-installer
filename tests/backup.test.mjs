@@ -102,6 +102,12 @@ try {
     script_args: '/elsewhere/run.js --x', schedule: '0 0 * * *', enabled: true, run_count: 0,
     created_at: now, updated_at: now,
   });
+  // Give the sample agent the formerly-lossy fields so the backup exercises (and the round trip
+  // asserts) that they now survive (D-32). instructions already came from the .md body on install.
+  await db('agents').where({ key: 'ai1-sample-agent' }).update({
+    provider: 'openai', system_prompt_path: '/prompts/sample.txt',
+    capabilities: JSON.stringify(['search', 'recall']),
+  });
 
   // ── full backup ──────────────────────────────────────────────────────────────────────────
   console.log('\nbackup:');
@@ -124,7 +130,7 @@ try {
     // out of scope: system + inactive skills, system agent — absent entirely
     assert.ok(!existsSync(join(outDir, 'skills', 'sys-skill')));
     assert.ok(!existsSync(join(outDir, 'skills', 'inactive-skill')));
-    assert.ok(!existsSync(join(outDir, 'agents', 'sys-agent.yaml')));
+    assert.ok(!existsSync(join(outDir, 'agents', 'sys-agent.md')));
 
     // unrepresentable jobs: BACKUP-SKIP recorded, no files, exit severity 0
     const skips = ctx.results.filter((r) => r.verdict === 'BACKUP-SKIP').map((r) => r.name).sort();
@@ -151,12 +157,18 @@ try {
     assert.equal(rfm.description, rrow.description);
     assert.equal(rbody.replace(/^\n+/, ''), rrow.content.replace(/^\n+/, ''));
 
-    const agent = loadYaml(readFileSync(join(outDir, 'agents', 'ai1-sample-agent.yaml'), 'utf8'));
+    const { meta: agent, body: abody } = parseFrontmatter(readFileSync(join(outDir, 'agents', 'ai1-sample-agent.md'), 'utf8'));
     assert.equal(agent.name, 'ai1-sample-agent');               // agents.key → name (D-23 reversed)
     assert.equal(agent.display_name, 'Ai1 Sample Agent');       // agents.name → display_name
     assert.equal(agent.icon, '🧪');
     assert.deepEqual(agent.skills, ['ai1-sample-skill']);
     assert.deepEqual(agent.recipes, ['ai1-sample-recipe']);
+    assert.equal(agent.provider, 'openai', 'non-default provider in frontmatter');
+    assert.equal(agent.system_prompt_path, '/prompts/sample.txt');
+    assert.deepEqual(agent.capabilities, ['search', 'recall'], 'capabilities in frontmatter');
+    const arow = await db('agents').where({ key: 'ai1-sample-agent' }).first();
+    assert.equal(abody.replace(/^\n+/, ''), (arow.instructions || '').replace(/^\n+/, ''), 'body = DB instructions');
+    assert.ok(abody.trim().length, 'instructions body recovered from the .md');
 
     const job = loadYaml(readFileSync(join(outDir, 'jobs', 'ai1-sample-job.yaml'), 'utf8'));
     assert.equal(job.name, 'ai1-sample-job');
@@ -203,7 +215,8 @@ try {
     const FIELDS = {
       skill: ['name', 'description', 'content', 'skill_type', 'locked', 'skill_path', 'skill_dir', 'is_active'],
       recipe: ['name', 'description', 'content', 'is_active'],
-      agent: ['key', 'name', 'description', 'mode', 'default_model', 'icon', 'is_active'],
+      agent: ['key', 'name', 'description', 'mode', 'default_model', 'icon', 'is_active',
+        'instructions', 'provider', 'system_prompt_path', 'capabilities'],
       job: ['name', 'description', 'schedule', 'timezone', 'job_type', 'script_path', 'script_args',
         'timeout_minutes', 'max_concurrent', 'skip_if_running', 'enabled'],
     };

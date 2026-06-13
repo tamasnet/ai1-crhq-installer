@@ -172,7 +172,7 @@ plan = {
 ```js
 SkillDef   = { key, name, description, version, srcDir, content, installType? }  // content = SKILL.md (full md); installType: 'org'|'user'
 RecipeDef  = { name, description, content, srcFile, version? }
-AgentDef   = { name, display_name, description, mode, default_model?, icon?, skills:[], recipes:[], srcFile }  // name → agents.key, display_name → agents.name (D-23)
+AgentDef   = { name, display_name, description, mode, default_model?, icon?, provider?, system_prompt_path?, capabilities?, instructions?, skills:[], recipes:[], srcFile }  // .md frontmatter + body→instructions; name → agents.key, display_name → agents.name (D-23/D-32)
 JobDef     = { name, description, schedule, timezone?, script, args?, timeout_minutes?,
                max_concurrent?, skip_if_running?, enabled?, requires:[], srcFile }
 ServiceDef = { name, version, start, port?, cwd?, build?, env?, nginx?, srcDir }   // port omitted → allocated at deploy
@@ -265,14 +265,16 @@ exportRecipe(ctx, row, { outRoot, relPath })  // backup: frontmatter{name,descri
 ```js
 upsertAgent(ctx, def)
 // 1. insert|update agents by key=def.name {key, name:def.display_name, description, mode,
-//    is_active:true, (default_model?, icon?)} (minimal; rely on DB defaults — integration-reference §2)
+//    is_active:true, (default_model?, icon?, provider?, system_prompt_path?, capabilities? (jsonb),
+//    instructions?)} — each optional field set only when present, else DB default; drift-checked (D-32)
 // 2. sync agent_skills: for each def.skills → attach IFF skill exists+active; onConflict ignore;
 //    remove stale links not in def.skills
 // 3. sync agent_recipes: resolve each name→recipe_id (uuid); onConflict ignore; remove stale
 removeAgent(ctx, nameOrDef)   // del agent_skills + agent_recipes + agents row
 statusAgent(ctx, nameOrDef)   // { present, active, skills:[], recipes:[] }
-exportAgent(ctx, row, { outRoot, relPath })   // backup: reverse D-23 (key→name, name→display_name);
-// joins resolve to names; lossy fields (instructions/capabilities/…) warned, not exported (D-28)
+exportAgent(ctx, row, { outRoot, relPath })   // backup: reverse D-23 (key→name, name→display_name) as
+// an .md — frontmatter (incl. provider/system_prompt_path/capabilities when non-default) + body=instructions;
+// joins resolve to names. Fully lossless round trip (D-32)
 ```
 
 ### `core/job.mjs`

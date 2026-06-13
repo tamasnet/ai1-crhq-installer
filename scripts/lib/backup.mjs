@@ -110,7 +110,7 @@ export async function runBackup(ctx, { now = new Date() } = {}) {
     const EXPORT = {
       skills: (row) => exportSkill(ctx, row, { outRoot: staging, relPath: pathFor('skills', safeName(row.name), '') }),
       recipes: (row) => exportRecipe(ctx, row, { outRoot: staging, relPath: pathFor('recipes', safeName(row.name), '.md') }),
-      agents: (row) => exportAgent(ctx, row, { outRoot: staging, relPath: pathFor('agents', safeName(row.key), '.yaml') }),
+      agents: (row) => exportAgent(ctx, row, { outRoot: staging, relPath: pathFor('agents', safeName(row.key), '.md') }),
       jobs: (row) => exportJob(ctx, row, { outRoot: staging, relPath: pathFor('jobs', safeName(row.name), '.yaml'), skillNames }),
     };
 

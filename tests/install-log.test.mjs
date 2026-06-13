@@ -43,7 +43,7 @@ try {
     assert.ok(skill.installed_at);
     assert.equal(skill.source, `skills/${plan.skills[0].key}/SKILL.md`);
     const agent = pkg.components.find((c) => c.type === 'agent');
-    assert.equal(agent.source, `agents/${plan.agents[0].name}.yaml`);
+    assert.equal(agent.source, `agents/${plan.agents[0].name}.md`);
     const service = pkg.components.find((c) => c.type === 'service');
     assert.equal(service.source, `services/${plan.services[0].name}/service.yaml`);
     assert.equal(service.version, plan.services[0].version);

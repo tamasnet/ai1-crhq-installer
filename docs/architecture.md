@@ -211,10 +211,11 @@ the generated manifest is validated in memory and any previous backup is left un
 - **Reconstruction:** SKILL.md is regenerated from the DB row (DB content authoritative;
   version recovered from frontmatter in the content or the on-disk SKILL.md, else `0.0.0` +
   warning) and the skill tree copies from `skill_dir`. Agents reverse the D-23 mapping
-  (`agents.key → name`, `agents.name → display_name`) with joins resolved to names; jobs
-  reverse-resolve `script_args` to a BASE-relative `script`. A component the format can't
-  express (non-script job, script outside `INSTALL_BASE_DIR`, lossy agent fields) is
-  `BACKUP-SKIP`ped/warned, never fatal (D-28).
+  (`agents.key → name`, `agents.name → display_name`) as an `.md` (frontmatter + `instructions`
+  body, including `provider`/`system_prompt_path`/`capabilities` — D-32) with joins resolved to
+  names; jobs reverse-resolve `script_args` to a BASE-relative `script`. A component the format
+  can't express (non-script job, script outside `INSTALL_BASE_DIR`) is `BACKUP-SKIP`ped/warned,
+  never fatal (D-28).
 - **Overwrite-in-place (D-26):** each run replaces `${BACKUP_BASE_DIR}/<name>/`, but the
   package is built in a staging dir and swapped in only after it passes the same
   `loadManifest()` validation an install would run — a failed backup never clobbers the
