@@ -140,11 +140,14 @@ BACKUP_BASE_DIR || join(homedir(), 'backups')      // positional CLI arg overrid
 ```
 
 **Install log (D-24):** every real install/uninstall updates `${PACKAGES_DIR}/install.json` —
-keyed by package name, one entry per installed component with `{type, name, version?,
-installed_at, source}` (`source` = the component's manifest file relative to the package
-root). Dry-run and status never touch it; uninstalling deletes entries outright, and the
-package key goes with its last component. Bookkeeping only — a log write failure warns, it
-doesn't fail the install.
+a flat list with one entry per installed component (`type:name`), `{type, name, version?,
+package, package_version, source, installed_at}` (`source` = the component's manifest file
+relative to its package root). One slot per component mirrors the DB's one-row-per-name rule,
+so re-installing a component — from a newer version of the same package or from a different
+package — transfers ownership by overwriting that slot; duplicates can't occur and a partial
+upgrade shows as mixed `package_version`s across a package's components. Dry-run and status
+never touch it; uninstalling deletes the entry. Bookkeeping only — a log write failure warns,
+it doesn't fail the install.
 
 Every consumer of the library funnels **all DB access** through `getDb()` (one place the
 schema applies) and **all fs access** through `INSTALL_BASE_DIR`-rooted helpers (one place

@@ -106,21 +106,28 @@ Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (C7)
 |--------|-----------|----------|
 | `resolvePackagesDir()` | `() => string` | `PACKAGES_DIR \|\| join(homedir(),'packages')`. |
 | `installLogPath(dir?)` | `(string?) => string` | `<packagesDir>/install.json`. |
-| `readInstallLog(dir?)` | `(string?) => object` | Parsed log (`{}` if absent); throws on a non-object. |
+| `readInstallLog(dir?)` | `(string?) => Array` | Parsed log (`[]` if absent); throws on a non-array. |
 | `updateInstallLog(ctx, meta, plan, packageRoot)` | `=> string\|null` | Applies the finished run to the log; returns the path written, or `null` when skipped (dry-run, status, nothing processed). |
 
-Log shape — keyed by package name:
+Log shape — a flat list, one entry per component (`type:name`):
 
 ```js
-{ "<package>": { version, installed_at, components: [
-    { type, name, version?, installed_at, source }   // source = component manifest file, relative to package root
-] } }
+[
+  { type, name, version?, package, package_version, source, installed_at }
+  // version = the component's own pinned version (skills/services always; recipes if declared)
+  // package / package_version = the package the component was last installed from (its provenance)
+  // source = component manifest file, relative to that package's root
+]
 ```
 
-Rules: only processed `OK`/`ALREADY` results change entries (install upserts — `ALREADY`
-keeps its original date; uninstall deletes, with the package key removed alongside its last
-component). Failures leave the log alone. A corrupt log is warned about and rebuilt. The CLI
-wraps the call so a log write failure warns instead of failing the install.
+Rules: only processed `OK`/`ALREADY` results change entries. Install **upserts the component's
+slot** — `package`/`package_version`/`source`/`version` always reflect the current run (so
+re-installing from a newer package version, or a different package entirely, transfers ownership
+in place — never a duplicate), while `ALREADY` preserves the original `installed_at`. Uninstall
+deletes the slot. A partial upgrade therefore leaves a package's components at mixed
+`package_version`s — the honest current state. Failures leave the log alone. A corrupt log is
+warned about and rebuilt. The CLI wraps the call so a log write failure warns instead of failing
+the install.
 
 ## 6c. `lib/filter.mjs` — `--include` / `--exclude` (component selection)
 

@@ -174,9 +174,11 @@ whether to honor them for its own steps.
 - `INSTALL_SCHEMA` — Postgres schema for DB writes (applied as a knex `searchPath`; legacy fallback
   `SANDBOX_SCHEMA`). Set automatically by `--sandbox`.
 - `PACKAGES_DIR` — where the install log lives (default `~/packages`). Every real install/uninstall
-  updates `${PACKAGES_DIR}/install.json` with per-component name/version/date/source entries;
-  dry-run and status never touch it, and uninstalled entries are removed outright. Redirected to a
-  throwaway dir by `--sandbox`.
+  updates `${PACKAGES_DIR}/install.json` — a flat list with one entry per component carrying its
+  name, version, source provenance (`package` + `package_version`) and install date. One slot per
+  component, so re-installing from a newer or different package transfers ownership in place rather
+  than duplicating. Dry-run and status never touch it, and uninstalled entries are removed outright.
+  Redirected to a throwaway dir by `--sandbox`.
 - `BACKUP_BASE_DIR` — parent dir under which `backup` writes its package dir (default `~/backups`;
   the CLI's positional argument overrides it). `SATELLITE_ID` (when set) names the default backup
   package `<satellite-id>-backup`.
