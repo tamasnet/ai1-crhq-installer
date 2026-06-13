@@ -2,11 +2,12 @@
 // ai1-crhq-installer — backup runner (CLI entry): the reverse of install.mjs. Reads the in-scope
 // CRHQ DB-resident components (D-25) and writes an installable package (ai1-package.yaml manifest
 // format) to ${BACKUP_BASE_DIR}/<name>/, overwriting the previous backup in place via a staged
-// build + swap (D-26). Read-only against the DB — no dry-run, no sandbox, always live.
+// build + swap (D-26). Read-only against the DB — no sandbox, always live. --dry-run (D-31)
+// previews what would be backed up (full scope/skip reporting, zero fs writes).
 // Restore = `node scripts/install.mjs <backup-dir>`.
 //
-// Usage: backup.mjs [<backup-base-dir>] [--name=<pkg>] [--type=<types>] [--include=<pat>]
-//                   [--exclude=<pat>] [--json] [--help]
+// Usage: backup.mjs [<backup-base-dir>] [--name=<pkg>] [--dry-run] [--type=<types>]
+//                   [--include=<pat>] [--exclude=<pat>] [--json] [--help]
 import {
   createContext, preflight, closeDb, validateFlags, usage, wantsHelp, UsageError,
   ManifestError, PreflightError, FilterError,
@@ -21,7 +22,7 @@ try {
   // --sandbox, …) make no sense for a live read-only export and are reported as not-supported.
   validateFlags(argv, { mode: 'backup' });
   const ctx = await createContext(argv, { mode: 'backup' });
-  ctx.log.info(`backup → ${ctx.BACKUP_BASE} (schema=${ctx.SCHEMA || 'default'})`);
+  ctx.log.info(`backup → ${ctx.BACKUP_BASE} (schema=${ctx.SCHEMA || 'default'})${ctx.DRY_RUN ? ' (dry-run)' : ''}`);
   await preflight(ctx);                       // DB reachable + BACKUP_BASE_DIR writable — else exit 2
   await runBackup(ctx, { now: new Date() });  // version/date minted here, threaded in (lib stays deterministic)
   ctx.report();

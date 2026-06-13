@@ -64,8 +64,9 @@ Sandbox-backed suites, one per area (a reachable satellite DB is required):
 | `tests/runner.test.mjs` | preflight pass/fail, `install_entry` flag forwarding across all modes (incl. a declared package flag), multi-valued `--type` |
 | `tests/service.test.mjs` | template renderers (127.0.0.1 binding, TLS, white-label branch, secrets excluded), `nextFreePort`, dry-run no-write, sandbox-skip, secret hygiene |
 | `tests/filter.test.mjs` | `--include`/`--exclude` matcher semantics (exact vs regex, compose with `--type`, zero-match exit 0, invalid regex exit 2) |
-| `tests/options.test.mjs` | CLI option validation (D-30) for both entries: `--help` usage/exit 0, unsupported option + value-flag-without-value → exit 2, backup's "not supported by backup", undeclared package flag rejected — **DB-free** |
+| `tests/options.test.mjs` | CLI option validation (D-30) for both entries: `--help` usage/exit 0, unsupported option + value-flag-without-value → exit 2, backup's "not supported by backup" (and `--dry-run` accepted, D-31), undeclared package flag rejected — **DB-free** |
 | `tests/install-log.test.mjs` | install.json bookkeeping (D-24): entry shape, ALREADY date preservation, dry-run/status no-write, partial + full uninstall removal, corrupt-log recovery, `PACKAGES_DIR` override — **DB-free** |
+| `tests/backup.test.mjs` | backup (D-25..D-29, D-31): dumpYaml round-trips, scope + skip rules, component reconstruction vs DB rows, overwrite-in-place via staged swap, uninstall → reinstall-from-backup round trip, `--type`/`--include` filters, dry-run (full reporting, zero fs writes, previous backup untouched) |
 
 Each suite provisions its own sandbox; several also run a scoped `--sandbox --lifecycle`.
 

@@ -36,11 +36,11 @@ the live service apply/remove paths are smoke-tested.
 + `core/{skill,recipe,agent,job,service}.mjs` + `vendor/yaml.mjs`.
 Install log: `${PACKAGES_DIR:-~/packages}/install.json` (D-24) — updated on real installs/uninstalls only.
 Self-test (no live writes): `node scripts/install.mjs <package> --sandbox --lifecycle`.
-**Backup** (D-25..D-29): `node scripts/backup.mjs [<base-dir>] [--name= --type= --include= --exclude= --json --help]`
+**Backup** (D-25..D-29, D-31): `node scripts/backup.mjs [<base-dir>] [--name= --dry-run --type= --include= --exclude= --json --help]`
 — reverse of install: reads active org/user skills + recipes + non-system agents/jobs from the DB and
 writes an installable package to `${BACKUP_BASE_DIR:-~/backups}/<name>/` (default name
 `<satellite-id>-backup`), overwrite-in-place via stage→validate→swap. Live + read-only on the DB
-(no dry-run/sandbox); restore = `install.mjs <backup-dir>`.
+(no sandbox); `--dry-run` previews scope/skips with zero fs writes (D-31); restore = `install.mjs <backup-dir>`.
 
 ## Safety & workflow
 - **`git push` only when explicitly asked.** Trunk branch is `main`. Commit only when asked;

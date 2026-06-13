@@ -40,6 +40,7 @@ to `.`). See `examples/bundle/` for a complete sample with every component type.
 
 ```bash
 node scripts/backup.mjs                          # → ${BACKUP_BASE_DIR:-~/backups}/<satellite-id>-backup/
+node scripts/backup.mjs --dry-run                # preview what would be backed up; zero fs writes
 node scripts/backup.mjs /path/to/backups         # positional arg overrides BACKUP_BASE_DIR
 node scripts/backup.mjs --name=my-snapshot       # package/dir name override
 node scripts/backup.mjs --type=skills,recipes --include='^acme-' --json
@@ -55,9 +56,11 @@ format can't express (e.g. a job whose script lives outside `INSTALL_BASE_DIR`) 
 `BACKUP-SKIP` with a warning, never fatally. The version is date-based (e.g. `2026.6.12`); a
 skill with no recoverable version is pinned `0.0.0` with a warning.
 
-It is **live and read-only against the DB** by design — there is no `--dry-run`, `--status`,
-`--uninstall`, or `--sandbox` (those flags are rejected). `--type`/`--include`/`--exclude`/`--json`
-work exactly as for install (`services` are not DB-resident and not covered); `--help` prints usage.
+It is **live and read-only against the DB** by design — there is no `--status`, `--uninstall`, or
+`--sandbox` (those flags are rejected). `--dry-run` previews a backup: the full discovery/scope/skip
+reporting runs (so you can test `--type`/`--include`/`--exclude` combinations), but **nothing is
+written** and any previous backup is left untouched. `--type`/`--include`/`--exclude`/`--json` work
+exactly as for install (`services` are not DB-resident and not covered); `--help` prints usage.
 
 ## The package manifest (`ai1-package.yaml`)
 

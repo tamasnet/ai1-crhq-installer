@@ -215,6 +215,37 @@ try {
     assert.deepEqual(after.links, before.links, 'agent links round-trip');
   });
 
+  // ── dry-run (D-31) ───────────────────────────────────────────────────────────────────────
+  console.log('\ndry-run:');
+
+  await test('dry-run: full inventory + skip reporting, zero filesystem writes', async () => {
+    const dryDir = join(backupBase, 'dry-backup');
+    const ctx = bctx({ DRY_RUN: true, NAME: 'dry-backup' });
+    const { dir, meta } = await runBackup(ctx, { now: NOW });
+
+    // Same scope + verdicts as a real run (incl. BACKUP-SKIP for unrepresentable jobs)...
+    assert.equal(dir, dryDir);
+    assert.equal(meta.version, dateVersion(NOW));
+    assert.deepEqual(meta.components.skills.map((e) => e.path), ['skills/ai1-sample-skill']);
+    assert.deepEqual(Object.keys(meta.components).sort(), ['agents', 'jobs', 'recipes', 'skills']);
+    const skips = ctx.results.filter((r) => r.verdict === 'BACKUP-SKIP').map((r) => r.name).sort();
+    assert.deepEqual(skips, ['outside-job', 'session-job']);
+    assert.ok(ctx.results.every((r) => ['BACKUP-OK', 'BACKUP-SKIP'].includes(r.verdict)));
+
+    // ...but nothing written: no package dir, no staging leftovers.
+    assert.ok(!existsSync(dryDir), 'package dir not created');
+    assert.ok(!existsSync(`${dryDir}.staging-${process.pid}`), 'no staging dir');
+  });
+
+  await test('dry-run: does not touch an existing previous backup', async () => {
+    const before = readFileSync(join(outDir, 'ai1-package.yaml'), 'utf8');
+    writeFileSync(join(outDir, 'keep-marker.txt'), 'still here');
+    await runBackup(bctx({ DRY_RUN: true }), { now: NOW });   // same NAME → same dest as outDir
+    assert.equal(readFileSync(join(outDir, 'ai1-package.yaml'), 'utf8'), before, 'manifest untouched');
+    assert.ok(existsSync(join(outDir, 'keep-marker.txt')), 'previous backup contents untouched');
+    rmSync(join(outDir, 'keep-marker.txt'));
+  });
+
   // ── filters ──────────────────────────────────────────────────────────────────────────────
   console.log('\nfilters:');
 

@@ -112,9 +112,10 @@ install.mjs [<package>] [flags]          # <package> = dir with ai1-package.yaml
 
 backup.mjs [<backup-base-dir>] [flags]   # reverse of install — see §10; default base = BACKUP_BASE_DIR
   --name=<pkg>     package (and output dir) name; default <satellite-id>-backup (D-27)
+  --dry-run        preview what would be backed up (full scope/skip reporting); zero fs writes (D-31)
   --type / --include / --exclude / --json   same semantics as install (services never apply)
   --help           print usage and exit 0
-                   # no --dry-run/--status/--uninstall/--sandbox: live, read-only, non-destructive
+                   # no --status/--uninstall/--sandbox: live, read-only, non-destructive
 
 Option validation (lib/flags.mjs): both CLIs reject an unsupported option, or a value flag given
 no value (a bare --type or empty --type=), with a message + usage exit 2 — before any side effect.
@@ -198,9 +199,11 @@ fs, not nginx/PM2). Never run PM2 against `crhq-satellite`.
 `backup.mjs` reads the satellite's CRHQ-resident components from the DB and writes them back
 out as an **installable package** in the same `ai1-package.yaml` manifest format, under
 `${BACKUP_BASE_DIR}/<name>/`. Restore = `install.mjs <that dir>`. Always live and
-non-destructive (DB reads only; fs writes only under `BACKUP_BASE_DIR`) — hence no dry-run,
-sandbox, or lock handling. Module: `lib/backup.mjs` + `export*` primitives co-located in
-`lib/core/*` (signatures: `api-design.md` §14).
+non-destructive (DB reads only; fs writes only under `BACKUP_BASE_DIR`) — hence no sandbox or
+lock handling. `--dry-run` (D-31) runs the full discovery/scope/export pipeline — including the
+D-28 skip rules and warnings, so filter/type options can be tested — with zero filesystem writes:
+the generated manifest is validated in memory and any previous backup is left untouched. Module:
+`lib/backup.mjs` + `export*` primitives co-located in `lib/core/*` (signatures: `api-design.md` §14).
 
 - **Scope (D-25):** active `org`/`user` skills (not platform `system` skills), active recipes,
   non-system active agents, non-system jobs. Inactive rows are out of scope (the manifest

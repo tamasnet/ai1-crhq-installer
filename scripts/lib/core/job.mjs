@@ -94,7 +94,7 @@ export async function exportJob(ctx, row, { outRoot, relPath, skillNames }) {
     enabled: row.enabled ?? true,
     ...(skillNames?.has(skillKey) ? { requires: [skillKey] } : {}),
   };
-  writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: false });
+  writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: !!ctx.DRY_RUN });
   return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath } };
 }
 

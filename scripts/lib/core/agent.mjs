@@ -118,7 +118,7 @@ export async function exportAgent(ctx, row, { outRoot, relPath }) {
     ...(skills.length ? { skills } : {}),
     ...(recipes.length ? { recipes } : {}),
   };
-  writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: false });
+  writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: !!ctx.DRY_RUN });
   return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath } };
 }
 

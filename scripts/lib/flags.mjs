@@ -22,7 +22,7 @@ export const FLAG_SPEC = {
     value: ['--type', '--include', '--exclude'],
   },
   backup: {
-    bool: ['--json'],
+    bool: ['--dry-run', '--json'],
     value: ['--name', '--type', '--include', '--exclude'],
   },
 };
@@ -115,6 +115,7 @@ Usage: node scripts/backup.mjs [<backup-base-dir>] [options]
 
 Options:
   --name=<pkg>     package (and output dir) name; default <satellite-id>-backup
+  --dry-run        preview what would be backed up; zero filesystem writes
   --type=<types>   restrict to component types: skills,recipes,agents,jobs
                    (comma-separated and/or the flag repeated)
   --include=<pat>  export only components whose name matches <pat>
@@ -123,7 +124,7 @@ Options:
   --json           machine-readable result output
   --help           show this help and exit
 
-Live, read-only export — no --dry-run/--status/--uninstall/--sandbox (those are rejected).
+Live, read-only export — no --status/--uninstall/--sandbox (those are rejected).
 Restore with:  node scripts/install.mjs <backup-dir>`;
 
 export function usage(mode = 'install') {

@@ -38,7 +38,7 @@ export async function removeRecipe(ctx, nameOrDef) {
 export async function exportRecipe(ctx, row, { outRoot, relPath }) {
   const fm = { name: row.name, description: row.description || '' };
   const md = `---\n${dumpYaml(fm)}---\n\n${(row.content || '').replace(/^\n+/, '')}`;
-  writeIfChanged(join(outRoot, relPath), md, { dryRun: false });
+  writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
   return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath } };
 }
 

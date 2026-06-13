@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { validateFlags } from '../scripts/lib/flags.mjs';
 import { harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -81,11 +82,18 @@ await test('unknown option → message + exit 2', () => {
 });
 
 await test('install-lifecycle flag → "not supported by backup" + exit 2', () => {
-  for (const f of ['--sandbox', '--dry-run', '--uninstall']) {
+  for (const f of ['--sandbox', '--status', '--uninstall']) {
     const r = backup([f]);
     assert.equal(r.status, 2, f);
     assert.match(out(r), /not supported by backup/, f);
   }
+});
+
+await test('--dry-run is supported by backup (validation + help)', () => {
+  validateFlags(['--dry-run', '--json'], { mode: 'backup' });   // must not throw (D-31)
+  assert.throws(() => validateFlags(['--dry-run=x'], { mode: 'backup' }), /does not take a value/);
+  const r = backup(['--help']);
+  assert.match(r.stdout, /--dry-run\s+preview what would be backed up/);
 });
 
 await test('value flag with no value (bare) → message + exit 2', () => {

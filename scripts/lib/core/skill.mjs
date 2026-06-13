@@ -92,7 +92,7 @@ export async function removeSkill(ctx, nameOrDef) {
 export async function exportSkill(ctx, row, { outRoot, relPath }) {
   const { log } = ctx;
   const destDir = join(outRoot, relPath);
-  const files = row.skill_dir && existsSync(row.skill_dir) ? copyTree(row.skill_dir, destDir, { dryRun: false }) : 0;
+  const files = row.skill_dir && existsSync(row.skill_dir) ? copyTree(row.skill_dir, destDir, { dryRun: !!ctx.DRY_RUN }) : 0;
 
   let fm = {};
   let body = row.content || '';
@@ -109,7 +109,7 @@ export async function exportSkill(ctx, row, { outRoot, relPath }) {
   }
   const meta = { ...fm, name: row.name, version, description: row.description || fm.description || '' };
   const md = `---\n${dumpYaml(meta)}---\n\n${body.replace(/^\n+/, '')}`;
-  writeIfChanged(join(destDir, 'SKILL.md'), md, { dryRun: false });
+  writeIfChanged(join(destDir, 'SKILL.md'), md, { dryRun: !!ctx.DRY_RUN });
 
   const entry = { path: relPath, version, ...(row.skill_type === 'user' ? { install_type: 'user' } : {}) };
   return { ...result(row.name, VERDICT.BACKUP_OK, 'exported', files + 1), entry };

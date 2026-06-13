@@ -434,11 +434,17 @@ runBackup(ctx, { now })   // → { dir, meta, results }
 //    REAL loadManifest() — the backup must itself be installable (parse-level guarantee).
 // 5. swap (D-26): rm dest, rename staging → dest. On any failure the staging dir is removed and
 //    the previous backup is left untouched.
+//
+// --dry-run (D-31): same pipeline, zero fs writes. The export* primitives thread ctx.DRY_RUN
+// into the fs helpers (copyTree/writeIfChanged), so steps 1–3 run fully — incl. D-28 skip rules,
+// warnings, and per-component verdicts; step 4's self-check becomes an in-memory
+// validateManifest(meta) (nothing was staged to load); step 5 is replaced by a
+// `[dry-run] would write backup package: <dest>` line. reportExtra.package gains dryRun:true.
 ```
 
 `scripts/backup.mjs` control flow: `--help`? print `usage('backup')` + exit 0 →
-`validateFlags(argv,{mode:'backup'})` (install-lifecycle flags report "not supported by backup";
-unsupported option / missing value → usage exit 2) → `createContext(argv, { mode:'backup' })` →
-`preflight` (DB + `BACKUP_BASE` writable) →
+`validateFlags(argv,{mode:'backup'})` (`--dry-run` is accepted (D-31); the other install-lifecycle
+flags report "not supported by backup"; unsupported option / missing value → usage exit 2) →
+`createContext(argv, { mode:'backup' })` → `preflight` (DB + `BACKUP_BASE` writable) →
 `runBackup(ctx, { now: new Date() })` → `ctx.report()` (`✅ Backup complete.`), `closeDb()` in
 `finally`. Restore is simply `install.mjs ${BACKUP_BASE_DIR}/<name>`.
