@@ -116,8 +116,10 @@ Log shape — a flat list, one entry per component (`type:name`):
 ```js
 [
   { type, name, version?, package, package_version, source, installed_at }
-  // version = the component's own pinned version (skills/services always; recipes if declared)
-  // package / package_version = the package the component was last installed from (its provenance)
+  // version = the component's own positive-INTEGER version (skills/services always; recipes/agents
+  //           when declared; jobs never) — D-34
+  // package = the package the component was last installed from; package_version = its free-form
+  //           release label (NOT an integer)
   // source = component manifest file, relative to that package's root
 ]
 ```
@@ -130,6 +132,20 @@ deletes the slot. A partial upgrade therefore leaves a package's components at m
 `package_version`s — the honest current state. Failures leave the log alone. A corrupt log is
 warned about and rebuilt. The CLI wraps the call so a log write failure warns instead of failing
 the install.
+
+## 6b-v. `lib/version-history.mjs` — component version round-trip (D-34)
+
+Round-trips a component's positive-integer version through its CRHQ `*_versions` table
+(`skill_versions` / `recipe_versions` / `agent_versions`). The live version is `MAX(version_num)`.
+
+| Export | Signature | Behavior |
+|--------|-----------|----------|
+| `currentVersion(db, type, fkValue)` | `=> Promise<int\|null>` | `MAX(version_num)` for the entity (`type` ∈ skill/recipe/agent), or `null` if none. Used by backup/export to pin the live version. |
+| `recordVersion(ctx, type, {fkValue, version, name, description, body})` | `=> Promise<void>` | Upserts the `version_num` row (`onConflict(<fk>,version_num).merge` → idempotent); `changed_by='ai1-installer'`, `change_summary='Installed from <pkg> v<pkgver>'` (from `ctx.PACKAGE`). Warns when `version < current` (downgrade) but records anyway. No-op (logs intent) in dry-run; no-op if `version == null`. |
+| `removeVersions(ctx, type, fkValue)` | `=> Promise<void>` | Deletes the entity's version rows — mirrors the real-DB `ON DELETE CASCADE` in the FK-less sandbox. No-op in dry-run. |
+| `versionTable(type)` | `(string) => string\|null` | The table name for a type (or null). |
+
+`type → {table, fk, body}`: skill→`skill_versions`/`skill_name`/`content`, recipe→`recipe_versions`/`recipe_id`(uuid)/`content`, agent→`agent_versions`/`agent_key`/`instructions`. The core `upsert*`/`remove*`/`export*` primitives call these; `install.mjs` sets `ctx.PACKAGE = {name, version}` for the change summary.
 
 ## 6c. `lib/filter.mjs` — `--include` / `--exclude` (component selection)
 

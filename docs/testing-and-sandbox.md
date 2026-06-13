@@ -21,8 +21,11 @@ node scripts/install.mjs examples/bundle --sandbox --lifecycle
 What `--sandbox` does (`lib/sandbox.mjs`):
 1. **Provision** — `CREATE SCHEMA sandbox_<ts>`; for each managed table
    `CREATE TABLE sandbox_<ts>.<t> (LIKE public.<t> INCLUDING ALL)` — clones the **live**
-   schema, so the sandbox can never drift from production. Seeds prerequisite `skills` rows
-   copied from live so agent-attach + dependency checks mirror the real satellite.
+   schema, so the sandbox can never drift from production. The managed set includes the three
+   version tables (`skill_versions`/`recipe_versions`/`agent_versions`) so the install/backup
+   version round-trip (D-34) works in the sandbox; since `LIKE` omits FKs, `remove*` deletes
+   version rows explicitly to mirror the real-DB `ON DELETE CASCADE`. Seeds prerequisite `skills`
+   rows copied from live so agent-attach + dependency checks mirror the real satellite.
 2. **Redirect** — set `INSTALL_SCHEMA=sandbox_<ts>` + `INSTALL_BASE_DIR=<tempdir>` +
    `PACKAGES_DIR=<tempdir>`. All DB writes land in the sandbox schema; all fs writes
    (including the install log) under the temp dirs.
@@ -58,7 +61,7 @@ Sandbox-backed suites, one per area (a reachable satellite DB is required):
 
 | Suite | Covers |
 |-------|--------|
-| `tests/skill-recipe.test.mjs` | skill row fields, org+locked default + `install_type`/`--install-skills-as-user` overrides, asset copy + idempotency, C5 lock handling both ways, dry-run zero-write, removal, recipe lifecycle, negatives (missing SKILL.md, version pin, invalid `install_type`) |
+| `tests/skill-recipe.test.mjs` | skill row fields, org+locked default + `install_type`/`--install-skills-as-user` overrides, asset copy + idempotency, C5 lock handling both ways, dry-run zero-write, removal, recipe lifecycle, version-history round-trip (D-34: `*_versions` row at `version_num`=package version, bump/downgrade-warn/`MAX`-is-current, remove clears history), negatives (missing SKILL.md, version pin mismatch, non-integer version, invalid `install_type`) |
 | `tests/agent.test.mjs` | minimal-row + DB defaults, recipe name→uuid resolution, attach filtering (missing/inactive skipped), stale-link sync both directions, clean removal of row + joins |
 | `tests/job.test.mjs` | id minting + canon columns, `script_args` under `INSTALL_BASE_DIR`, schedule aliases + raw cron, stable id across re-runs, C12 `requires` → `PrereqError` |
 | `tests/runner.test.mjs` | preflight pass/fail, `install_entry` flag forwarding across all modes (incl. a declared package flag), multi-valued `--type` |
@@ -66,7 +69,7 @@ Sandbox-backed suites, one per area (a reachable satellite DB is required):
 | `tests/filter.test.mjs` | `--include`/`--exclude` matcher semantics (exact vs regex, compose with `--type`, zero-match exit 0, invalid regex exit 2) |
 | `tests/options.test.mjs` | CLI option validation (D-30) for both entries: `--help` usage/exit 0, unsupported option + value-flag-without-value → exit 2, backup's "not supported by backup" (and `--dry-run` accepted, D-31), undeclared package flag rejected; `--list-installed` (D-33) standalone table/`--json`/empty-log/`--help` listing — **DB-free** |
 | `tests/install-log.test.mjs` | install.json bookkeeping (D-24): flat entry shape (incl. `package`/`package_version`), ALREADY date preservation, dry-run/status no-write, partial + full uninstall removal, ownership transfer (newer package version + different package name → no duplicate), partial-upgrade mixed `package_version`s, corrupt-log recovery, `sortInstalled`/`formatInstalledList` rendering (D-33), `PACKAGES_DIR` override — **DB-free** |
-| `tests/backup.test.mjs` | backup (D-25..D-29, D-31): dumpYaml round-trips, scope + skip rules, component reconstruction vs DB rows, overwrite-in-place via staged swap, uninstall → reinstall-from-backup round trip, `--type`/`--include` filters, dry-run (full reporting, zero fs writes, previous backup untouched) |
+| `tests/backup.test.mjs` | backup (D-25..D-29, D-31, D-34): dumpYaml round-trips, scope + skip rules, component reconstruction vs DB rows, integer version = `MAX(*_versions.version_num)` (+ no-history → pinned 1), overwrite-in-place via staged swap, uninstall → reinstall-from-backup round trip, `--type`/`--include` filters, dry-run (full reporting, zero fs writes, previous backup untouched) |
 
 Each suite provisions its own sandbox; several also run a scoped `--sandbox --lifecycle`.
 

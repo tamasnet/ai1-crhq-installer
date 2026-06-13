@@ -40,6 +40,7 @@ try {
   }
 
   const ctx = await createContext(argv);
+  ctx.PACKAGE = { name: meta.name, version: meta.version };   // provenance for version-history change summaries (D-34)
   if (sb) ctx.log.info(`sandbox: schema=${sb.schema} baseDir=${sb.baseDir}`);
 
   await preflight(ctx);   // DB reachable + (write modes) BASE writable — else transport exit 2

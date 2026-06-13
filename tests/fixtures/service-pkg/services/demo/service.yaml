@@ -1,5 +1,5 @@
 name: ai1-demo-svc
-version: 1.0.0
+version: 1
 port: 4399
 start: node server.js
 env:

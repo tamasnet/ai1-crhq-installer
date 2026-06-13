@@ -4,4 +4,4 @@ description: Fixture package exercising the service (nginx + PM2) component.
 components:
   services:
     - path: services/demo
-      version: 1.0.0
+      version: 1

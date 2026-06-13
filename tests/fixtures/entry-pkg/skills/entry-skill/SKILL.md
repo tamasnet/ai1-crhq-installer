@@ -1,6 +1,6 @@
 ---
 name: entry-skill
-version: 0.1.0
+version: 1
 description: "Fixture skill for the runner / install_entry test."
 ---
 

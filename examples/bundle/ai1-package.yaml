@@ -12,7 +12,7 @@ installer: ">=0.1.0"
 components:
   skills:
     - path: skills/ai1-sample-skill
-      version: 0.1.0
+      version: 1
   recipes:
     - path: recipes/ai1-sample-recipe.md
   agents:
@@ -21,7 +21,7 @@ components:
     - path: jobs/ai1-sample-job.yaml
   services:
     - path: services/ai1-sample-svc
-      version: 0.1.0
+      version: 1
 
 # Optional package-specific hook, invoked after the declarative pass (all modes).
 install_entry: scripts/install.mjs

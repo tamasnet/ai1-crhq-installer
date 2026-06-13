@@ -54,8 +54,9 @@ the same `ai1-package.yaml` manifest format. **Scope:** active `org`/`user` skil
 **overwrites the package dir in place** — but builds in a staging dir and swaps only after the
 generated manifest validates, so a failed run never damages the previous backup. Components the
 format can't express (e.g. a job whose script lives outside `INSTALL_BASE_DIR`) are reported as
-`BACKUP-SKIP` with a warning, never fatally. The version is date-based (e.g. `2026.6.12`); a
-skill with no recoverable version is pinned `0.0.0` with a warning.
+`BACKUP-SKIP` with a warning, never fatally. The **package** version is a date label (e.g.
+`2026.6.12`); each **component** version is the live CRHQ integer (`MAX(version_num)` from its
+`*_versions` table, D-34) — a skill with no version history is pinned `1` with a warning.
 
 It is **live and read-only against the DB** by design — there is no `--status`, `--uninstall`, or
 `--sandbox` (those flags are rejected). `--dry-run` previews a backup: the full discovery/scope/skip
@@ -70,23 +71,25 @@ A package is a versioned directory with a single `ai1-package.yaml` at its root 
 
 ```yaml
 name: my-bundle
-version: 1.0.0
+version: 1.0.0                  # free-form suite release LABEL (not a component version)
 description: ...
 installer: ">=0.1.0"            # optional min installer version
 components:
   skills:
     - path: skills/my-skill     # dir with SKILL.md (+ optional scripts/)
-      version: 0.1.0            # REQUIRED — must equal SKILL.md frontmatter version
+      version: 1                # REQUIRED positive INTEGER — must equal SKILL.md frontmatter version
       install_type: org        # optional: 'org' (default, locked) | 'user' (unlocked)
   recipes:
     - path: recipes/my-recipe.md
+      version: 1                # optional integer (round-trips via recipe_versions)
   agents:
     - path: agents/my-agent.md
+      version: 1                # optional integer (round-trips via agent_versions)
   jobs:
     - path: jobs/my-job.yaml
   services:
     - path: services/my-svc     # dir with service.yaml + app source
-      version: 1.0.0            # REQUIRED — must equal service.yaml version
+      version: 1                # REQUIRED positive INTEGER — must equal service.yaml version
 install_entry: scripts/install.mjs   # optional hook for steps the installer can't infer
 ```
 
@@ -113,6 +116,12 @@ Full specification: [`docs/package-manifest-spec.md`](./docs/package-manifest-sp
   `INSTALL_BASE_DIR/<script>`; `requires` skill dirs must exist first (prereq guard).
 - **Service** — `services/<name>/service.yaml`: `name`/`version`/`start`/`port?`/`build?`/`env`/
   `nginx`, plus the app source. Deployed via an nginx reverse proxy (127.0.0.1) + a PM2 process.
+
+**Versioning (D-34):** component `version`s are **positive integers** (required for skills/services,
+optional for recipes/agents, n/a for jobs). On install the integer is recorded as the component's
+CRHQ `version_num` (`skill_versions`/`recipe_versions`/`agent_versions`); on backup the live version
+(`MAX(version_num)`) is read back — so the package number and the satellite number stay in lockstep.
+A non-incrementing version warns but still installs. The package-level `version` is a free-form label.
 
 Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manifest-spec.md).
 
@@ -218,7 +227,7 @@ ai1-crhq-installer/
 ├── scripts/
 │   ├── install.mjs        # CLI entry — generic manifest runner
 │   ├── backup.mjs         # CLI entry — backup (reverse of install): DB state → installable package
-│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, run, backup, sandbox,
+│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, version-history, run, backup, sandbox,
 │       ├── core/          #   index  +  core/{skill,recipe,agent,job,service}
 │       └── vendor/        #   yaml.mjs — vendored single-file YAML parser (zero npm install)
 ├── examples/bundle/       # complete sample package (every component type)

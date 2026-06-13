@@ -1,5 +1,5 @@
 name: ai1-sample-svc
-version: 0.1.0
+version: 1
 port: 4310
 start: node server.js
 env:

@@ -1,7 +1,7 @@
 # CRHQ Integration Reference — DB schema & manifest mapping
 
 **Authoritative** — the schema below was verified against the live satellite DB
-(`columnInfo()` over all 7 tables). The built-in sandbox clones from live (`CREATE TABLE …
+(`columnInfo()` over all 9 managed tables). The built-in sandbox clones from live (`CREATE TABLE …
 LIKE`), so there is no separate DDL to drift.
 
 Resource writes are **DB-direct via knex** (see `canon-conventions.md` C1, C9). REST is
@@ -40,10 +40,27 @@ wrapper applies it as the knex `searchPath`.
 Insert minimal set: `name, description, content, skill_type, locked, skill_path, skill_dir,
 is_active:true, is_global:false, created_at, updated_at`.
 
-### `skill_versions` — version history
+### `skill_versions` / `recipe_versions` / `agent_versions` — version history (D-34)
 
-PK `id serial`; FK `skill_name → skills(name) ON DELETE CASCADE`; UNIQUE `(skill_name,
-version_num)`. **Installers don't write this** — it's maintained by the platform.
+Parallel tables, one per versioned DB type. `PK id serial`; FK to the main row **ON DELETE
+CASCADE**; `UNIQUE (<fk>, version_num)`; the live version is `MAX(version_num)`.
+
+| Table | FK column | body column |
+|-------|-----------|-------------|
+| `skill_versions` | `skill_name` → `skills(name)` | `content` |
+| `recipe_versions` | `recipe_id` (**uuid**) → `recipes(id)` | `content` |
+| `agent_versions` | `agent_key` → `agents(key)` | `instructions` |
+
+Common columns: `version_num` (int), `name`, `description`, `<body>`, `changed_by`,
+`change_summary`, `created_at`.
+
+**The installer reads and writes these (D-34):** on install it upserts a row at
+`version_num = <the package's integer component version>` (`changed_by='ai1-installer'`,
+`change_summary='Installed from <pkg> v<pkgver>'`, `onConflict(<fk>,version_num).merge` →
+idempotent); on backup it reads `MAX(version_num)` as the pin. So the package's integer version
+and CRHQ's number stay in lockstep. The FK cascade drops history on a real uninstall; the FK-less
+`--sandbox` deletes it explicitly for parity. The `hub_version`/`org_version`/`source_version`
+columns on the main tables are hub/org sync metadata and are left untouched.
 
 ### `recipes` — PK `id uuid` (gen_random_uuid), `name` UNIQUE
 
@@ -114,9 +131,9 @@ implementation realizes them.
 
 | Component | Install |
 |-----------|---------|
-| **Skill** | upsert `skills` by `name` — `skill_path='db://skills/<name>'`, `skill_dir='${INSTALL_BASE_DIR}/<key>'`, `skill_type`/`locked` from `install_type` (default `'org'`+locked), `is_active:true` — then copy the skill tree to `${INSTALL_BASE_DIR}/<key>/` |
-| **Recipe** | upsert `recipes` by `name` (uuid auto; frontmatter → `description`, body → `content`, `is_active:true`) |
-| **Agent** | upsert `agents` by `key` — the manifest's `name` maps to `agents.key`, `display_name` to `agents.name` (D-23); the `.md` body maps to `instructions`, frontmatter to `default_model`/`icon`/`provider`/`system_prompt_path`/`capabilities` (jsonb) when present, else DB defaults (D-32). Then **sync** `agent_skills` and `agent_recipes` (add desired, drop stale, `onConflict` ignore); recipe names resolve to `recipes.id` uuids |
+| **Skill** | upsert `skills` by `name` — `skill_path='db://skills/<name>'`, `skill_dir='${INSTALL_BASE_DIR}/<key>'`, `skill_type`/`locked` from `install_type` (default `'org'`+locked), `is_active:true` — copy the skill tree to `${INSTALL_BASE_DIR}/<key>/`, then record `skill_versions.version_num` = the integer version (D-34) |
+| **Recipe** | upsert `recipes` by `name` (uuid auto; frontmatter → `description`, body → `content`, `is_active:true`); if a version is declared, record `recipe_versions.version_num` (D-34) |
+| **Agent** | upsert `agents` by `key` — the manifest's `name` maps to `agents.key`, `display_name` to `agents.name` (D-23); the `.md` body maps to `instructions`, frontmatter to `default_model`/`icon`/`provider`/`system_prompt_path`/`capabilities` (jsonb) when present, else DB defaults (D-32). **Sync** `agent_skills` and `agent_recipes` (add desired, drop stale, `onConflict` ignore); recipe names resolve to `recipes.id` uuids. If a version is declared, record `agent_versions.version_num` (D-34) |
 | **Job** | upsert `background_jobs` by `name` — `id='job-<ts>-<rand>'` on insert, `job_type:'script'`, `script_path:'node'`, `script_args=join(INSTALL_BASE_DIR, script)[+ ' ' + args]`, `run_count:0`; schedule aliases expand to cron |
 | **Service** | not DB-resident — copy source to `/opt/projects/user/<name>/`, write `.env` (chmod 640), `ecosystem.config.cjs`, and the nginx vhost (127.0.0.1 binding; `{SATELLITE_ID}-<subdomain>.crhq.ai`); allocate the port; PM2 start + save; nginx reload. Never touches the `crhq-satellite` PM2 process. |
 
@@ -135,7 +152,7 @@ Varchar length limits worth validating at manifest load: `skills.name(100)`,
 ## 5. Re-verifying the schema (safe, read-only)
 
 ```bash
-node --input-type=module -e "import('/opt/projects/crhq-satellite/server/db/knex.js').then(async m=>{const db=m.getDb();for(const t of ['skills','recipes','agents','agent_skills','agent_recipes','background_jobs']){console.log('\n#',t);console.log(Object.keys(await db(t).columnInfo()).join(', '));}await db.destroy();})"
+node --input-type=module -e "import('/opt/projects/crhq-satellite/server/db/knex.js').then(async m=>{const db=m.getDb();for(const t of ['skills','skill_versions','recipes','recipe_versions','agents','agent_versions','agent_skills','agent_recipes','background_jobs']){console.log('\n#',t);console.log(Object.keys(await db(t).columnInfo()).join(', '));}await db.destroy();})"
 ```
 If the live schema ever differs from this doc, update this doc — it is the build contract's
 schema half.

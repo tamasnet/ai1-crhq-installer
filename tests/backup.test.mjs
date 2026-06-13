@@ -143,11 +143,23 @@ try {
     const md = readFileSync(join(outDir, 'skills', 'ai1-sample-skill', 'SKILL.md'), 'utf8');
     const { meta, body } = parseFrontmatter(md);
     assert.equal(meta.name, 'ai1-sample-skill');
-    assert.equal(String(meta.version), '0.1.0', 'version recovered from the on-disk SKILL.md frontmatter');
+    assert.equal(meta.version, 1, 'integer version = live CRHQ number from skill_versions (D-34)');
+    const sv = await db('skill_versions').where({ skill_name: 'ai1-sample-skill' }).max('version_num as mx').first();
+    assert.equal(meta.version, sv.mx, 'exported version == MAX(skill_versions.version_num)');
     assert.match(meta.description, /Sample skill used by the ai1-crhq-installer test bundle/);
     const row = await db('skills').where({ name: 'ai1-sample-skill' }).first();
     assert.equal(body.replace(/^\n+/, ''), row.content.replace(/^\n+/, ''), 'body = DB content (authoritative)');
     assert.ok(existsSync(join(outDir, 'skills', 'ai1-sample-skill', 'scripts', 'hello.js')), 'skill tree copied');
+  });
+
+  await test('skill with no version history → version pinned 1 (D-34 fallback)', async () => {
+    await db('skills').insert({
+      name: 'nover-skill', description: 'no history', content: 'body', skill_type: 'org',
+      skill_path: 'db://skills/nover-skill', skill_dir: join(sb.baseDir, 'nover-skill'), ...base,
+    });
+    const { meta } = await runBackup(bctx({ INCLUDE: 'nover-skill', NAME: 'nover-backup' }), { now: NOW });
+    assert.deepEqual(meta.components.skills.map((e) => e.version), [1], 'no skill_versions row → pinned 1');
+    await db('skills').where({ name: 'nover-skill' }).del();   // keep later full backups unaffected
   });
 
   await test('recipe/agent/job reconstruction matches the rows', async () => {

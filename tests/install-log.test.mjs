@@ -52,7 +52,8 @@ try {
 
     const agent = find(packagesDir, 'agent');
     assert.equal(agent.source, `agents/${plan.agents[0].name}.md`);
-    assert.equal(agent.version, undefined, 'agents carry no version field');
+    assert.equal(agent.version, plan.agents[0].version, 'agent carries its (optional) integer version');
+    assert.equal(agent.version, 1);
     assert.equal(agent.package, meta.name);
 
     const service = find(packagesDir, 'service');
@@ -165,13 +166,13 @@ try {
   await test('formatInstalledList: header + count + aligned rows; empty → notice', () => {
     assert.match(formatInstalledList([]), /^No components installed\.$/);
     const out = formatInstalledList([
-      { type: 'job', name: 'nightly', package: 'bundle', package_version: '1.0.0' },
-      { type: 'skill', name: 'my-skill', version: '0.1.0', package: 'bundle', package_version: '1.0.0' },
+      { type: 'job', name: 'nightly', package: 'bundle', package_version: '0.1.0' },
+      { type: 'skill', name: 'my-skill', version: 2, package: 'bundle', package_version: '0.1.0' },
     ]);
     assert.match(out, /Installed components \(2\):/);
     assert.match(out, /TYPE\s+NAME\s+VERSION\s+FROM/);
-    assert.match(out, /skill\s+my-skill\s+v0\.1\.0\s+bundle@1\.0\.0/);
-    assert.match(out, /job\s+nightly\s+—\s+bundle@1\.0\.0/, 'no component version → —');
+    assert.match(out, /skill\s+my-skill\s+v2\s+bundle@0\.1\.0/, 'integer component version rendered as v2');
+    assert.match(out, /job\s+nightly\s+—\s+bundle@0\.1\.0/, 'no component version → —');
     assert.ok(out.indexOf('my-skill') < out.indexOf('nightly'), 'skill (type rank 0) before job');
   });
 

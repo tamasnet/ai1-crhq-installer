@@ -55,7 +55,7 @@ export function formatInstalledList(entries) {
   const rows = sortInstalled(entries).map((r) => ({
     type: r.type,
     name: String(r.name),
-    version: r.version ? `v${r.version}` : '—',
+    version: r.version != null ? `v${r.version}` : '—',
     from: `${r.package ?? '?'}@${r.package_version ?? '?'}`,
   }));
   const head = { type: 'TYPE', name: 'NAME', version: 'VERSION', from: 'FROM' };
@@ -103,7 +103,7 @@ export function updateInstallLog(ctx, meta, plan, packageRoot) {
     const entry = {
       type: r.type,
       name: r.name,
-      ...(def?.version ? { version: String(def.version) } : {}),
+      ...(def?.version != null ? { version: def.version } : {}),   // integer component version (D-34)
       package: meta.name,
       package_version: String(meta.version),
       ...(def ? { source: sourceOf(r.type, def, packageRoot) } : {}),

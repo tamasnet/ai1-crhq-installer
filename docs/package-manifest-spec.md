@@ -80,7 +80,8 @@ The manifest is the installer's input; `install_entry` is the escape hatch.
 ```yaml
 # ── Identity (required) ───────────────────────────────────────────────────────
 name: plaud-suite              # kebab-case, globally unique
-version: 1.0.0                 # semver — the SUITE version
+version: 1.0.0                 # free-form release LABEL for the suite (backups mint a date);
+                               # NOT a component version — see component `version` below
 description: >
   Full Plaud voice-recorder stack. One-command install of OAuth login,
   hourly brain ingest, and the background job that drives it.
@@ -92,19 +93,21 @@ installer: ">=1.0.0"           # min installer version (semver range); optional
 components:
   skills:
     - path: skills/plaud-login    # relative to package root
-      version: 0.4.0              # REQUIRED for skills; must match SKILL.md frontmatter
+      version: 4                   # POSITIVE INTEGER; REQUIRED for skills; must match SKILL.md frontmatter
       install_type: user          # optional: 'org' (default, locked) | 'user' (unlocked)
     - path: skills/plaud-ingest
-      version: 0.2.3
+      version: 2
   recipes:
     - path: recipes/plaud-pipeline.md
+      version: 3                   # optional integer; round-trips through recipe_versions
   agents:
     - path: agents/plaud-agent.md
+      version: 1                   # optional integer; round-trips through agent_versions
   jobs:
     - path: jobs/plaud-ingest-crawl.yaml
   services:
     - path: services/plaud-broker      # dir containing service.yaml + source
-      version: 1.0.0                   # REQUIRED for services; must match service.yaml
+      version: 1                       # POSITIVE INTEGER; REQUIRED for services; must match service.yaml
 
 # ── Dependencies — external, NOT bundled (optional) ───────────────────────────
 dependencies:
@@ -133,14 +136,21 @@ install_flags:
 
 | Field | Requirement |
 |-------|-------------|
-| `name`, `version`, `description`, `components` | **Required** |
+| `name`, `version`, `description`, `components` | **Required** (`version` = a free-form suite release label, not a component version) |
 | `installer` | Optional |
 | `dependencies`, `credentials_needed`, `provides_credentials` | Optional |
 | `install_entry`, `install_flags` | Optional |
-| `components.skills[].version` | **Required** — must equal that skill's `SKILL.md` `version` |
+| `components.skills[].version` | **Required** — a **positive integer**; must equal that skill's `SKILL.md` `version` |
 | `components.skills[].install_type` | Optional — `org` (default, locked) or `user` (unlocked); see §5.1 |
-| `components.services[].version` | **Required** — must equal that service's `service.yaml` `version` |
-| `components.{recipes,agents,jobs}[].version` | Optional |
+| `components.services[].version` | **Required** — a **positive integer**; must equal that service's `service.yaml` `version` |
+| `components.{recipes,agents}[].version` | Optional **positive integer**; when present it round-trips through CRHQ's `*_versions` tables (D-34) |
+| `components.jobs[].version` | n/a — jobs are unversioned (no version table) |
+
+> **Component versions are positive integers** (`1`, `2`, `3`, …), not semver. On install the
+> integer is recorded as the component's CRHQ `version_num` (`skill_versions` / `recipe_versions` /
+> `agent_versions`); on backup the live version (`MAX(version_num)`) is read back as the pin — so the
+> package number and the CRHQ number stay in lockstep (D-34). A non-incrementing version warns but
+> still installs. The package-level `version` is a separate free-form label.
 
 ---
 
@@ -160,7 +170,7 @@ Layout: `SKILL.md` (flat YAML frontmatter + Markdown body) + optional `scripts/`
 ```yaml
 ---
 name: plaud-login              # the skill's unique name and its install <key>
-version: 0.4.0                 # must equal components.skills[].version
+version: 4                     # positive integer; must equal components.skills[].version
 description: "OAuth handshake for the Plaud integration…"
 dependencies: []
 credentials_needed: []
@@ -199,7 +209,8 @@ Markdown file: YAML frontmatter + Markdown body.
 ---
 name: plaud-pipeline           # unique recipe name (lookup key)
 description: "End-to-end Plaud capture → brain pipeline."
-version: 1.0.0                 # optional; if set, must equal components.recipes[].version
+version: 3                     # optional positive integer; if set, must equal components.recipes[].version
+                               # (recorded as recipe_versions.version_num — D-34)
 ---
 (Markdown body — the recipe's content)
 ```
@@ -208,7 +219,7 @@ version: 1.0.0                 # optional; if set, must equal components.recipes
 |-------------|-----|---------------|
 | `name` | ✅ | unique lookup key; ≤200 chars |
 | `description` | ✅ | required discovery text |
-| `version` | – | optional pin |
+| `version` | – | optional positive-integer pin; round-trips via `recipe_versions` (D-34) |
 
 ### 5.3 Agent — `agents/<name>.md`
 Markdown file: YAML frontmatter for the config fields + a Markdown body that becomes the agent's
@@ -219,6 +230,7 @@ DB default.
 ---
 name: plaud-agent              # canonical identifier — same pattern as every other component
 display_name: Plaud Agent
+version: 1                      # optional positive integer; round-trips via agent_versions (D-34)
 description: "Runs the Plaud capture + ingest pipeline."
 mode: cli                      # optional, default cli
 default_model: sonnet          # optional, default sonnet
@@ -236,6 +248,7 @@ recipes: [plaud-pipeline]                      # attached by recipe name
 |-------|-----|---------------|
 | `name` | ✅ | unique agent identifier; ≤50 chars |
 | `display_name` | ✅ | human display name |
+| `version` | – | optional positive-integer pin; round-trips via `agent_versions` (D-34) |
 | `description` | – | discovery text |
 | `mode` | – | execution mode (default `cli`) |
 | `default_model` | – | model alias (default `sonnet`) |
@@ -292,7 +305,7 @@ agent-registry resource.
 
 ```yaml
 name: plaud-broker
-version: 1.0.0                 # REQUIRED — must equal components.services[].version
+version: 1                     # REQUIRED positive integer — must equal components.services[].version
 port: 4300                     # optional — installer allocates a free port if omitted
 start: node server.js
 cwd: ./                        # optional, default ./
@@ -307,7 +320,7 @@ nginx:                         # optional — reverse-proxy exposure
 | Field | Req | Meaning / use |
 |-------|-----|---------------|
 | `name` | ✅ | service identity: deploy dir name, process name, default subdomain |
-| `version` | ✅ | must equal `components.services[].version` (mirrors skills) |
+| `version` | ✅ | positive integer; must equal `components.services[].version` (mirrors skills) |
 | `port` | – | listen port; if omitted, the installer allocates a free one |
 | `start` | ✅ | process start command |
 | `cwd` | – | working dir relative to the service dir (default `./`) |

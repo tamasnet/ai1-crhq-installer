@@ -1,6 +1,7 @@
 ---
 name: ai1-sample-agent
 display_name: Ai1 Sample Agent
+version: 1
 description: "Sample agent for the installer test bundle; attaches the bundle's skill + recipe."
 mode: cli
 default_model: sonnet

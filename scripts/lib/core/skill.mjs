@@ -1,9 +1,10 @@
 // core/skill.mjs — skills table (PK name) + assets under INSTALL_BASE_DIR/<key> (C3/C5/C6).
 import { join } from 'path';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync } from 'fs';
 import { copyTree, removeTree, writeIfChanged } from '../fs.mjs';
 import { parseFrontmatter, dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
+import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
 
 export async function upsertSkill(ctx, def) {
   const { db, log, DRY_RUN, RESPECT_LOCKS, BASE } = ctx;
@@ -41,9 +42,14 @@ export async function upsertSkill(ctx, def) {
     || row.locked !== locked
     || row.is_active !== true;
 
+  // Snapshot args for the skill_versions round-trip (D-24/D-34) — the package's integer version
+  // becomes CRHQ's version_num for this skill.
+  const ver = { fkValue: name, version: def.version, name: def.name, description: def.description, body: def.content };
+
   if (DRY_RUN) {
     if (row?.locked && rowChanged) log.dry(`unlock locked skill ${name}`);
     log.dry(`${row ? 'update' : 'create'} skill ${name} as ${skillType}${locked ? ' (locked)' : ''} and copy assets → ${skillDir}`);
+    await recordVersion(ctx, 'skill', ver);
     return result(name, rowChanged ? VERDICT.OK : VERDICT.ALREADY, row ? 'updated' : 'created');
   }
 
@@ -56,6 +62,7 @@ export async function upsertSkill(ctx, def) {
   }
 
   const files = copyTree(def.srcDir, skillDir, { dryRun: false });
+  await recordVersion(ctx, 'skill', ver);
   const verdict = (!rowChanged && files === 0) ? VERDICT.ALREADY : VERDICT.OK;
   return result(name, verdict, row ? 'updated' : 'created', files);
 }
@@ -80,34 +87,30 @@ export async function removeSkill(ctx, nameOrDef) {
   }
   if (row.locked) await db('skills').where({ name }).update({ locked: false });
   await db('skills').where({ name }).del();
+  await removeVersions(ctx, 'skill', name);   // mirror the ON DELETE CASCADE in the FK-less sandbox
   removeTree(dir, { dryRun: false });
   return result(name, VERDICT.OK, 'removed');
 }
 
 // exportSkill — backup: reconstruct the package-form skill from a live row (the reverse of
-// upsertSkill). The DB row is authoritative for name/description/content; the frontmatter version
-// is recovered from the content's own frontmatter (if it carries one) or the on-disk SKILL.md in
-// skill_dir, else pinned 0.0.0 with a warning (D-27). The skill tree copies from skill_dir first;
-// SKILL.md is regenerated last so DB content wins over a stale file.
+// upsertSkill). The DB row is authoritative for name/description/content; the integer version is the
+// live CRHQ number = MAX(skill_versions.version_num) for this skill (D-34), defaulting to 1 with a
+// warning when the skill has no version history. The skill tree copies from skill_dir first; SKILL.md
+// is regenerated last so DB content wins over a stale file.
 export async function exportSkill(ctx, row, { outRoot, relPath }) {
-  const { log } = ctx;
+  const { db, log } = ctx;
   const destDir = join(outRoot, relPath);
   const files = row.skill_dir && existsSync(row.skill_dir) ? copyTree(row.skill_dir, destDir, { dryRun: !!ctx.DRY_RUN }) : 0;
 
-  let fm = {};
-  let body = row.content || '';
-  const dbParsed = tryFrontmatter(body);
-  if (dbParsed.meta.name || dbParsed.meta.version || dbParsed.meta.description) {
-    ({ meta: fm, body } = dbParsed);                       // content was a full SKILL.md
-  } else if (row.skill_dir && existsSync(join(row.skill_dir, 'SKILL.md'))) {
-    fm = tryFrontmatter(readFileSync(join(row.skill_dir, 'SKILL.md'), 'utf8')).meta;
+  let version = await currentVersion(db, 'skill', row.name);
+  if (version == null) {
+    version = 1;
+    log.warn(`skill ${row.name}: no version history in skill_versions — pinned 1`);
   }
-  let version = fm.version != null ? String(fm.version) : null;
-  if (!version) {
-    version = '0.0.0';
-    log.warn(`skill ${row.name}: no recoverable version (content/SKILL.md frontmatter) — pinned 0.0.0`);
-  }
-  const meta = { ...fm, name: row.name, version, description: row.description || fm.description || '' };
+  // skills.content is the frontmatter-stripped body; strip again defensively in case a row carries one.
+  const parsed = tryFrontmatter(row.content || '');
+  const body = (parsed.meta.name || parsed.meta.version || parsed.meta.description) ? parsed.body : (row.content || '');
+  const meta = { name: row.name, version, description: row.description || '' };
   const md = `---\n${dumpYaml(meta)}---\n\n${body.replace(/^\n+/, '')}`;
   writeIfChanged(join(destDir, 'SKILL.md'), md, { dryRun: !!ctx.DRY_RUN });
 

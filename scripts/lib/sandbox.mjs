@@ -9,7 +9,7 @@ import { getAdminDb } from './db.mjs';
 import { runPlan } from './run.mjs';
 import { VERDICT } from './log.mjs';
 
-export const TABLES = ['skills', 'skill_versions', 'recipes', 'agents', 'agent_skills', 'agent_recipes', 'background_jobs'];
+export const TABLES = ['skills', 'skill_versions', 'recipes', 'recipe_versions', 'agents', 'agent_versions', 'agent_skills', 'agent_recipes', 'background_jobs'];
 
 export async function provisionSandbox({ ts, seed = true } = {}) {
   const admin = getAdminDb();

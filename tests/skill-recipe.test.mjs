@@ -14,6 +14,7 @@ import { closeDb } from '../scripts/lib/db.mjs';
 import { loadManifest, ManifestError } from '../scripts/lib/manifest.mjs';
 import { upsertSkill, removeSkill, statusSkill } from '../scripts/lib/core/skill.mjs';
 import { upsertRecipe, removeRecipe, statusRecipe } from '../scripts/lib/core/recipe.mjs';
+import { currentVersion } from '../scripts/lib/version-history.mjs';
 import { makeCtx, harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -50,11 +51,21 @@ try {
     assert.ok(existsSync(join(skillDir, 'scripts', 'hello.js')));
   });
 
+  await test('version history: skill_versions row at version_num = package version (D-34)', async () => {
+    const rows = await ctx.db('skill_versions').where({ skill_name: skillDef.name });
+    assert.equal(rows.length, 1, 'one snapshot recorded');
+    assert.equal(rows[0].version_num, skillDef.version, 'version_num matches the integer package version');
+    assert.equal(rows[0].version_num, 1);
+    assert.ok((rows[0].change_summary || '').length > 0, 'change_summary set');
+    assert.ok(rows[0].content.includes('# Ai1 Sample Skill'), 'snapshot carries the body');
+  });
+
   await test('idempotent: re-run → ALREADY-INSTALLED, zero files, stays locked', async () => {
     const r = await upsertSkill(ctx, skillDef);
     assert.equal(r.verdict, 'ALREADY-INSTALLED');
     assert.equal(r.files, 0);
     assert.equal((await skillRow()).locked, true, 'org skill remains locked across re-install');
+    assert.equal((await ctx.db('skill_versions').where({ skill_name: skillDef.name })).length, 1, 're-install merges, no duplicate version row');
   });
 
   await test('update: changed content → OK, row content updated, stays org+locked', async () => {
@@ -131,6 +142,7 @@ try {
     assert.equal(r.action, 'removed');
     assert.equal(await skillRow(), undefined);
     assert.equal(existsSync(skillDir), false);
+    assert.equal((await ctx.db('skill_versions').where({ skill_name: skillDef.name })).length, 0, 'version history removed with the skill');
   });
 
   console.log('\nrecipes:');
@@ -144,6 +156,14 @@ try {
     assert.ok(row.content.includes('# Ai1 Sample Recipe'));
     assert.equal(row.is_active, true);
     assert.ok(row.description.length > 0);
+  });
+
+  await test('version history: recipe_versions row at version_num = package version (D-34)', async () => {
+    const id = (await recipeRow()).id;
+    const rows = await ctx.db('recipe_versions').where({ recipe_id: id });
+    assert.equal(rows.length, 1, 'one snapshot recorded');
+    assert.equal(rows[0].version_num, recipeDef.version, 'version_num matches the integer package version');
+    assert.equal(rows[0].version_num, 1);
   });
 
   await test('idempotent: re-run → ALREADY, uuid stable', async () => {
@@ -161,10 +181,12 @@ try {
 
   await test('status + remove', async () => {
     assert.equal((await statusRecipe(ctx, recipeDef.name)).present, true);
+    const id = (await recipeRow()).id;
     const r = await removeRecipe(ctx, recipeDef);
     assert.equal(r.verdict, 'INSTALL-OK');
     assert.equal(await recipeRow(), undefined);
     assert.equal((await statusRecipe(ctx, recipeDef.name)).present, false);
+    assert.equal((await ctx.db('recipe_versions').where({ recipe_id: id })).length, 0, 'version history removed with the recipe');
   });
 
   console.log('\nnegatives:');
@@ -180,19 +202,44 @@ try {
   await test('skill version pin mismatch → ManifestError', async () => {
     const badPkg = join(sb.baseDir, 'badpin');
     mkdirSync(join(badPkg, 'skills', 'foo'), { recursive: true });
-    writeFileSync(join(badPkg, 'skills', 'foo', 'SKILL.md'), '---\nname: foo\nversion: 9.9.9\ndescription: d\n---\nbody');
+    writeFileSync(join(badPkg, 'skills', 'foo', 'SKILL.md'), '---\nname: foo\nversion: 9\ndescription: d\n---\nbody');
     writeFileSync(join(badPkg, 'ai1-package.yaml'),
-      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 0.0.1\n');
-    assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /version/.test(e.message));
+      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 1\n');
+    assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /!= manifest pin/.test(e.message));
+  });
+
+  await test('non-integer skill version (old semver) → ManifestError', async () => {
+    const badPkg = join(sb.baseDir, 'badver');
+    mkdirSync(join(badPkg, 'skills', 'foo'), { recursive: true });
+    writeFileSync(join(badPkg, 'skills', 'foo', 'SKILL.md'), '---\nname: foo\nversion: 0.1.0\ndescription: d\n---\nbody');
+    writeFileSync(join(badPkg, 'ai1-package.yaml'),
+      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 0.1.0\n');
+    assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /positive integer/.test(e.message));
   });
 
   await test('invalid install_type → ManifestError', async () => {
     const badPkg = join(sb.baseDir, 'badtype');
     mkdirSync(join(badPkg, 'skills', 'foo'), { recursive: true });
-    writeFileSync(join(badPkg, 'skills', 'foo', 'SKILL.md'), '---\nname: foo\nversion: 0.0.1\ndescription: d\n---\nbody');
+    writeFileSync(join(badPkg, 'skills', 'foo', 'SKILL.md'), '---\nname: foo\nversion: 1\ndescription: d\n---\nbody');
     writeFileSync(join(badPkg, 'ai1-package.yaml'),
-      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 0.0.1\n      install_type: bogus\n');
+      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 1\n      install_type: bogus\n');
     assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /install_type/.test(e.message));
+  });
+
+  console.log('\nversion history (D-34):');
+  await test('bump records each version; downgrade warns but records; current = MAX', async () => {
+    const vctx = makeCtx();
+    const d = (v) => ({ ...skillDef, key: 'ver-skill', name: 'ver-skill', version: v });
+    await upsertSkill(vctx, d(1));
+    await upsertSkill(vctx, d(3));                       // forward bump
+    let nums = (await vctx.db('skill_versions').where({ skill_name: 'ver-skill' }).orderBy('version_num')).map((r) => r.version_num);
+    assert.deepEqual(nums, [1, 3], 'each declared package version recorded as a version_num');
+    await upsertSkill(vctx, d(2));                       // downgrade vs current 3 → warn-and-continue
+    nums = (await vctx.db('skill_versions').where({ skill_name: 'ver-skill' }).orderBy('version_num')).map((r) => r.version_num);
+    assert.deepEqual(nums, [1, 2, 3], 'downgrade still recorded');
+    assert.equal(await currentVersion(vctx.db, 'skill', 'ver-skill'), 3, 'current = MAX(version_num), unaffected by the downgrade');
+    await removeSkill(vctx, d(2));
+    assert.equal((await vctx.db('skill_versions').where({ skill_name: 'ver-skill' })).length, 0, 'remove clears all history');
   });
 
   console.log('\nskills+recipes-only lifecycle:');

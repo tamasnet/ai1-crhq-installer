@@ -7,6 +7,7 @@ import { join } from 'path';
 import { writeIfChanged } from '../fs.mjs';
 import { dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
+import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
 
 export async function upsertAgent(ctx, def) {
   const { db, log, DRY_RUN } = ctx;
@@ -53,8 +54,12 @@ export async function upsertAgent(ctx, def) {
     && (def.provider == null || row.provider === def.provider)
     && (def.capabilities == null || JSON.stringify(row.capabilities ?? []) === JSON.stringify(def.capabilities));
 
+  // Version snapshot args (D-34) — optional for agents; recorded only when the package declares one.
+  const ver = { fkValue: key, version: def.version, name: def.display_name, description: def.description, body: def.instructions };
+
   if (DRY_RUN) {
     log.dry(`${row ? 'update' : 'create'} agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)`);
+    await recordVersion(ctx, 'agent', ver);
     return res(key, VERDICT.OK, row ? 'updated' : 'created', { skills: desiredSkills, recipes: desiredRecipes.length });
   }
 
@@ -82,6 +87,7 @@ export async function upsertAgent(ctx, def) {
   }
   if (delR.length) await db('agent_recipes').where({ agent_key: key }).whereIn('recipe_id', delR).del();
 
+  await recordVersion(ctx, 'agent', ver);
   const drift = !row || !fieldsSame || addS.length || delS.length || addR.length || delR.length;
   return res(key, drift ? VERDICT.OK : VERDICT.ALREADY, row ? 'updated' : 'created', { skills: desiredSkills, recipes: desiredRecipes.length });
 }
@@ -95,6 +101,7 @@ export async function removeAgent(ctx, nameOrDef) {
   await db('agent_skills').where({ agent_key: key }).del();
   await db('agent_recipes').where({ agent_key: key }).del();
   await db('agents').where({ key }).del();
+  await removeVersions(ctx, 'agent', key);   // mirror the ON DELETE CASCADE in the FK-less sandbox
   return res(key, VERDICT.OK, 'removed');
 }
 
@@ -114,9 +121,11 @@ export async function exportAgent(ctx, row, { outRoot, relPath }) {
     .join('recipes', 'recipes.id', 'agent_recipes.recipe_id').orderBy('recipes.name').select('recipes.name'))
     .map((r) => r.name);
 
+  const version = await currentVersion(db, 'agent', key);   // live CRHQ number (D-34); emitted only if present
   const fm = {
     name: key,
     display_name: row.name,
+    ...(version != null ? { version } : {}),
     ...(row.description ? { description: row.description } : {}),
     mode: row.mode || 'cli',
     ...(row.default_model ? { default_model: row.default_model } : {}),
@@ -130,7 +139,7 @@ export async function exportAgent(ctx, row, { outRoot, relPath }) {
   const body = (row.instructions || '').replace(/^\n+/, '');
   const md = `---\n${dumpYaml(fm)}---\n${body ? `\n${body.endsWith('\n') ? body : `${body}\n`}` : ''}`;
   writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
-  return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath } };
+  return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath, ...(version != null ? { version } : {}) } };
 }
 
 export async function statusAgent(ctx, nameOrDef) {

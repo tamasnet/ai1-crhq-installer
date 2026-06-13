@@ -85,9 +85,11 @@ function loadSkillDef(entry, root) {
   if (!existsSync(mdPath)) throw new ManifestError(`Skill missing SKILL.md: ${entry.path}`);
   const { meta, body } = parseFrontmatter(readFileSync(mdPath, 'utf8'));
   if (!meta.name) throw new ManifestError(`SKILL.md missing 'name': ${entry.path}`);
-  if (!meta.version) throw new ManifestError(`SKILL.md missing 'version': ${entry.path}`);
-  if (String(meta.version) !== String(entry.version)) {
-    throw new ManifestError(`Skill ${meta.name}: SKILL.md version ${meta.version} != manifest pin ${entry.version}`);
+  if (meta.version == null) throw new ManifestError(`SKILL.md missing 'version': ${entry.path}`);
+  const version = intVersion(`Skill ${meta.name} version`, meta.version);
+  const pin = intVersion(`Skill ${entry.path} manifest version`, entry.version);
+  if (version !== pin) {
+    throw new ManifestError(`Skill ${meta.name}: SKILL.md version ${version} != manifest pin ${pin}`);
   }
   checkLen('skill name', meta.name, LIMITS.skillName);
   // install_type (manifest entry, D-22): how the skill registers. Default 'org' (locked); 'user'
@@ -97,7 +99,7 @@ function loadSkillDef(entry, root) {
     throw new ManifestError(`Skill ${meta.name}: install_type must be 'user' or 'org' (got '${installType}')`);
   }
   // content = SKILL.md body (frontmatter stripped) — matches the live CRHQ skills.content convention.
-  return { key: meta.name, name: meta.name, description: meta.description || '', version: String(meta.version), srcDir, content: body, installType };
+  return { key: meta.name, name: meta.name, description: meta.description || '', version, srcDir, content: body, installType };
 }
 
 function loadRecipeDef(entry, root) {
@@ -105,12 +107,11 @@ function loadRecipeDef(entry, root) {
   if (!existsSync(srcFile)) throw new ManifestError(`Recipe not found: ${entry.path}`);
   const { meta, body } = parseFrontmatter(readFileSync(srcFile, 'utf8'));
   if (!meta.name) throw new ManifestError(`Recipe missing 'name': ${entry.path}`);
-  if (entry.version && meta.version && String(meta.version) !== String(entry.version)) {
-    throw new ManifestError(`Recipe ${meta.name}: version ${meta.version} != manifest pin ${entry.version}`);
-  }
   checkLen('recipe name', meta.name, LIMITS.recipeName);
-  const version = meta.version ?? entry.version;
-  return { name: meta.name, description: meta.description || '', content: body, srcFile, ...(version ? { version: String(version) } : {}) };
+  // Version is optional for recipes; when present (frontmatter and/or manifest pin) it's an integer
+  // and the two must agree.
+  const version = resolveOptionalVersion(`Recipe ${meta.name}`, meta.version, entry.version, entry.path);
+  return { name: meta.name, description: meta.description || '', content: body, srcFile, ...(version != null ? { version } : {}) };
 }
 
 function loadAgentDef(entry, root) {
@@ -130,11 +131,13 @@ function loadAgentDef(entry, root) {
   if (a.default_model) checkLen('agent default_model', a.default_model, LIMITS.agentModel);
   // Body → instructions (leading blank lines trimmed); an empty body rides the DB default.
   const instructions = body && body.trim() ? body.replace(/^\n+/, '') : undefined;
+  // Version is optional for agents; when present it round-trips through agent_versions (D-34).
+  const version = resolveOptionalVersion(`Agent ${a.name}`, a.version, entry.version, entry.path);
   return {
     name: a.name, display_name: a.display_name, description: a.description || '', mode: a.mode || 'cli',
     default_model: a.default_model, icon: a.icon, skills: a.skills || [], recipes: a.recipes || [],
     instructions, system_prompt_path: a.system_prompt_path, capabilities: a.capabilities, provider: a.provider,
-    srcFile,
+    srcFile, ...(version != null ? { version } : {}),
   };
 }
 
@@ -159,18 +162,41 @@ function loadServiceDef(entry, root) {
   if (!existsSync(yPath)) throw new ManifestError(`Service missing service.yaml: ${entry.path}`);
   const s = loadYaml(readFileSync(yPath, 'utf8'));
   if (!s.name) throw new ManifestError(`service.yaml missing 'name': ${entry.path}`);
-  if (!s.version) throw new ManifestError(`service.yaml missing 'version': ${entry.path}`);
-  if (String(s.version) !== String(entry.version)) {
-    throw new ManifestError(`Service ${s.name}: service.yaml version ${s.version} != manifest pin ${entry.version}`);
+  if (s.version == null) throw new ManifestError(`service.yaml missing 'version': ${entry.path}`);
+  const version = intVersion(`Service ${s.name} version`, s.version);
+  const pin = intVersion(`Service ${entry.path} manifest version`, entry.version);
+  if (version !== pin) {
+    throw new ManifestError(`Service ${s.name}: service.yaml version ${version} != manifest pin ${pin}`);
   }
   if (!s.start) throw new ManifestError(`service.yaml missing 'start': ${entry.path}`);
   checkLen('service name', s.name, LIMITS.serviceName);
   return {
-    name: s.name, version: String(s.version), start: s.start, port: s.port, cwd: s.cwd || './',
+    name: s.name, version, start: s.start, port: s.port, cwd: s.cwd || './',
     build: s.build, env: s.env || {}, nginx: s.nginx || {}, srcDir,
   };
 }
 
 function checkLen(label, val, max) {
   if (String(val).length > max) throw new ManifestError(`${label} exceeds ${max} chars: ${val}`);
+}
+
+// Component versions are positive integers (D-34) — they round-trip through CRHQ's *_versions
+// tables (skill_versions/recipe_versions/agent_versions). Accept a YAML number or a numeric string;
+// reject anything else (incl. the old semver form like 0.1.0). The package-level `version` is a
+// separate free-form label (backup mints a date) and is NOT constrained here.
+function intVersion(label, v) {
+  const n = typeof v === 'number' ? v : (typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN);
+  if (!Number.isInteger(n) || n < 1) throw new ManifestError(`${label} must be a positive integer (got ${JSON.stringify(v)})`);
+  return n;
+}
+
+// Optional integer version for recipes/agents: validate either source if present and require them to
+// agree. Returns the integer version, or null when neither side declares one.
+function resolveOptionalVersion(label, fmVersion, pinVersion, path) {
+  const fmV = fmVersion != null ? intVersion(`${label} version`, fmVersion) : null;
+  const pinV = pinVersion != null ? intVersion(`${label} manifest version (${path})`, pinVersion) : null;
+  if (fmV != null && pinV != null && fmV !== pinV) {
+    throw new ManifestError(`${label}: version ${fmV} != manifest pin ${pinV}`);
+  }
+  return fmV ?? pinV ?? null;
 }

@@ -58,6 +58,7 @@ ai1-crhq-installer/
 │       ├── filter.mjs           # --include/--exclude name matcher
 │       ├── flags.mjs            # supported-option contract: validateFlags + --help usage (dependency-free)
 │       ├── install-log.mjs      # ${PACKAGES_DIR}/install.json — record of installed components
+│       ├── version-history.mjs  # component integer version ↔ CRHQ *_versions round-trip (D-34)
 │       ├── run.mjs              # runPlan: ordered dispatch shared by CLI + lifecycle suite
 │       ├── sandbox.mjs          # --sandbox: provision (LIKE-clone) + seed + redirect + teardown
 │       ├── vendor/yaml.mjs      # the yaml package, bundled (zero `npm install`)
@@ -149,6 +150,14 @@ upgrade shows as mixed `package_version`s across a package's components. Dry-run
 never touch it; uninstalling deletes the entry. Bookkeeping only — a log write failure warns,
 it doesn't fail the install.
 
+**Version round-trip (D-34):** component `version`s are positive integers. On install,
+`lib/version-history.mjs` records the integer as the component's CRHQ `version_num`
+(`skill_versions`/`recipe_versions`/`agent_versions`, current = `MAX(version_num)`, idempotent
+merge, downgrade warns); on backup it reads `MAX(version_num)` back as the pin. Uninstall drops
+the history via the FK `ON DELETE CASCADE` — mirrored explicitly in the FK-less sandbox, which now
+clones the two added version tables alongside `skill_versions`. The package-level `version` stays a
+free-form label.
+
 Every consumer of the library funnels **all DB access** through `getDb()` (one place the
 schema applies) and **all fs access** through `INSTALL_BASE_DIR`-rooted helpers (one place
 the base path applies). That single-chokepoint property is what makes the built-in sandbox a
@@ -211,9 +220,9 @@ the generated manifest is validated in memory and any previous backup is left un
 - **Scope (D-25):** active `org`/`user` skills (not platform `system` skills), active recipes,
   non-system active agents, non-system jobs. Inactive rows are out of scope (the manifest
   can't express `is_active:false`).
-- **Reconstruction:** SKILL.md is regenerated from the DB row (DB content authoritative;
-  version recovered from frontmatter in the content or the on-disk SKILL.md, else `0.0.0` +
-  warning) and the skill tree copies from `skill_dir`. Agents reverse the D-23 mapping
+- **Reconstruction:** SKILL.md is regenerated from the DB row (DB content authoritative; the
+  integer version is the live CRHQ number `MAX(skill_versions.version_num)`, else `1` + warning —
+  D-34) and the skill tree copies from `skill_dir`. Agents reverse the D-23 mapping
   (`agents.key → name`, `agents.name → display_name`) as an `.md` (frontmatter + `instructions`
   body, including `provider`/`system_prompt_path`/`capabilities` — D-32) with joins resolved to
   names; jobs reverse-resolve `script_args` to a BASE-relative `script`. A component the format

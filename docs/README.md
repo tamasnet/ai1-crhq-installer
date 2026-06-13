@@ -23,7 +23,7 @@ For usage, start at the repo root: `SKILL.md` (canonical usage) and `README.md`
 | [`architecture.md`](./architecture.md) | Product shape (CLI + library), module layout, control flow, CLI surface, configuration, services, safety boundaries |
 | [`api-design.md`](./api-design.md) | **Module reference** — signatures, def shapes, `createContext`, primitives, `runPlan`, `lib/sandbox.mjs`, exit codes |
 | [`canon-conventions.md`](./canon-conventions.md) | **The build contract** — conventions C1–C13 + the sandbox contract |
-| [`integration-reference.md`](./integration-reference.md) | **Authoritative DB schema** (7 tables, live-verified) + the manifest → CRHQ storage mapping |
+| [`integration-reference.md`](./integration-reference.md) | **Authoritative DB schema** (9 managed tables, live-verified) + the manifest → CRHQ storage mapping |
 | [`testing-and-sandbox.md`](./testing-and-sandbox.md) | The built-in `--sandbox` / `--lifecycle` testing model + the `npm test` suites |
 | [`decisions.md`](./decisions.md) | Settled design decisions (D-* / OQ-* / C-* rationale index, referenced from code comments) |
 

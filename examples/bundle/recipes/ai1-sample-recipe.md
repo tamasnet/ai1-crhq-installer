@@ -1,7 +1,7 @@
 ---
 name: ai1-sample-recipe
 description: "Sample recipe for the ai1-crhq-installer test bundle."
-version: 0.1.0
+version: 1
 ---
 
 # Ai1 Sample Recipe
