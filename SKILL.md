@@ -31,6 +31,7 @@ node scripts/install.mjs <package> --sandbox --lifecycle  # isolated full-lifecy
 node scripts/install.mjs <package>                        # real install (writes live DB; deploys services)
 node scripts/install.mjs <package> --status              # report per-component state
 node scripts/install.mjs <package> --uninstall           # remove (reverse order)
+node scripts/install.mjs --list-installed                # list what's recorded in the install log
 ```
 
 `<package>` is a directory containing an `ai1-package.yaml` (or a path to the file itself; defaults
@@ -122,6 +123,7 @@ Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manif
 | `--dry-run` | Preview; zero DB/fs writes (services: build only, no apply). |
 | `--status` | Report per-component install state. |
 | `--uninstall` | Remove components in reverse order. |
+| `--list-installed` | Print the install log (`${PACKAGES_DIR}/install.json`) as a table sorted by type then name, and exit. Standalone — needs no `<package>`, DB, or sandbox; add `--json` for the raw sorted array. |
 | `--respect-locks` | Skip locked skills instead of auto-unlocking them. |
 | `--install-skills-as-user` | Register **all** skills as unlocked `user` skills (overrides the org default and any per-skill `install_type`). |
 | `--type=<types>` | Process only the listed types — one or more of `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated (e.g. `--type=skills,recipes`). |

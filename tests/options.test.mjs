@@ -7,6 +7,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { validateFlags } from '../scripts/lib/flags.mjs';
 import { harness } from './_helpers.mjs';
 
@@ -63,6 +66,53 @@ await test('boolean flag given a value → message + exit 2', () => {
   const r = install(['--dry-run=please']);
   assert.equal(r.status, 2);
   assert.match(out(r), /option --dry-run does not take a value/);
+});
+
+// ── install.mjs --list-installed (standalone, read-only; DB-free) ──────────────────────────────
+console.log('\ninstall.mjs --list-installed:');
+
+// Run --list-installed from a dir WITHOUT an ai1-package.yaml to prove it needs no package, with
+// PACKAGES_DIR pointed at a throwaway install log.
+const listInstalled = (logEntries, extra = []) => {
+  const dir = mkdtempSync(join(tmpdir(), 'ai1-listinst-'));
+  if (logEntries) writeFileSync(join(dir, 'install.json'), JSON.stringify(logEntries));
+  try {
+    return spawnSync(process.execPath, [join(root, 'scripts/install.mjs'), '--list-installed', ...extra],
+      { cwd: tmpdir(), encoding: 'utf8', env: { ...process.env, PACKAGES_DIR: dir } });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+await test('--list-installed prints a sorted, formatted table (no package needed) → exit 0', () => {
+  const r = listInstalled([
+    { type: 'service', name: 'svc-b', version: '1.0.0', package: 'pkg', package_version: '1.0.0' },
+    { type: 'skill', name: 'zeta', version: '0.2.0', package: 'pkg', package_version: '1.0.0' },
+    { type: 'skill', name: 'alpha', version: '0.1.0', package: 'pkg', package_version: '1.0.0' },
+  ]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Installed components \(3\):/);
+  const order = ['alpha', 'zeta', 'svc-b'].map((n) => r.stdout.indexOf(n));
+  assert.ok(order[0] < order[1] && order[1] < order[2], `sorted by type then name:\n${r.stdout}`);
+});
+
+await test('--list-installed --json emits the sorted array', () => {
+  const r = listInstalled([
+    { type: 'recipe', name: 'r1', package: 'p', package_version: '1' },
+    { type: 'skill', name: 's1', version: '1.0.0', package: 'p', package_version: '1' },
+  ], ['--json']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout).map((c) => c.type), ['skill', 'recipe']);
+});
+
+await test('--list-installed on an absent log says so (exit 0)', () => {
+  const r = listInstalled(null);     // no install.json written
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /No components installed\./);
+});
+
+await test('--list-installed is listed in --help', () => {
+  assert.match(install(['--help']).stdout, /--list-installed/);
 });
 
 // ── backup.mjs ───────────────────────────────────────────────────────────────────────────────

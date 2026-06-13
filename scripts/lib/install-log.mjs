@@ -41,6 +41,30 @@ function sourceOf(type, def, packageRoot) {
   return relative(packageRoot, def.srcFile);
 }
 
+// Stable display order: by component type (canonical install order) then name. Returns a new array.
+export function sortInstalled(entries) {
+  const rank = (t) => { const i = COMPONENT_TYPES.indexOf(t); return i === -1 ? COMPONENT_TYPES.length : i; };
+  return [...entries].sort((a, b) => rank(a.type) - rank(b.type) || String(a.name).localeCompare(String(b.name)));
+}
+
+// Render the log as an aligned, human-readable table sorted by type then name (--list-installed).
+// Empty log → a one-line notice. Columns: TYPE, NAME, VERSION (component's own, '—' if none), and
+// FROM (the package@package_version it was installed from).
+export function formatInstalledList(entries) {
+  if (!entries || !entries.length) return 'No components installed.';
+  const rows = sortInstalled(entries).map((r) => ({
+    type: r.type,
+    name: String(r.name),
+    version: r.version ? `v${r.version}` : '—',
+    from: `${r.package ?? '?'}@${r.package_version ?? '?'}`,
+  }));
+  const head = { type: 'TYPE', name: 'NAME', version: 'VERSION', from: 'FROM' };
+  const width = (k) => Math.max(...[head, ...rows].map((c) => c[k].length));
+  const tw = width('type'); const nw = width('name'); const vw = width('version');
+  const line = (c) => `  ${c.type.padEnd(tw)}  ${c.name.padEnd(nw)}  ${c.version.padEnd(vw)}  ${c.from}`;
+  return [`Installed components (${rows.length}):`, '', line(head), ...rows.map(line)].join('\n');
+}
+
 // Apply a finished run to the log. Only components that were actually processed change: install
 // upserts the component's slot — ALREADY keeps its original install date (the bits didn't change),
 // while package/package_version/source/version always reflect the current run, so ownership

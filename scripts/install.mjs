@@ -10,6 +10,7 @@ import { existsSync } from 'fs';
 import { spawnSync } from 'child_process';
 import {
   createContext, loadManifest, runPlan, preflight, sandbox, closeDb, updateInstallLog,
+  readInstallLog, sortInstalled, formatInstalledList,
   validateFlags, usage, wantsHelp, declaredFlagNames, UsageError,
   ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
 } from './lib/index.mjs';
@@ -22,6 +23,9 @@ const packageArgOf = (argv) => argv.filter((a) => !a.startsWith('--')).pop() || 
 
 const argv = process.argv.slice(2);
 if (wantsHelp(argv)) { console.log(usage('install')); process.exit(0); }
+// --list-installed is a standalone, read-only report of ${PACKAGES_DIR}/install.json — no manifest,
+// DB, or sandbox. Like --help, it short-circuits before any of that work.
+if (has(argv, '--list-installed')) { listInstalled(argv); }
 
 let sb = null;
 try {
@@ -90,6 +94,19 @@ function recordInstallLog(ctx, meta, plan, packageRoot) {
     if (p) ctx.log.info(`install log updated: ${p}`);
   } catch (e) {
     ctx.log.warn(`install log not updated: ${e.message}`);
+  }
+}
+
+// Print ${PACKAGES_DIR}/install.json — a table sorted by type then name, or the raw sorted array
+// under --json. Read-only; exits 0 on success, 2 if the log is unreadable. Never returns.
+function listInstalled(rawArgv) {
+  try {
+    const entries = readInstallLog();
+    console.log(has(rawArgv, '--json') ? JSON.stringify(sortInstalled(entries), null, 2) : formatInstalledList(entries));
+    process.exit(0);
+  } catch (e) {
+    console.error(`❌ install log unreadable: ${e.message}`);
+    process.exit(2);
   }
 }
 

@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'no
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
-import { updateInstallLog, readInstallLog, installLogPath, resolvePackagesDir } from '../scripts/lib/install-log.mjs';
+import { updateInstallLog, readInstallLog, installLogPath, resolvePackagesDir, sortInstalled, formatInstalledList } from '../scripts/lib/install-log.mjs';
 import { makeLogger, VERDICT } from '../scripts/lib/log.mjs';
 import { harness } from './_helpers.mjs';
 
@@ -147,6 +147,32 @@ try {
     assert.equal(find(dir, 'service').package_version, '0.1.0');
     // all still attributed to the same package name — only the version differs per component
     assert.ok(logged(dir).every((c) => c.package === meta.name));
+  });
+
+  // ── --list-installed formatting (sortInstalled / formatInstalledList) ───────
+
+  await test('sortInstalled: by type (canonical install order) then name', () => {
+    const entries = [
+      { type: 'service', name: 'b' }, { type: 'skill', name: 'z' },
+      { type: 'skill', name: 'a' }, { type: 'agent', name: 'm' }, { type: 'recipe', name: 'r' },
+    ];
+    assert.deepEqual(
+      sortInstalled(entries).map((c) => `${c.type}:${c.name}`),
+      ['skill:a', 'skill:z', 'recipe:r', 'agent:m', 'service:b'],
+    );
+  });
+
+  await test('formatInstalledList: header + count + aligned rows; empty → notice', () => {
+    assert.match(formatInstalledList([]), /^No components installed\.$/);
+    const out = formatInstalledList([
+      { type: 'job', name: 'nightly', package: 'bundle', package_version: '1.0.0' },
+      { type: 'skill', name: 'my-skill', version: '0.1.0', package: 'bundle', package_version: '1.0.0' },
+    ]);
+    assert.match(out, /Installed components \(2\):/);
+    assert.match(out, /TYPE\s+NAME\s+VERSION\s+FROM/);
+    assert.match(out, /skill\s+my-skill\s+v0\.1\.0\s+bundle@1\.0\.0/);
+    assert.match(out, /job\s+nightly\s+—\s+bundle@1\.0\.0/, 'no component version → —');
+    assert.ok(out.indexOf('my-skill') < out.indexOf('nightly'), 'skill (type rank 0) before job');
   });
 
   await test('PACKAGES_DIR env override + ~/packages default', () => {

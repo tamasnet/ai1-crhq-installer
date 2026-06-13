@@ -108,6 +108,8 @@ Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (C7)
 | `installLogPath(dir?)` | `(string?) => string` | `<packagesDir>/install.json`. |
 | `readInstallLog(dir?)` | `(string?) => Array` | Parsed log (`[]` if absent); throws on a non-array. |
 | `updateInstallLog(ctx, meta, plan, packageRoot)` | `=> string\|null` | Applies the finished run to the log; returns the path written, or `null` when skipped (dry-run, status, nothing processed). |
+| `sortInstalled(entries)` | `(Array) => Array` | New array ordered by component type (canonical install order) then name. |
+| `formatInstalledList(entries)` | `(Array) => string` | Aligned `TYPE / NAME / VERSION / FROM` table sorted by type then name (powers `--list-installed`); `'No components installed.'` when empty. |
 
 Log shape — a flat list, one entry per component (`type:name`):
 
@@ -152,6 +154,11 @@ so `manifest.mjs` can reuse `STANDARD_FLAG_NAMES` without pulling in the knex la
 | `usage(mode)` | `(string) => string` | The help text for `install` / `backup`. |
 | `declaredFlagNames(meta)` | `(meta) => string[]` | Package-specific flag names from `meta.install_flags`. |
 | `UsageError` | `class extends Error` | Mapped by both CLIs to exit `2` (usage). |
+
+`--list-installed` is a standalone install-mode boolean: like `--help` it short-circuits in
+`install.mjs` *before* manifest load, validation, DB, or sandbox — it only reads the install log,
+formats it via `formatInstalledList` (or emits `sortInstalled` as JSON under `--json`), and exits
+`0` (or `2` if the log is unreadable). D-33.
 
 ---
 
