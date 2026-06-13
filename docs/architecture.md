@@ -17,7 +17,7 @@ The utility is a **shared core library** (`scripts/lib/`, exposed via `lib/index
   or a standalone bespoke installer — reuses them instead of re-implementing the canon
   patterns. Import path: the canonical absolute path
   `/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/scripts/lib/index.mjs`
-  (mirrors the knex.js convention; a package that imports it declares `installer: ">=x"`).
+  (mirrors the knex.js convention; a package that imports it declares a minimum `installer: <n>`).
 
 Both consumers share `createContext` and `runPlan`, so the CLI and a package hook exercise
 identical code paths. The library is opt-in: pre-existing bespoke installers on a satellite

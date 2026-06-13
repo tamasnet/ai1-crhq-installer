@@ -11,7 +11,7 @@ export { requireSkills, requireFiles, PrereqError } from './prereq.mjs';
 export { preflight, PreflightError } from './preflight.mjs';
 export { resolvePackagesDir, installLogPath, readInstallLog, updateInstallLog, sortInstalled, formatInstalledList } from './install-log.mjs';
 export { currentVersion, recordVersion, removeVersions, versionTable } from './version-history.mjs';
-export { loadManifest, validateManifest, ManifestError } from './manifest.mjs';
+export { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION } from './manifest.mjs';
 export { makeFilter, compileMatcher, hasFilter, FilterError } from './filter.mjs';
 export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC } from './flags.mjs';
 export { runPlan, ORDER } from './run.mjs';

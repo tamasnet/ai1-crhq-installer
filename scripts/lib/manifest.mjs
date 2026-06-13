@@ -11,6 +11,11 @@ export class ManifestError extends Error {
 
 const TYPE_ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services'];
 
+// The installer's own integer version (D-35). A package's optional `installer` field is the minimum
+// version it requires — a plain positive integer with an implicit ">=" — and a package that needs a
+// newer installer than this one is rejected at manifest load.
+export const INSTALLER_VERSION = 1;
+
 // varchar limits from the live schema (integration-reference §6) — validated here so a too-long
 // value fails fast with a clear message instead of a Postgres error mid-install.
 const LIMITS = {
@@ -51,6 +56,14 @@ export function validateManifest(meta) {
       if ((type === 'skills' || type === 'services') && !entry.version) {
         throw new ManifestError(`components.${type}[${entry.path}] requires a version pin`);
       }
+    }
+  }
+  // installer (optional, D-35): the minimum installer version the package needs — a plain positive
+  // integer, implicitly ">=". A package that requires a newer installer than this one is rejected.
+  if (meta.installer != null) {
+    const need = intVersion('installer (minimum installer version)', meta.installer);
+    if (need > INSTALLER_VERSION) {
+      throw new ManifestError(`package requires installer version >= ${need}, but this installer is ${INSTALLER_VERSION}`);
     }
   }
   // install_flags (optional): package-specific CLI flags the installer accepts and forwards to

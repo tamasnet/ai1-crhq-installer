@@ -71,9 +71,9 @@ A package is a versioned directory with a single `ai1-package.yaml` at its root 
 
 ```yaml
 name: my-bundle
-version: 1.0.0                  # free-form suite release LABEL (not a component version)
+version: 1                      # free-form suite release LABEL (not a component version)
 description: ...
-installer: ">=0.1.0"            # optional min installer version
+installer: 1                    # optional min installer version (plain integer, implicit ">=")
 components:
   skills:
     - path: skills/my-skill     # dir with SKILL.md (+ optional scripts/)

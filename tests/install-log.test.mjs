@@ -114,38 +114,38 @@ try {
   await test('newer package version transfers ownership in place — no duplicate', () => {
     const dir = freshDir();
     updateInstallLog(makeCtx(dir, { results: [ok('skill', plan.skills[0].name)] }), meta, plan, packageRoot);
-    const newer = { ...meta, version: '9.9.9' };
+    const newer = { ...meta, version: 9 };
     updateInstallLog(makeCtx(dir, { results: [ok('skill', plan.skills[0].name)] }), newer, plan, packageRoot);
     const slots = logged(dir).filter((c) => c.type === 'skill' && c.name === plan.skills[0].name);
     assert.equal(slots.length, 1, 'one slot per component — re-install overwrites, never duplicates');
-    assert.equal(slots[0].package_version, '9.9.9', 'slot reflects the newer package version');
+    assert.equal(slots[0].package_version, '9', 'slot reflects the newer package version');
   });
 
   await test('different package name takes over a component', () => {
     const dir = freshDir();
     updateInstallLog(makeCtx(dir, { results: [ok('skill', plan.skills[0].name)] }), meta, plan, packageRoot);
-    const other = { ...meta, name: 'other-pkg', version: '2.0.0' };
+    const other = { ...meta, name: 'other-pkg', version: 2 };
     updateInstallLog(makeCtx(dir, { results: [ok('skill', plan.skills[0].name)] }), other, plan, packageRoot);
     const slots = logged(dir).filter((c) => c.type === 'skill' && c.name === plan.skills[0].name);
     assert.equal(slots.length, 1, 'the old package no longer claims the component');
     assert.equal(slots[0].package, 'other-pkg');
-    assert.equal(slots[0].package_version, '2.0.0');
+    assert.equal(slots[0].package_version, '2');
   });
 
   await test('partial upgrade: mixed package_versions coexist across one package', () => {
     const dir = freshDir();
-    updateInstallLog(makeCtx(dir, { results: allOk() }), meta, plan, packageRoot);        // all 5 @ 0.1.0
-    const newer = { ...meta, version: '1.1.0' };
+    updateInstallLog(makeCtx(dir, { results: allOk() }), meta, plan, packageRoot);        // all 5 @ package v1
+    const newer = { ...meta, version: 2 };
     updateInstallLog(makeCtx(dir, {                                                        // only skill+recipe bumped
       results: [ok('skill', plan.skills[0].name), ok('recipe', plan.recipes[0].name)],
     }), newer, plan, packageRoot);
 
     assert.equal(logged(dir).length, 5, 'still exactly one slot per component');
-    assert.equal(find(dir, 'skill').package_version, '1.1.0');
-    assert.equal(find(dir, 'recipe').package_version, '1.1.0');
-    assert.equal(find(dir, 'agent').package_version, '0.1.0', 'untouched component keeps its old package version');
-    assert.equal(find(dir, 'job').package_version, '0.1.0');
-    assert.equal(find(dir, 'service').package_version, '0.1.0');
+    assert.equal(find(dir, 'skill').package_version, '2');
+    assert.equal(find(dir, 'recipe').package_version, '2');
+    assert.equal(find(dir, 'agent').package_version, '1', 'untouched component keeps its old package version');
+    assert.equal(find(dir, 'job').package_version, '1');
+    assert.equal(find(dir, 'service').package_version, '1');
     // all still attributed to the same package name — only the version differs per component
     assert.ok(logged(dir).every((c) => c.package === meta.name));
   });

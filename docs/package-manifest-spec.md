@@ -46,7 +46,7 @@ The manifest is the installer's input; `install_entry` is the escape hatch.
 ```
 <package-name>/                  ← kebab-case, globally unique
   ai1-package.yaml               ← manifest (REQUIRED)
-  CHANGELOG.md                   ← optional semver history
+  CHANGELOG.md                   ← optional release history
   README.md                      ← optional human docs + usage
 
   skills/<skill-key>/            ← each a complete standalone skill tree
@@ -80,12 +80,12 @@ The manifest is the installer's input; `install_entry` is the escape hatch.
 ```yaml
 # ── Identity (required) ───────────────────────────────────────────────────────
 name: plaud-suite              # kebab-case, globally unique
-version: 1.0.0                 # free-form release LABEL for the suite (backups mint a date);
-                               # NOT a component version — see component `version` below
+version: 1                     # free-form release LABEL for the suite (an integer here; backups
+                               # mint a date) — NOT a component version; see component `version` below
 description: >
   Full Plaud voice-recorder stack. One-command install of OAuth login,
   hourly brain ingest, and the background job that drives it.
-installer: ">=1.0.0"           # min installer version (semver range); optional
+installer: 1                   # min installer version — a plain integer, implicit ">="; optional
 
 # ── Components — explicit inventory (required) ────────────────────────────────
 # Install order = the order types appear below, then array order within a type:
@@ -137,7 +137,7 @@ install_flags:
 | Field | Requirement |
 |-------|-------------|
 | `name`, `version`, `description`, `components` | **Required** (`version` = a free-form suite release label, not a component version) |
-| `installer` | Optional |
+| `installer` | Optional — a plain positive integer = the minimum installer version required (implicit `>=`); a package needing a newer installer than the running one is rejected at load (D-35) |
 | `dependencies`, `credentials_needed`, `provides_credentials` | Optional |
 | `install_entry`, `install_flags` | Optional |
 | `components.skills[].version` | **Required** — a **positive integer**; must equal that skill's `SKILL.md` `version` |

@@ -279,8 +279,8 @@ upsertSkill(ctx, def)  // SkillDef
 removeSkill(ctx, nameOrDef)   // unlock-then-delete (or --respect-locks skips) + removeTree(join(BASE,key))
 statusSkill(ctx, nameOrDef)   // { present, active, filesPresent }
 exportSkill(ctx, row, { outRoot, relPath })   // backup (§14): copy skill_dir tree → outRoot/relPath, then
-// regenerate SKILL.md from the row (DB content authoritative; version from content/on-disk frontmatter
-// else '0.0.0' + warn). → { …, entry:{path, version, install_type?} } for the generated manifest
+// regenerate SKILL.md from the row (DB content authoritative; integer version = MAX(skill_versions.version_num),
+// else 1 + warn — D-34). → { …, entry:{path, version, install_type?} } for the generated manifest
 ```
 
 ### `core/recipe.mjs`

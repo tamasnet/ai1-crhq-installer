@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { provisionSandbox, runLifecycle } from '../scripts/lib/sandbox.mjs';
 import { closeDb } from '../scripts/lib/db.mjs';
-import { loadManifest, ManifestError } from '../scripts/lib/manifest.mjs';
+import { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION } from '../scripts/lib/manifest.mjs';
 import { upsertSkill, removeSkill, statusSkill } from '../scripts/lib/core/skill.mjs';
 import { upsertRecipe, removeRecipe, statusRecipe } from '../scripts/lib/core/recipe.mjs';
 import { currentVersion } from '../scripts/lib/version-history.mjs';
@@ -224,6 +224,18 @@ try {
     writeFileSync(join(badPkg, 'ai1-package.yaml'),
       'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 1\n      install_type: bogus\n');
     assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /install_type/.test(e.message));
+  });
+
+  await test('installer: plain integer ≤ current → ok; too-new → ManifestError (D-35)', () => {
+    const base = { name: 'p', version: 1, description: 'x', components: {} };
+    validateManifest({ ...base, installer: INSTALLER_VERSION });   // requires this version → must not throw
+    assert.throws(() => validateManifest({ ...base, installer: INSTALLER_VERSION + 1 }),
+      (e) => e instanceof ManifestError && /requires installer version/.test(e.message));
+  });
+
+  await test('installer: old semver string → ManifestError (must be a plain integer)', () => {
+    assert.throws(() => validateManifest({ name: 'p', version: 1, description: 'x', components: {}, installer: '>=1.0.0' }),
+      (e) => e instanceof ManifestError && /positive integer/.test(e.message));
   });
 
   console.log('\nversion history (D-34):');
