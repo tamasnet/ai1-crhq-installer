@@ -45,6 +45,8 @@ ai1-crhq-installer/
 ├── package.json                  # type: module; zero runtime deps
 ├── scripts/
 │   ├── install.mjs               # generic CLI entry: flags → preflight → plan → dispatch
+│   ├── backup.mjs                # reverse-of-install CLI entry (§10)
+│   ├── remote.mjs                # Ai1 Platform Hub client CLI — subcommand dispatch (§12)
 │   └── lib/
 │       ├── index.mjs            # public API barrel — the stable import surface
 │       ├── context.mjs          # createContext: flag parse + env resolve → bound ctx
@@ -60,6 +62,8 @@ ai1-crhq-installer/
 │       ├── install-log.mjs      # ${PACKAGES_DIR}/install.json — record of installed components
 │       ├── version-history.mjs  # component integer version ↔ CRHQ *_versions round-trip (D-34)
 │       ├── run.mjs              # runPlan: ordered dispatch shared by CLI + lifecycle suite
+│       ├── backup.mjs           # reverse-of-install export pipeline (§10)
+│       ├── remote.mjs           # hub client: register (and later subcommands) — DB-free, fetch-based (§12)
 │       ├── sandbox.mjs          # --sandbox: provision (LIKE-clone) + seed + redirect + teardown
 │       ├── vendor/yaml.mjs      # the yaml package, bundled (zero `npm install`)
 │       └── core/                # per-type primitives
@@ -118,10 +122,21 @@ backup.mjs [<backup-base-dir>] [flags]   # reverse of install — see §10; defa
   --help           print usage and exit 0
                    # no --status/--uninstall/--sandbox: live, read-only, non-destructive
 
-Option validation (lib/flags.mjs): both CLIs reject an unsupported option, or a value flag given
-no value (a bare --type or empty --type=), with a message + usage exit 2 — before any side effect.
-In install, the supported set is the standard flags PLUS the package manifest's declared
+remote.mjs <subcommand> [flags]          # Ai1 Platform Hub client — see §12; DB-free
+  register         self-enroll this satellite with the hub; store the per-remote key in id.json
+    --hub=<url>                hub base URL (else AI1_HUB_URL / HUB_URL)
+    --token=<tok>              shared enrollment secret (else AI1_BOOTSTRAP_TOKEN / BOOTSTRAP_TOKEN)
+    --remote-id=<id>           identity to claim (else SATELLITE_ID, else hostname minus 'crhq-')
+    --remote-type=<type>       reported at enrollment (default 'crhq-satellite')
+    --schema-version=<n>       reported at enrollment (default 1)
+    --force                    overwrite an existing id.json (discards the stored token)
+    --json / --help
+
+Option validation (lib/flags.mjs): install and backup reject an unsupported option, or a value flag
+given no value (a bare --type or empty --type=), with a message + usage exit 2 — before any side
+effect. In install, the supported set is the standard flags PLUS the package manifest's declared
 install_flags (forwarded to install_entry); any other option is rejected. --help short-circuits.
+remote applies the same strict validation per-subcommand (its own supported set), reusing UsageError.
 ```
 
 ## 6. Configuration
@@ -245,3 +260,33 @@ the generated manifest is validated in memory and any previous backup is left un
 - **Zero npm runtime deps:** `yaml` is vendored as a single bundled file
   (`scripts/lib/vendor/yaml.mjs`); frontmatter parsing is hand-rolled; knex/pg resolve from
   the satellite at runtime.
+
+## 12. Remote — the Ai1 Platform Hub client (`remote.mjs`)
+
+`remote.mjs` is the satellite's side of the **Ai1 Platform Hub** (read-only reference in
+`ai1-platform-hub/`): a node *registers* with the hub, then polls its configuration, reports its
+state, takes management instructions, and downloads packages. Unlike install/backup it is a
+**subcommand** CLI (`remote.mjs <subcommand>`) — the hub has several distinct verbs — and it is
+**DB-free and network-only**: the hub is reached over HTTPS with Node's built-in `fetch` (zero
+runtime deps, D-6), so it needs no sandbox. Module: `lib/remote.mjs`, entry `remote.mjs` (the
+install/backup split). Decisions: D-36..D-39.
+
+- **`register` (D-37):** `POST {hub}/remote/register` with the hub's bootstrap-token self-enroll
+  contract. The hub authenticates the enrollment with a shared **bootstrap token**, then either
+  self-enrolls a fresh `remote_id` (`∅→registered`, awaiting operator approval) or claims an
+  admin-pre-created slot (`pending→active`), minting a **per-remote token** (`<remote_id>.<secret>`)
+  returned exactly once. Inputs resolve **flag → env**: hub `--hub=`/`AI1_HUB_URL`, bootstrap
+  `--token=`/`AI1_BOOTSTRAP_TOKEN`, `remote_id` `--remote-id=`/`SATELLITE_ID`/hostname-minus-`crhq-`
+  (the D-27 identity convention); `remote_type` defaults to `crhq-satellite`, `schema_version` to `1`.
+- **Identity store (D-38):** the minted token + identity are persisted to `${REMOTE_BASE_DIR}/id.json`
+  (env, default `~/remote`; for development export `REMOTE_BASE_DIR=$(pwd)`), written atomically
+  (temp+rename) at mode `0600` — it holds a credential the hub returns only once. Fields:
+  `remote_id, token, remote_type, schema_version, hub_url, registered_at`. The lifecycle `status`
+  is **not** stored (hub-owned, mutated server-side on approve/reset/revoke) — only surfaced.
+- **Safety (D-39):** registration refuses to overwrite an existing `id.json` without `--force`
+  (re-registering would discard the only copy of the token, and the hub 409s it anyway). Hub
+  rejections map to actionable messages — `401` (bad bootstrap), `409` (cannot register, reset
+  hint), unreachable host — all exit 1; option/usage errors exit 2 (strict per-subcommand
+  validation, mirroring §5).
+- **To follow:** config/state poll (`GET /remote/config`, `PUT /remote/state`), management
+  instructions, and package download — each a further subcommand using the stored per-remote token.

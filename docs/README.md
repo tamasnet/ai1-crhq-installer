@@ -20,8 +20,8 @@ For usage, start at the repo root: `SKILL.md` (canonical usage) and `README.md`
 | Doc | Purpose |
 |-----|---------|
 | [`package-manifest-spec.md`](./package-manifest-spec.md) | **The package manifest format** (`ai1-package.yaml`, v1.0) — the installer's input contract (platform-independent) |
-| [`architecture.md`](./architecture.md) | Product shape (CLI + library), module layout, control flow, CLI surface, configuration, services, safety boundaries |
-| [`api-design.md`](./api-design.md) | **Module reference** — signatures, def shapes, `createContext`, primitives, `runPlan`, `lib/sandbox.mjs`, exit codes |
+| [`architecture.md`](./architecture.md) | Product shape (CLI + library), module layout, control flow, CLI surface, configuration, services, safety boundaries, backup (§10), the hub client (§12) |
+| [`api-design.md`](./api-design.md) | **Module reference** — signatures, def shapes, `createContext`, primitives, `runPlan`, `lib/sandbox.mjs`, exit codes, `lib/backup.mjs` (§14), `lib/remote.mjs` (§15) |
 | [`canon-conventions.md`](./canon-conventions.md) | **The build contract** — conventions C1–C13 + the sandbox contract |
 | [`integration-reference.md`](./integration-reference.md) | **Authoritative DB schema** (9 managed tables, live-verified) + the manifest → CRHQ storage mapping |
 | [`testing-and-sandbox.md`](./testing-and-sandbox.md) | The built-in `--sandbox` / `--lifecycle` testing model + the `npm test` suites |
@@ -38,7 +38,11 @@ For usage, start at the repo root: `SKILL.md` (canonical usage) and `README.md`
   harness.
 - **Configurable** — `INSTALL_BASE_DIR` (skill-parent dir) + `INSTALL_SCHEMA`
   (knex `searchPath`); vendor-neutral names, with legacy `CRHQ_BASE_DIR`/`SANDBOX_SCHEMA` fallbacks.
-- **Zero npm runtime deps** — `yaml` vendored; knex/pg resolve from the satellite.
+- **Zero npm runtime deps** — `yaml` vendored; knex/pg resolve from the satellite. The hub
+  client (`remote.mjs`) keeps this even off-DB by using Node's built-in `fetch`.
+- **Three CLIs** — `install.mjs` (deploy a package), `backup.mjs` (the reverse — export the
+  satellite to a package), and `remote.mjs` (the satellite's **Ai1 Platform Hub** client; DB-free,
+  subcommand-based, starting with `register` — see `architecture.md` §12).
 
 ## Hard rule
 

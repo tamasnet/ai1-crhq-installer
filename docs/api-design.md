@@ -480,3 +480,41 @@ flags report "not supported by backup"; unsupported option / missing value → u
 `createContext(argv, { mode:'backup' })` → `preflight` (DB + `BACKUP_BASE` writable) →
 `runBackup(ctx, { now: new Date() })` → `ctx.report()` (`✅ Backup complete.`), `closeDb()` in
 `finally`. Restore is simply `install.mjs ${BACKUP_BASE_DIR}/<name>`.
+
+## 15. `lib/remote.mjs` + `scripts/remote.mjs` — the Ai1 Platform Hub client (D-36..D-39)
+
+DB-free and network-only: talks to the hub over HTTPS with the built-in `fetch` (no runtime deps),
+and persists identity to `${REMOTE_BASE_DIR}/id.json`. A **subcommand** CLI, not a flag-mode tool.
+
+```js
+export class RemoteError extends Error {}          // non-usage failure (network / hub rejection) → exit 1
+
+resolveRemoteBase()       // → REMOTE_BASE_DIR || `${homedir()}/remote`   (dev: export REMOTE_BASE_DIR=$(pwd))
+idPath(base?)             // → `${base}/id.json`
+resolveRemoteId(flag)     // → flag || SATELLITE_ID || hostname() minus 'crhq-'   (the D-27 convention)
+
+resolveRegisterInputs(flags)  // → { hubUrl, bootstrapToken, remoteId, remoteType, schemaVersion }
+// flag → env resolution: hub (--hub / AI1_HUB_URL / HUB_URL), bootstrap (--token /
+// AI1_BOOTSTRAP_TOKEN / BOOTSTRAP_TOKEN); remoteType default 'crhq-satellite', schemaVersion default 1.
+// Missing hub or bootstrap → UsageError (CLI maps to exit 2). hubUrl normalized to an http(s)
+// origin with no trailing slash; a non-http(s) URL → UsageError.
+
+registerRemote(flags, { now, log })  // → { dest, remoteId, status, hubUrl }
+// 1. resolve inputs (above). 2. if id.json exists and !flags.force → RemoteError (refuse to clobber
+//    the only copy of the token; --force overrides). 3. POST `${hubUrl}/remote/register` with
+//    { remote_id, bootstrap_token, remote_type, schema_version }. 4. on 201 → write id.json
+//    atomically (temp+rename, mode 0600) with { remote_id, token, remote_type, schema_version,
+//    hub_url, registered_at } — lifecycle `status` is NOT stored (hub-owned; D-38), only returned.
+//    Hub errors → RemoteError: 401 (bad bootstrap), 409 (cannot register + reset hint), other; a
+//    transport failure → "could not reach hub". `now` injected by the CLI so the timestamp is
+//    test-deterministic.
+```
+
+`scripts/remote.mjs` control flow: no args / `--help` / `help` → print usage (exit 2 for bare
+no-args, else 0) → dispatch on `argv[0]`; unknown subcommand → message + exit 2. For `register`:
+parse + strict-validate its own flag set (boolean `--force`/`--json`, value `--hub`/`--token`/
+`--remote-id`/`--remote-type`/`--schema-version`; reuses `UsageError`; `--schema-version` must be an
+integer) → `registerRemote(flags, { now: new Date(), log })` → print the result (or `--json`). The
+`main().catch` maps `UsageError`→exit 2, `RemoteError`→exit 1, anything else→exit 1 (`fatal:`).
+Tested DB-free in `tests/remote.test.mjs` against an out-of-process stub hub (an in-process server
+would deadlock under the client's `spawnSync`).

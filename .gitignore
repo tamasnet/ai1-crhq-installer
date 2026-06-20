@@ -3,3 +3,13 @@ node_modules/
 *.log
 .env
 .env.local
+dist/
+
+# remote.mjs runtime artifacts (written under $REMOTE_BASE_DIR; id.json holds a secret token)
+id.json
+config.json
+state.json
+actions.json
+
+# dev convenience symlink to the sibling hub contract repo
+ai1-platform-hub
