@@ -39,6 +39,10 @@ const mirror = (dir, over = {}, opts = {}) => runSync(sctx(over), { packageDir: 
 const readManifest = (dir) => loadYaml(readFileSync(join(dir, 'ai1-package.yaml'), 'utf8'));
 const db = makeCtx().db;
 
+// Pin the satellite id so the mirror-bootstrap package name (satellitePackageName) is assertable.
+const prevSatelliteId = process.env.SATELLITE_ID;
+process.env.SATELLITE_ID = 'myzone-tamas';   // → ai1-tamas
+
 try {
   // ── seed: install the example bundle + out-of-scope / unrepresentable rows ───────────────────
   // Install the bundle's skill as a USER skill — mirror auto-adds only `user` skills (org/store/system
@@ -86,7 +90,7 @@ try {
 
   await test('empty dir → bootstraps an installable package with the in-scope live inventory', async () => {
     const { counts, manifest } = await mirror(dirA);
-    assert.equal(manifest.name, 'pkg-a', 'bootstrapped from the dir basename');
+    assert.equal(manifest.name, 'ai1-tamas', 'mirror names the package via satellitePackageName(SATELLITE_ID)');
     assert.equal(manifest.version, 1, 'fresh package starts at version 1 (not bumped on create)');
     assert.deepEqual(counts, { added: 4, synced: 0, removed: 0, skipped: 2, failed: 0 });
 
@@ -279,6 +283,7 @@ try {
     assert.equal(readFileSync(join(dirG, 'ai1-package.yaml'), 'utf8'), before, 'manifest byte-identical');
   });
 } finally {
+  if (prevSatelliteId === undefined) delete process.env.SATELLITE_ID; else process.env.SATELLITE_ID = prevSatelliteId;
   rmSync(workBase, { recursive: true, force: true });
   await sb.teardown(false);
   await closeDb();

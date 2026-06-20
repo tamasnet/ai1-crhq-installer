@@ -46,9 +46,11 @@ Mirror auto-adds only active **`user`** skills (org/store/system come from their
 lists, `--add-*` to register more; never removes; package version untouched. **`--mirror`** (the former
 `backup.mjs`, D-40): live satellite is authority — add new, sync existing, REMOVE entries+files whose
 component is gone (scoped by `--type`/`--include`/`--exclude`); new skills preserve live `install_type`
-unless `--normalize`; integer package `version` +1 only on a content-changing run. Empty dir → bootstraps
-the manifest from the dir name. Live + read-only on the DB (no sandbox); `--dry-run` previews with zero
-writes; restore = `install.mjs <package-dir>`. The core is reusable as `runSync()` from `lib/index.mjs`.
+unless `--normalize`; integer package `version` +1 only on a content-changing run. Empty dir → mirror
+bootstraps a manifest named `satellitePackageName()` (D-43: satellite id → drop `myzone-` → ensure
+`ai1-`; shared DB-free helper in `lib/identity.mjs`); plain-sync `--add` bootstrap uses the dir name.
+Live + read-only on the DB (no sandbox); `--dry-run` previews with zero writes; restore =
+`install.mjs <package-dir>`. The core is reusable as `runSync()` from `lib/index.mjs`.
 **Remote** (D-36..D-39): hub client, DB-free, **subcommand** CLI — `node scripts/remote.mjs <subcommand>`.
 The satellite's side of the Ai1 Platform Hub contract (see `ai1-platform-hub/`). `register` self-enrolls
 the satellite via `POST {hub}/remote/register` (bootstrap-token auth, built-in `fetch`) and writes the

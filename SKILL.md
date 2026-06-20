@@ -79,7 +79,8 @@ empty `description`).
 `--exclude` scope, sync (a) **adds** live components missing from the manifest, (b) **syncs** the ones
 still present (component versions bumped when live > pinned), and (c) **removes** manifest entries —
 and their files/dirs — whose component is gone from the satellite. An empty/new dir bootstraps a fresh
-manifest. **Auto-add scope** = active `user` skills only (`org`/`store`/`system` skills come from
+manifest **named for the satellite** — `satellitePackageName(SATELLITE_ID)`: drop a leading `myzone-`,
+ensure a leading `ai1-` (e.g. `myzone-tamas` → `ai1-tamas`). **Auto-add scope** = active `user` skills only (`org`/`store`/`system` skills come from
 their own source packages, not a satellite backup), active recipes, non-system agents, non-system
 script jobs. Removal is more conservative than add — an `org`/`store` skill already listed in the
 manifest is synced, never auto-purged just because it isn't a user skill. Components the format can't

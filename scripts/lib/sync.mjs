@@ -41,6 +41,7 @@ import { exportSkill } from './core/skill.mjs';
 import { exportRecipe } from './core/recipe.mjs';
 import { exportAgent } from './core/agent.mjs';
 import { exportJob } from './core/job.mjs';
+import { satellitePackageName } from './identity.mjs';
 
 export class SyncError extends Error {
   constructor(msg) { super(msg); this.name = 'SyncError'; }
@@ -169,8 +170,10 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
       throw new SyncError(`ai1-package.yaml is invalid: ${e.message}`);
     }
   } else {
-    // Bootstrap from the directory name; the author fills in name/description before publishing.
-    const pkgName = basename(packageDir);
+    // Bootstrap. A --mirror snapshot is the satellite's OWN package, so it is named by the shared
+    // satellitePackageName() heuristic (satellite id → drop `myzone-` → ensure `ai1-`). A plain-sync
+    // --add bootstrap uses the directory name — the author is creating a specific named package repo.
+    const pkgName = isMirror ? satellitePackageName() : basename(packageDir);
     manifest = { name: pkgName, version: 1, description: '', components: {} };
     log.warn(`no ai1-package.yaml found — bootstrapping with name '${pkgName}'`);
   }

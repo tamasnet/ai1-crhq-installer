@@ -3,6 +3,7 @@
 //   import { createContext, upsertSkill, … } from
 //     '/opt/projects/crhq-satellite/user-skills/ai1-satellite-tools/scripts/lib/index.mjs';
 export { createContext, parseFlags, resolveBase, resolveSchema } from './context.mjs';
+export { resolveSatelliteId, satellitePackageName } from './identity.mjs';
 export { getDb, getAdminDb, closeDb } from './db.mjs';
 export { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
 export { copyTree, writeIfChanged, removeTree, safeName } from './fs.mjs';
