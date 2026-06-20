@@ -316,7 +316,9 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
         continue;
       }
 
-      if (result?.changed) contentChanged = true;
+      // Did this run actually change anything for this component? Either a byte was written to the
+      // package (result.changed) or a manifest-only field (version pin / skill install_type) moved.
+      let entryChanged = !!result?.changed;
 
       // Version upgrade: if the live DB version is strictly higher than the manifest pin, update.
       // Skills always carry a version; recipes/agents only when set — update if live > current/unset.
@@ -325,7 +327,7 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
         if (entry.version != null) log.info(`${label(type, name)}: version ${entry.version} → ${liveVersion}`);
         entry.version = liveVersion;
         manifestDirty = true;
-        contentChanged = true;
+        entryChanged = true;
       }
 
       // Mirror fidelity: reconcile a skill entry's install_type to the live row (present iff a user
@@ -335,12 +337,20 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
         if (want !== entry.install_type) {
           if (want == null) delete entry.install_type; else entry.install_type = want;
           manifestDirty = true;
-          contentChanged = true;
+          entryChanged = true;
         }
       }
 
-      results.push({ type: singular(type), name, verdict: 'SYNC-OK', action: 'synced' });
-      if (!dry) log.ok(`${label(type, name)} → synced`);
+      // Report `synced` only when something actually changed; an unchanged component is `unchanged`
+      // (silent per-line, so repeated runs are quiet — the summary still tallies it).
+      if (entryChanged) {
+        contentChanged = true;
+        results.push({ type: singular(type), name, verdict: 'SYNC-OK', action: 'synced' });
+        if (dry) log.dry(`sync ${label(type, name)}`);
+        else      log.ok(`${label(type, name)} → synced`);
+      } else {
+        results.push({ type: singular(type), name, verdict: 'SYNC-UNCHANGED', action: 'unchanged' });
+      }
       kept.push(entry);
     }
 
@@ -381,12 +391,13 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
     (acc, r) => {
       if (r.verdict === 'SYNC-ADDED') acc.added++;
       else if (r.verdict === 'SYNC-OK') acc.synced++;
+      else if (r.verdict === 'SYNC-UNCHANGED') acc.unchanged++;
       else if (r.verdict === 'SYNC-REMOVED') acc.removed++;
       else if (r.verdict === 'SYNC-SKIP') acc.skipped++;
       else if (r.verdict === 'SYNC-FAIL') acc.failed++;
       return acc;
     },
-    { added: 0, synced: 0, removed: 0, skipped: 0, failed: 0 },
+    { added: 0, synced: 0, unchanged: 0, removed: 0, skipped: 0, failed: 0 },
   );
 
   return { results, counts, manifest, manifestPath };

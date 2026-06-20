@@ -92,7 +92,7 @@ try {
     const { counts, manifest } = await mirror(dirA);
     assert.equal(manifest.name, 'ai1-tamas', 'mirror names the package via satellitePackageName(SATELLITE_ID)');
     assert.equal(manifest.version, 1, 'fresh package starts at version 1 (not bumped on create)');
-    assert.deepEqual(counts, { added: 4, synced: 0, removed: 0, skipped: 2, failed: 0 });
+    assert.deepEqual(counts, { added: 4, synced: 0, unchanged: 0, removed: 0, skipped: 2, failed: 0 });
 
     const { plan: bplan, meta } = loadManifest(dirA);   // self-installable at parse level
     assert.deepEqual(bplan.skills.map((s) => s.name), ['ai1-sample-skill']);
@@ -274,11 +274,13 @@ try {
     assert.equal(manifest.version, 3, 'package version incremented again');
   });
 
-  await test('a no-op mirror does not bump the package version and rewrites nothing', async () => {
+  await test('a no-op mirror reports unchanged (not synced), no version bump, rewrites nothing', async () => {
     const before = readFileSync(join(dirG, 'ai1-package.yaml'), 'utf8');
     const { counts } = await mirror(dirG);
     assert.equal(counts.added, 0);
     assert.equal(counts.removed, 0);
+    assert.equal(counts.synced, 0, 'nothing reported as synced when nothing changed');
+    assert.equal(counts.unchanged, 3, 'the unchanged components are tallied as unchanged, not synced');
     assert.equal(readManifest(dirG).version, 3, 'version unchanged on a clean run');
     assert.equal(readFileSync(join(dirG, 'ai1-package.yaml'), 'utf8'), before, 'manifest byte-identical');
   });

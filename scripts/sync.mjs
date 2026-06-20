@@ -180,11 +180,12 @@ try {
     console.log(JSON.stringify({ ok, mode: mirror ? 'mirror' : 'sync', package: manifest?.name, version: manifest?.version, counts, results }, null, 2));
   } else {
     const parts = [
-      counts.added   && `${counts.added} added`,
-      counts.synced  && `${counts.synced} synced`,
-      counts.removed && `${counts.removed} removed`,
-      counts.skipped && `${counts.skipped} skipped`,
-      counts.failed  && `${counts.failed} failed`,
+      counts.added     && `${counts.added} added`,
+      counts.synced    && `${counts.synced} synced`,
+      counts.unchanged && `${counts.unchanged} unchanged`,
+      counts.removed   && `${counts.removed} removed`,
+      counts.skipped   && `${counts.skipped} skipped`,
+      counts.failed    && `${counts.failed} failed`,
     ].filter(Boolean);
 
     const summary = parts.join(', ') || 'nothing to sync';

@@ -91,8 +91,10 @@ integer `version` is incremented by 1 **only when the run actually changed packa
 run leaves it alone); a freshly bootstrapped package starts at `1`.
 
 Both modes are **live and read-only against the DB**. `--dry-run` previews everything with zero
-writes. `--json` emits `{ ok, mode, package, version, counts, results }` where `counts` tallies
-`added / synced / removed / skipped / failed`.
+writes. A component is only reported **`synced`** when the run actually changed it (a byte written, or
+a version / `install_type` pin moved); an export that produced no change is **`unchanged`** (silent
+per-line, so repeated runs are quiet). `--json` emits `{ ok, mode, package, version, counts, results }`
+where `counts` tallies `added / synced / unchanged / removed / skipped / failed`.
 
 | Type | Source of truth | Files written |
 |------|----------------|---------------|
