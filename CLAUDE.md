@@ -1,9 +1,10 @@
 # ai1-satellite-tools
 
 A **generic, manifest-driven toolkit** (a CRHQ skill) for managing a satellite's resources:
-**install** and **backup** versioned packages of **skills, recipes, agents, jobs, services**, plus a
-**remote** client for the Ai1 Platform Hub. DB-direct, idempotent, and self-sandboxing. It
-generalizes the satellite's bespoke canon installers into one reusable utility.
+**install** versioned packages of **skills, recipes, agents, jobs, services**, **sync** live state
+back into a package repo (`--mirror` = full backup), plus a **remote** client for the Ai1 Platform
+Hub. DB-direct, idempotent, and self-sandboxing. It generalizes the satellite's bespoke canon
+installers into one reusable utility.
 
 **Status:** v1 complete and live. `npm test` green (sandbox-backed); zero runtime deps (`yaml`
 vendored — no `npm install`). Deployed to
@@ -32,16 +33,20 @@ the live service apply/remove paths are smoke-tested.
   **Skills default to org + `locked`** (`skill_type:'org'`); per-skill `install_type: user` in the manifest entry, or `--install-skills-as-user` (wins), registers them unlocked as `user` skills. Assets stay under `INSTALL_BASE_DIR` either way (D-22).
 
 ## Code map
-`scripts/install.mjs` + `scripts/backup.mjs` + `scripts/remote.mjs` (CLIs) + `scripts/lib/` per `api-design.md`:
-`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, flags, install-log, run, backup, remote, sandbox}.mjs`
+`scripts/install.mjs` + `scripts/sync.mjs` + `scripts/remote.mjs` (CLIs) + `scripts/lib/` per `api-design.md`:
+`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, flags, install-log, run, sync, remote, sandbox}.mjs`
 + `core/{skill,recipe,agent,job,service}.mjs` + `vendor/yaml.mjs`.
 Install log: `${PACKAGES_DIR:-~/packages}/install.json` (D-24) — updated on real installs/uninstalls only.
 Self-test (no live writes): `node scripts/install.mjs <package> --sandbox --lifecycle`.
-**Backup** (D-25..D-29, D-31): `node scripts/backup.mjs [<base-dir>] [--name= --dry-run --type= --include= --exclude= --json --help]`
-— reverse of install: reads active org/user skills + recipes + non-system agents/jobs from the DB and
-writes an installable package to `${BACKUP_BASE_DIR:-~/backups}/<name>/` (default name
-`<satellite-id>-backup`), overwrite-in-place via stage→validate→swap. Live + read-only on the DB
-(no sandbox); `--dry-run` previews scope/skips with zero fs writes (D-31); restore = `install.mjs <backup-dir>`.
+**Sync / backup** (D-25..D-31, D-41): `node scripts/sync.mjs [<package-dir>] [--mirror [--normalize --type= --include= --exclude=] --add-{skill,recipe,agent,job}= --dry-run --json --help]`
+— exports live satellite state (active org/user skills + recipes + non-system agents/jobs; DB + `INSTALL_BASE_DIR`)
+back into a package repo, git-safe + in-place. **Default**: manifest-driven — sync the components it
+lists, `--add-*` to register more; never removes; package version untouched. **`--mirror`** (the former
+`backup.mjs`, D-40): live satellite is authority — add new, sync existing, REMOVE entries+files whose
+component is gone (scoped by `--type`/`--include`/`--exclude`); new skills preserve live `install_type`
+unless `--normalize`; integer package `version` +1 only on a content-changing run. Empty dir → bootstraps
+the manifest from the dir name. Live + read-only on the DB (no sandbox); `--dry-run` previews with zero
+writes; restore = `install.mjs <package-dir>`. The core is reusable as `runSync()` from `lib/index.mjs`.
 **Remote** (D-36..D-39): hub client, DB-free, **subcommand** CLI — `node scripts/remote.mjs <subcommand>`.
 The satellite's side of the Ai1 Platform Hub contract (see `ai1-platform-hub/`). `register` self-enrolls
 the satellite via `POST {hub}/remote/register` (bootstrap-token auth, built-in `fetch`) and writes the

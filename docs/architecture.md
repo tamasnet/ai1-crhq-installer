@@ -221,9 +221,17 @@ fs, not nginx/PM2). Never run PM2 against `crhq-satellite`.
 - Secrets from `service.yaml` `env` → the service `.env` only; never echoed to logs.
 - Prereq checks before writes (C12); halt with an actionable message + exit code.
 
-## 10. Backup — the reverse of install (`backup.mjs`)
+## 10. Backup — the reverse of install (`sync.mjs --mirror`)
 
-`backup.mjs` reads the satellite's CRHQ-resident components from the DB and writes them back
+> **⚠ Updated by D-41.** This section was written for the standalone `backup.mjs`, which has been
+> **folded into `sync.mjs --mirror`** (`lib/sync.mjs`, exposed as `runSync({mode:'mirror'})`). The
+> reverse-of-install *intent* below still holds, but the mechanics changed: mirror takes the
+> destination as the `<package-dir>` positional (no `BACKUP_BASE_DIR`/`--name`), **reconciles in
+> place** (add new / sync existing / remove gone — git-recoverable, no stage→swap), preserves skill
+> `install_type` unless `--normalize`, and bumps an integer package `version` only on a
+> content-changing run. Read `backup.mjs` below as `sync.mjs --mirror`.
+
+`sync.mjs --mirror` reads the satellite's CRHQ-resident components from the DB and writes them back
 out as an **installable package** in the same `ai1-package.yaml` manifest format, under
 `${BACKUP_BASE_DIR}/<name>/`. Restore = `install.mjs <that dir>`. Always live and
 non-destructive (DB reads only; fs writes only under `BACKUP_BASE_DIR`) — hence no sandbox or

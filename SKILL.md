@@ -1,18 +1,19 @@
 ---
 name: ai1-satellite-tools
-description: Manage a CRHQ satellite's resources as versioned packages. Install skills, recipes, agents, background jobs, and standalone services (nginx + PM2 web apps) into a satellite from a declarative ai1-package.yaml manifest; back up the satellite's current resources to such a package; sync live satellite state back into an existing package repo for commit; and act as the satellite's client for the Ai1 Platform Hub (register the satellite, pull config, send heartbeats, fetch a GitHub token, and download registered packages for install). DB-direct via knex, idempotent, and sandbox-testable; the hub client is network-only and DB-free. Use to bulk-install or update a packaged set of CRHQ resources, deploy a service alongside a satellite, build/test such a package, take a restorable backup of the satellite's skills/recipes/agents/jobs, sync satellite edits back to a package repo for commit, or connect a satellite to the hub to receive configuration and packages.
+description: Manage a CRHQ satellite's resources as versioned packages. Install skills, recipes, agents, background jobs, and standalone services (nginx + PM2 web apps) into a satellite from a declarative ai1-package.yaml manifest; sync live satellite state back into a package repo for commit, or with --mirror back up the whole satellite into a package (add new, sync existing, remove what's gone); and act as the satellite's client for the Ai1 Platform Hub (register the satellite, pull config, send heartbeats, fetch a GitHub token, and download registered packages for install). DB-direct via knex, idempotent, and sandbox-testable; the hub client is network-only and DB-free. Use to bulk-install or update a packaged set of CRHQ resources, deploy a service alongside a satellite, build/test such a package, take a restorable backup of the satellite's skills/recipes/agents/jobs, sync satellite edits back to a package repo for commit, or connect a satellite to the hub to receive configuration and packages.
 version: 1
 ---
 
 # Ai1 Satellite Tools
 
-A **DB-direct, manifest-driven** toolkit for managing a CRHQ satellite's resources. Four CLIs:
+A **DB-direct, manifest-driven** toolkit for managing a CRHQ satellite's resources. Three CLIs:
 
 - **`install.mjs`** — deploy a **package** (a versioned bundle of skills, recipes, agents, jobs, and
   services) into a satellite.
-- **`backup.mjs`** — the reverse: snapshot the satellite's current resources back into an installable package.
-- **`sync.mjs`** — export the live satellite state back into an *existing* package repo for commit
-  (the author's Git workflow: edit on satellite → sync → `git diff` → commit).
+- **`sync.mjs`** — export the live satellite state back into a package repo. Default mode syncs the
+  components an existing manifest lists (the author's Git workflow: edit on satellite → sync →
+  `git diff` → commit); **`--mirror`** is the backup mode — reconcile the package to the whole live
+  satellite (add new, sync existing, remove what's gone). Restore = `install.mjs`.
 - **`remote.mjs`** — the satellite's client for the **Ai1 Platform Hub** (register, pull config,
   heartbeat, fetch a GitHub token, download registered packages).
 
@@ -48,47 +49,47 @@ node scripts/install.mjs --list-installed                # list what's recorded 
 `<package>` is a directory containing an `ai1-package.yaml` (or a path to the file itself; defaults
 to `.`). See `examples/bundle/` for a complete sample with every component type.
 
-## Backup (the reverse of install)
+## Sync & backup (satellite → package repo)
+
+`sync.mjs` exports the live satellite state (DB + `INSTALL_BASE_DIR`) back into a package repo
+directory. It is **git-safe** — byte-identical files are never rewritten, so only genuine diffs
+appear — edits the package **in place** (recover a bad run with git), and has two modes:
 
 ```bash
-node scripts/backup.mjs                          # → ${BACKUP_BASE_DIR:-~/backups}/<satellite-id>-backup/
-node scripts/backup.mjs --dry-run                # preview what would be backed up; zero fs writes
-node scripts/backup.mjs /path/to/backups         # positional arg overrides BACKUP_BASE_DIR
-node scripts/backup.mjs --name=my-snapshot       # package/dir name override
-node scripts/backup.mjs --type=skills,recipes --include='^acme-' --json
-node scripts/install.mjs ~/backups/<name>        # RESTORE — a backup is an installable package
+# Author workflow — manifest-driven: push your live edits back into a package it already describes.
+node scripts/sync.mjs <repo>                            # sync every component the manifest lists
+node scripts/sync.mjs <repo> --add-skill=my-skill      # register a new skill + export it (repeatable)
+node scripts/sync.mjs <repo> --dry-run                 # preview; no filesystem or manifest changes
+
+# Backup workflow — --mirror: make the package mirror the WHOLE live satellite.
+node scripts/sync.mjs <repo> --mirror                   # add new, sync existing, remove what's gone
+node scripts/sync.mjs new-dir --mirror                  # empty dir → bootstraps the manifest
+node scripts/sync.mjs <repo> --mirror --dry-run         # preview adds/syncs/removals; zero writes
+node scripts/sync.mjs <repo> --mirror --type=skills,recipes --include='^acme-' --json
+node scripts/install.mjs <repo>                         # RESTORE — the package is installable
 ```
 
-`backup` reads the satellite's current DB state and writes it out as an installable package in
-the same `ai1-package.yaml` manifest format. **Scope:** active `org`/`user` skills (platform
-`system` skills excluded), active recipes, non-system agents, non-system script jobs. Each run
-**overwrites the package dir in place** — but builds in a staging dir and swaps only after the
-generated manifest validates, so a failed run never damages the previous backup. Components the
-format can't express (e.g. a job whose script lives outside `INSTALL_BASE_DIR`) are reported as
-`BACKUP-SKIP` with a warning, never fatally. The **package** version is a date label (e.g.
-`2026.6.12`); each **component** version is the live CRHQ integer (`MAX(version_num)` from its
-`*_versions` table, D-34) — a skill with no version history is pinned `1` with a warning.
+**Default (manifest-driven).** The manifest is the authority: sync exports just the components
+`<repo>/ai1-package.yaml` already lists, plus any `--add-*` you name (each must exist on the
+satellite). Nothing is removed and the package-level `version` is never touched. Bootstrap: an absent
+manifest plus at least one `--add-*` writes a minimal manifest (`name` from the dir, `version: 1`,
+empty `description`).
 
-It is **live and read-only against the DB** by design — there is no `--status`, `--uninstall`, or
-`--sandbox` (those flags are rejected). `--dry-run` previews a backup: the full discovery/scope/skip
-reporting runs (so you can test `--type`/`--include`/`--exclude` combinations), but **nothing is
-written** and any previous backup is left untouched. `--type`/`--include`/`--exclude`/`--json` work
-exactly as for install (`services` are not DB-resident and not covered); `--help` prints usage.
+**`--mirror` (backup).** The live satellite is the authority: within the `--type`/`--include`/
+`--exclude` scope, sync (a) **adds** live components missing from the manifest, (b) **syncs** the ones
+still present (component versions bumped when live > pinned), and (c) **removes** manifest entries —
+and their files/dirs — whose component is gone from the satellite. An empty/new dir bootstraps a fresh
+manifest. "Live" scope = active `org`/`user` skills (platform `system` skills excluded), active
+recipes, non-system agents, non-system script jobs. Components the format can't express (e.g. a job
+whose script lives outside `INSTALL_BASE_DIR`) are reported `SYNC-SKIP` with a warning, never fatally,
+and are never added. New skills **preserve their live `install_type`** (a user skill stays unlocked)
+for a faithful restore; `--normalize` ships the locked `org` default instead. The package-level
+integer `version` is incremented by 1 **only when the run actually changed package content** (a no-op
+run leaves it alone); a freshly bootstrapped package starts at `1`.
 
-## Sync (satellite → an existing package repo)
-
-```bash
-node scripts/sync.mjs <repo>                              # sync every component the manifest lists
-node scripts/sync.mjs <repo> --add-skill=my-skill        # register a new skill + export it
-node scripts/sync.mjs <repo> --add-skill=a --add-recipe=b   # bootstrap a manifest from --add-* flags
-node scripts/sync.mjs <repo> --dry-run                   # preview; no filesystem or manifest changes
-node scripts/sync.mjs <repo> --json                      # machine-readable ({ ok, package, counts, results })
-```
-
-`sync` is the author's counterpart to `backup`: where `backup` snapshots the *whole* satellite into
-a fresh package dir, `sync` exports just the components an **existing** `<repo>/ai1-package.yaml`
-already lists, back into that repo for `git diff` / commit. It reuses the same `export*` functions as
-`backup`, so the same byte-level idempotency applies — only genuinely changed files are written.
+Both modes are **live and read-only against the DB**. `--dry-run` previews everything with zero
+writes. `--json` emits `{ ok, mode, package, version, counts, results }` where `counts` tallies
+`added / synced / removed / skipped / failed`.
 
 | Type | Source of truth | Files written |
 |------|----------------|---------------|
@@ -98,13 +99,9 @@ already lists, back into that repo for `git diff` / commit. It reuses the same `
 | Job | DB (`schedule`, `script`, …) | `<name>.yaml` |
 | Service | *not covered* — not DB-resident | — |
 
-**Additions** (`--add-skill`/`--add-recipe`/`--add-agent`/`--add-job`, each repeatable) register a
-component in the manifest and export it in one step; the named component must exist on this satellite.
-**Bootstrap:** if `<repo>` has no `ai1-package.yaml` and at least one `--add-*` flag is given, sync
-writes a minimal manifest (`name` from the dir, `version: 1`, empty `description`). **Version
-handling:** a component pin is bumped when the live DB version is strictly higher; the package-level
-`version` is never auto-changed. **Exit codes:** `0` clean · `1` export failure / missing component
-· `2` usage error.
+Each **component** version is the live CRHQ integer (`MAX(version_num)` from its `*_versions` table,
+D-34) — a skill with no version history is pinned `1` with a warning. **Exit codes:** `0` clean ·
+`1` export failure / missing component · `2` usage error.
 
 To validate, lint, or secret-scan a package before publishing, use the author-side
 **`ai1-package-tools`** skill.
@@ -194,9 +191,10 @@ Full specification: [`docs/package-manifest-spec.md`](./docs/package-manifest-sp
 
 **Versioning (D-34):** component `version`s are **positive integers** (required for skills/services,
 optional for recipes/agents, n/a for jobs). On install the integer is recorded as the component's
-CRHQ `version_num` (`skill_versions`/`recipe_versions`/`agent_versions`); on backup the live version
-(`MAX(version_num)`) is read back — so the package number and the satellite number stay in lockstep.
-A non-incrementing version warns but still installs. The package-level `version` is a free-form label.
+CRHQ `version_num` (`skill_versions`/`recipe_versions`/`agent_versions`); on sync/`--mirror` the live
+version (`MAX(version_num)`) is read back — so the package number and the satellite number stay in
+lockstep. A non-incrementing version warns but still installs. The package-level `version` is a
+free-form label (`--mirror` keeps it an integer and increments it on each content-changing run).
 
 Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manifest-spec.md).
 
@@ -265,13 +263,14 @@ whether to honor them for its own steps.
   component, so re-installing from a newer or different package transfers ownership in place rather
   than duplicating. Dry-run and status never touch it, and uninstalled entries are removed outright.
   Redirected to a throwaway dir by `--sandbox`.
-- `BACKUP_BASE_DIR` — parent dir under which `backup` writes its package dir (default `~/backups`;
-  the CLI's positional argument overrides it). `SATELLITE_ID` (when set) names the default backup
-  package `<satellite-id>-backup`.
+
+`sync` (incl. `--mirror`) takes its destination as the `<package-dir>` positional argument — it needs
+no environment configuration.
 
 ## Library API
 
-The install/backup core is also a library. `scripts/lib/index.mjs` exports `createContext` plus the
+The install/sync core is also a library. `scripts/lib/index.mjs` exports `createContext`, `runSync`,
+plus the
 `upsert*`/`remove*`/`status*` primitives, so a package's `install_entry` can reuse the canon instead
 of re-implementing it:
 
@@ -304,10 +303,9 @@ ai1-satellite-tools/
 ├── build-installer.sh     # build a self-extracting installer archive of this package
 ├── scripts/
 │   ├── install.mjs        # CLI entry — generic manifest runner
-│   ├── backup.mjs         # CLI entry — backup (reverse of install): DB state → installable package
-│   ├── sync.mjs           # CLI entry — sync live satellite state back into an existing package repo
+│   ├── sync.mjs           # CLI entry — sync satellite → package repo; --mirror = full backup (reverse of install)
 │   ├── remote.mjs         # CLI entry — Ai1 Platform Hub client (register/get-config/heartbeat/github-token/get-package)
-│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, version-history, run, backup, sync, remote, sandbox,
+│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, version-history, run, sync, remote, sandbox,
 │       ├── core/          #   index  +  core/{skill,recipe,agent,job,service}
 │       └── vendor/        #   yaml.mjs — vendored single-file YAML parser (zero npm install)
 ├── examples/bundle/       # complete sample package (every component type)

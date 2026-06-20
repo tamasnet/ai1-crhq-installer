@@ -1,7 +1,8 @@
-// flags.mjs — the CLI option contract: the supported flag set per mode, strict validation, and
+// flags.mjs — the install CLI option contract: the supported flag set, strict validation, and
 // `--help` usage text. Kept DEPENDENCY-FREE (no db/log imports) so manifest.mjs can reuse the
 // standard-flag set without pulling in the knex layer. Parsing of accepted flags into a context
 // lives in context.mjs (parseFlags); this module only decides what is/ isn't a legal option.
+// (The `sync` CLI — including its --mirror backup mode — owns its own flag spec in scripts/sync.mjs.)
 //
 // Two flag kinds:
 //   • boolean — present or absent; supplying `=value` is an error.
@@ -21,19 +22,14 @@ export const FLAG_SPEC = {
       '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed'],
     value: ['--type', '--include', '--exclude'],
   },
-  backup: {
-    bool: ['--dry-run', '--json'],
-    value: ['--name', '--type', '--include', '--exclude'],
-  },
 };
 
-// Every standard flag name across all modes (+ --help). Used to (a) give a "not supported by <mode>"
-// message when a real flag is used in the wrong mode, and (b) forbid a manifest's install_flags from
-// shadowing a standard flag.
+// Every standard flag name (+ --help). Used to (a) give a "not supported by <mode>" message when a
+// real flag is used in the wrong mode, and (b) forbid a manifest's install_flags from shadowing a
+// standard flag.
 export const STANDARD_FLAG_NAMES = new Set([
   '--help',
   ...FLAG_SPEC.install.bool, ...FLAG_SPEC.install.value,
-  ...FLAG_SPEC.backup.bool, ...FLAG_SPEC.backup.value,
 ]);
 
 export function wantsHelp(argv) {
@@ -109,26 +105,6 @@ Options:
 A package may declare additional package-specific flags via 'install_flags' in its manifest;
 those are accepted and forwarded to its install_entry hook. Any other option is rejected.`;
 
-const BACKUP_USAGE = `ai1-satellite-tools — back up a satellite's CRHQ resources to an installable package
-
-Usage: node scripts/backup.mjs [<backup-base-dir>] [options]
-
-  <backup-base-dir>  parent dir to write the package into (overrides BACKUP_BASE_DIR; default ~/backups)
-
-Options:
-  --name=<pkg>     package (and output dir) name; default <satellite-id>-backup
-  --dry-run        preview what would be backed up; zero filesystem writes
-  --type=<types>   restrict to component types: skills,recipes,agents,jobs
-                   (comma-separated and/or the flag repeated)
-  --include=<pat>  export only components whose name matches <pat>
-                   (regex; a value with no regex metacharacter is an exact ^pat$ match)
-  --exclude=<pat>  skip components whose name matches <pat> (applied after --include)
-  --json           machine-readable result output
-  --help           show this help and exit
-
-Live, read-only export — no --status/--uninstall/--sandbox (those are rejected).
-Restore with:  node scripts/install.mjs <backup-dir>`;
-
-export function usage(mode = 'install') {
-  return mode === 'backup' ? BACKUP_USAGE : INSTALL_USAGE;
+export function usage() {
+  return INSTALL_USAGE;
 }

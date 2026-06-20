@@ -63,7 +63,7 @@ export function resolveDownloadBase() {
   return process.env.DOWNLOAD_BASE_DIR || tmpdir();
 }
 
-// remote_id: explicit flag wins, else the SATELLITE_ID convention shared with backup.mjs
+// remote_id: explicit flag wins, else the SATELLITE_ID convention (D-27/D-37)
 // (SATELLITE_ID env, else hostname minus its conventional `crhq-` prefix).
 export function resolveRemoteId(flag) {
   return flag || process.env.SATELLITE_ID || hostname().replace(/^crhq-/, '');
@@ -479,7 +479,7 @@ export async function fetchGithubToken(_flags, { log } = {}) {
 // registered" answer; 401/403 mirror the other subcommands.
 //
 // Default behavior: fetch the signed URL, stream the archive to DOWNLOAD_BASE_DIR, extract it into
-// PACKAGE_BASE_DIR/<name>@<version> (overwrite-in-place via stage→swap, like backup.mjs), then delete
+// PACKAGE_BASE_DIR/<name>@<version> (overwrite-in-place via stage→swap), then delete
 // the archive — unless --keep-download is given. The extracted dir is a ready `install.mjs <dir>` input.
 
 // Resolve + validate the get-package inputs (the CLI already validates, but mirror register and keep

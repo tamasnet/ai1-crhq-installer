@@ -1,27 +1,46 @@
-// sync.mjs — core sync logic: read the package's ai1-package.yaml and export each listed
-// component from the live satellite (DB + INSTALL_BASE_DIR) back to the package repo directory.
+// sync.mjs — core sync logic: reconcile a package repo's ai1-package.yaml against the live
+// satellite (DB + INSTALL_BASE_DIR) by exporting components back into the package directory.
 //
 // Direction: satellite (DB + filesystem) → package repo (Git working copy)
 // Git-safe: writeIfChanged is used throughout — byte-identical files are never touched.
 // Services are out of scope (not DB-resident; their source of truth is the original package).
 //
-// Two operations:
-//   runSync — export all components listed in the manifest
-//   additions.{skills,recipes,agents,jobs} — add new components to the manifest + export them
+// Two modes (both share every primitive — export*, manifest read/write, version logic):
 //
-// Manifest is updated in-place when needed:
-//   - versions bumped if the live DB version is higher than what's pinned
-//   - new entries appended for each --add-* addition
-// The package-level `version` is NOT auto-incremented (that is a semantic decision for the author).
+//   mode 'sync' (default): the MANIFEST is the authority. Export each component the manifest lists,
+//     plus any --add-<type>=<name> the author asked for. Nothing is removed; package-level version
+//     is left untouched; additions are normalized to the distributable default (org/locked skills).
+//
+//   mode 'mirror' (`--mirror`, the former `backup`): the LIVE SATELLITE is the authority. Make the
+//     package mirror it — within the --type/--include/--exclude scope:
+//       • new live components (curated: org/user skills, active recipes, non-system active
+//         agents/jobs) not yet in the manifest are added, preserving fidelity (a user skill keeps
+//         install_type:user) unless `normalize` is set;
+//       • components still present are synced (versions bumped when live > pinned), and skill
+//         install_type is reconciled to live;
+//       • manifest entries whose component is gone from the satellite are removed — the entry AND
+//         its file/dir in the package;
+//       • the package-level integer `version` is incremented by 1, but only when the run actually
+//         changed package content (a no-op run leaves it alone). A freshly bootstrapped package
+//         starts at version 1 and is not bumped on first create.
+//
+// Manifest is updated in place when needed (versions, new/removed entries, package version). The
+// package-level `version` is auto-incremented ONLY in mirror mode; plain sync never touches it.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join, basename, extname } from 'node:path';
 
-import {
-  parseFrontmatter, safeName, loadYaml, validateManifest,
-  exportSkill, exportRecipe, exportAgent, exportJob,
-  dumpYaml, writeIfChanged,
-} from './index.mjs';
+// Import siblings directly (not the index barrel) so sync.mjs can itself be re-exported from index
+// without an import cycle — the same convention the former backup.mjs followed.
+import { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
+import { safeName, writeIfChanged, removeTree } from './fs.mjs';
+import { validateManifest } from './manifest.mjs';
+import { makeFilter } from './filter.mjs';
+import { VERDICT } from './log.mjs';
+import { exportSkill } from './core/skill.mjs';
+import { exportRecipe } from './core/recipe.mjs';
+import { exportAgent } from './core/agent.mjs';
+import { exportJob } from './core/job.mjs';
 
 export class SyncError extends Error {
   constructor(msg) { super(msg); this.name = 'SyncError'; }
@@ -37,6 +56,9 @@ const DEFAULT_PATH = {
   agents:  (name) => `agents/${safeName(name)}.md`,
   jobs:    (name) => `jobs/${safeName(name)}.yaml`,
 };
+
+// Canonical DB identifier for a discovered row, per type.
+const ROW_NAME = { skills: (r) => r.name, recipes: (r) => r.name, agents: (r) => r.key, jobs: (r) => r.name };
 
 // Derive the component's canonical DB name from a manifest entry path.
 // For skills: try the SKILL.md frontmatter 'name' field; fall back to the directory basename.
@@ -56,7 +78,9 @@ function deriveName(packageDir, type, entryPath) {
   return basename(entryPath, extname(entryPath));
 }
 
-// DB row lookup per component type.
+// DB row lookup per component type — the satellite's notion of "this component is live". Skills,
+// recipes and agents must be active; jobs have no is_active column. This is the liveness test that
+// mirror uses for REMOVAL (an entry with no matching row is gone → removed).
 async function findRow(db, type, name) {
   switch (type) {
     case 'skills':  return db('skills').where({ name, is_active: true }).first();
@@ -65,6 +89,22 @@ async function findRow(db, type, name) {
     case 'jobs':    return db('background_jobs').where({ name }).first();
     default:        return null;
   }
+}
+
+// The curated live inventory mirror auto-adds FROM (the reverse of install's scope): org/user skills,
+// active recipes, non-system active agents, non-system jobs. Inactive/system rows are intentionally
+// excluded — the manifest can't express them and restoring one would misrepresent the satellite.
+// (Removal is deliberately more conservative — see findRow — so a system/inactive component already
+// listed in the manifest is synced or skipped, never silently purged.)
+async function discover(db) {
+  return {
+    skills: await db('skills').whereIn('skill_type', ['org', 'user']).where({ is_active: true }).orderBy('name'),
+    recipes: await db('recipes').where({ is_active: true }).orderBy('name'),
+    agents: await db('agents').where({ is_active: true })
+      .where((q) => q.where({ is_system: false }).orWhereNull('is_system')).orderBy('key'),
+    jobs: await db('background_jobs')
+      .where((q) => q.where({ is_system: false }).orWhereNull('is_system')).orderBy('name'),
+  };
 }
 
 // Dispatch to the appropriate export function.
@@ -80,24 +120,40 @@ async function exportComponent(ctx, type, row, { packageDir, relPath, skillNames
 
 // Short label for log output.
 const label = (type, name) => `${type.replace(/s$/, '')}:${name}`;
+const singular = (type) => type.replace(/s$/, '');
 
 // ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 // ctx must have: db, log, DRY_RUN, BASE (needed by exportJob for script-path resolution).
-// additions: { skills: string[], recipes: string[], agents: string[], jobs: string[] }
-export async function runSync(ctx, { packageDir, additions = {} }) {
+// opts:
+//   packageDir  — the package repo dir holding ai1-package.yaml
+//   additions   — { skills, recipes, agents, jobs: string[] } explicit --add-* names (sync mode)
+//   mode        — 'sync' (default) | 'mirror'
+//   typeScope   — (mirror) array of component types to restrict to; null/empty = all
+//   filterSpec  — (mirror) { include, exclude } name filters; also bounds what removal may touch
+//   normalize   — (mirror) strip live fidelity (skills → org/locked) like a sync addition
+export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', typeScope = null, filterSpec = {}, normalize = false } = {}) {
   const { db, log } = ctx;
   const dry = !!ctx.DRY_RUN;
+  const isMirror = mode === 'mirror';
+  const preserveFidelity = isMirror && !normalize;
+
+  // Scope (mirror only). In plain sync everything is in scope.
+  const typeSet = (isMirror && Array.isArray(typeScope) && typeScope.length) ? new Set(typeScope) : null;
+  const nameMatch = isMirror ? makeFilter(filterSpec) : () => true;
+  const typeInScope = (t) => !typeSet || typeSet.has(t);
+  const inScope = (t, name) => typeInScope(t) && nameMatch(name);
 
   const manifestPath = join(packageDir, 'ai1-package.yaml');
   const manifestExists = existsSync(manifestPath);
 
-  const hasAdditions = SYNC_TYPES.some((t) => (additions[t]?.length ?? 0) > 0);
+  const explicitAdds = SYNC_TYPES.some((t) => (additions[t]?.length ?? 0) > 0);
 
-  if (!manifestExists && !hasAdditions) {
+  if (!manifestExists && !isMirror && !explicitAdds) {
     throw new SyncError(
       `No ai1-package.yaml found in ${packageDir}.\n` +
-      `  Use --add-skill=<name> (or --add-recipe, --add-agent, --add-job) to create one.`,
+      `  Use --add-skill=<name> (or --add-recipe, --add-agent, --add-job) to create one,\n` +
+      `  or --mirror to snapshot the whole satellite into this directory.`,
     );
   }
 
@@ -120,105 +176,194 @@ export async function runSync(ctx, { packageDir, additions = {} }) {
 
   manifest.components ??= {};
   let manifestDirty = !manifestExists;   // bootstrapped manifests must always be written
+  let contentChanged = false;            // any byte actually written/removed → drives the mirror version bump
   const results = [];
 
-  // Skill names in the manifest — used by exportJob to populate 'requires:'.
+  // Skill names known to the package — used by exportJob to populate 'requires:'.
   const skillNamesInManifest = new Set(
     (manifest.components.skills ?? []).map((e) => basename(e.path)),
   );
 
-  // ── Phase 1: Additions (--add-<type>=<name>) ─────────────────────────────────────────────────
-  // Additions must exist on the satellite (error, not warn — the intent is explicit).
+  // Build the addition queue: explicit --add-* plus, in mirror mode, every curated live component in
+  // scope that the manifest doesn't already list.
+  const addQueue = {};
+  for (const t of SYNC_TYPES) addQueue[t] = [...(additions[t] ?? [])];
+
+  if (isMirror) {
+    const live = await discover(db);
+    for (const t of SYNC_TYPES) {
+      if (!typeInScope(t)) continue;
+      const present = new Set((manifest.components[t] ?? []).map((e) => deriveName(packageDir, t, e.path)));
+      for (const row of (live[t] ?? [])) {
+        const nm = ROW_NAME[t](row);
+        if (!nameMatch(nm) || present.has(nm)) continue;
+        addQueue[t].push(nm);
+      }
+    }
+  }
+
+  // (type:name) handled as an addition — Phase 2 must not re-export/re-count them.
+  const handled = new Set();
+
+  // ── Phase 1: additions ────────────────────────────────────────────────────────────────────────
   for (const type of SYNC_TYPES) {
-    for (const name of (additions[type] ?? [])) {
-      // Guard: already listed in the manifest.
+    for (const name of addQueue[type]) {
       const existing = manifest.components[type] ?? [];
       if (existing.some((e) => deriveName(packageDir, type, e.path) === name)) {
-        log.warn(`${label(type, name)} already in manifest — skipping addition`);
+        if (!isMirror) log.warn(`${label(type, name)} already in manifest — skipping addition`);
         continue;
       }
 
       const row = await findRow(db, type, name);
       if (!row) {
-        throw new SyncError(
-          `cannot add ${type.replace(/s$/, '')} '${name}': not found on this satellite`,
-        );
+        // Explicit --add of something not installed is a hard error; a mirror auto-add that vanished
+        // between discovery and export (a race) is just skipped.
+        if (isMirror) { log.warn(`${label(type, name)} vanished before export — skipped`); continue; }
+        throw new SyncError(`cannot add ${singular(type)} '${name}': not found on this satellite`);
       }
 
-      const relPath = DEFAULT_PATH[type](name);
       let result;
       try {
-        result = await exportComponent(ctx, type, row, { packageDir, relPath, skillNames: skillNamesInManifest });
+        result = await exportComponent(ctx, type, row, { packageDir, relPath: DEFAULT_PATH[type](name), skillNames: skillNamesInManifest });
       } catch (e) {
+        if (isMirror) {
+          log.error(`${label(type, name)}: export failed — ${e.message}`);
+          results.push({ type: singular(type), name, verdict: 'SYNC-FAIL', action: 'error', detail: e.message });
+          continue;
+        }
         throw new SyncError(`failed to export ${label(type, name)}: ${e.message}`);
       }
 
+      // Unrepresentable in the manifest (e.g. a non-node / out-of-base job) — not added.
+      if (result?.verdict === VERDICT.BACKUP_SKIP) {
+        log.warn(`${label(type, name)}: ${result.detail || 'not representable in a package'} — not added`);
+        results.push({ type: singular(type), name, verdict: 'SYNC-SKIP', action: 'skipped', ...(result.detail ? { detail: result.detail } : {}) });
+        continue;
+      }
+
+      const relPath = result.entry?.path ?? DEFAULT_PATH[type](name);
       if (!dry) {
         manifest.components[type] ??= [];
-        if (type === 'skills') {
-          // For additions always use the default install_type (org) — don't mirror the live
-          // skill_type. exportSkill carries install_type:'user' when the live row is a user skill,
-          // but package consumers should receive the locked org default.
-          const { install_type: _, ...entry } = result.entry ?? { path: relPath };
-          manifest.components[type].push(entry);
-          skillNamesInManifest.add(basename(relPath));
-        } else {
-          manifest.components[type].push(result.entry ?? { path: relPath });
+        let entry = result.entry ?? { path: relPath };
+        // Skills: a sync addition (or --normalize) ships the locked org default, so drop the live
+        // install_type marker; a mirror addition preserves it for a faithful restore.
+        if (type === 'skills' && !preserveFidelity) {
+          const { install_type: _omit, ...rest } = entry;
+          entry = rest;
         }
+        manifest.components[type].push(entry);
+        if (type === 'skills') skillNamesInManifest.add(basename(relPath));
         manifestDirty = true;
       }
 
-      results.push({ type: type.replace(/s$/, ''), name, verdict: 'SYNC-ADDED', action: dry ? 'added (dry-run)' : 'added' });
+      handled.add(`${type}:${name}`);
+      contentChanged = true;
+      results.push({ type: singular(type), name, verdict: 'SYNC-ADDED', action: dry ? 'added (dry-run)' : 'added' });
       if (dry) log.dry(`add ${label(type, name)} to manifest at ${relPath}`);
       else      log.ok(`${label(type, name)} → added to manifest and exported`);
     }
   }
 
-  // ── Phase 2: Sync existing manifest entries ───────────────────────────────────────────────────
+  // ── Phase 2: sync existing manifest entries (mirror also removes the dead ones) ────────────────
   for (const type of SYNC_TYPES) {
-    for (const entry of (manifest.components[type] ?? [])) {
+    const list = manifest.components[type] ?? [];
+    const kept = [];
+    for (const entry of list) {
       const name = deriveName(packageDir, type, entry.path);
+
+      if (handled.has(`${type}:${name}`)) { kept.push(entry); continue; }   // already exported in Phase 1
+      if (isMirror && !inScope(type, name)) { kept.push(entry); continue; } // out of scope → untouched
+
       const row = await findRow(db, type, name);
 
       if (!row) {
+        if (isMirror) {
+          // Gone from the satellite → drop the entry and delete its file/dir from the package.
+          if (removeTree(join(packageDir, entry.path), { dryRun: dry })) contentChanged = true;
+          manifestDirty = true;
+          contentChanged = true;
+          results.push({ type: singular(type), name, verdict: 'SYNC-REMOVED', action: dry ? 'removed (dry-run)' : 'removed' });
+          if (dry) log.dry(`remove ${label(type, name)} from package (${entry.path})`);
+          else      log.ok(`${label(type, name)} → removed from package (gone from satellite)`);
+          continue;   // not kept
+        }
         log.warn(`${label(type, name)} not installed on this satellite — skipped`);
-        results.push({ type: type.replace(/s$/, ''), name, verdict: 'SYNC-SKIP', action: 'skipped' });
+        results.push({ type: singular(type), name, verdict: 'SYNC-SKIP', action: 'skipped' });
+        kept.push(entry);
         continue;
       }
 
       let result;
       try {
-        result = await exportComponent(ctx, type, row, {
-          packageDir,
-          relPath: entry.path,
-          skillNames: skillNamesInManifest,
-        });
+        result = await exportComponent(ctx, type, row, { packageDir, relPath: entry.path, skillNames: skillNamesInManifest });
       } catch (e) {
         log.error(`${label(type, name)}: export failed — ${e.message}`);
-        results.push({ type: type.replace(/s$/, ''), name, verdict: 'SYNC-FAIL', action: 'error', detail: e.message });
+        results.push({ type: singular(type), name, verdict: 'SYNC-FAIL', action: 'error', detail: e.message });
+        kept.push(entry);
         continue;
       }
 
+      // Unrepresentable now (e.g. a job whose script moved outside INSTALL_BASE_DIR) — keep the
+      // manifest entry as-is, surface a skip, don't claim a clean sync.
+      if (result?.verdict === VERDICT.BACKUP_SKIP) {
+        log.warn(`${label(type, name)}: ${result.detail || 'not representable in a package'} — skipped`);
+        results.push({ type: singular(type), name, verdict: 'SYNC-SKIP', action: 'skipped', ...(result.detail ? { detail: result.detail } : {}) });
+        kept.push(entry);
+        continue;
+      }
+
+      if (result?.changed) contentChanged = true;
+
       // Version upgrade: if the live DB version is strictly higher than the manifest pin, update.
-      // Skills always have an entry.version (required by the manifest spec); recipes and agents
-      // have it only when previously set — we update either way if live > current (or unset).
+      // Skills always carry a version; recipes/agents only when set — update if live > current/unset.
       const liveVersion = result.entry?.version;
-      if (liveVersion != null) {
-        if (entry.version == null || liveVersion > entry.version) {
-          if (entry.version != null) {
-            log.info(`${label(type, name)}: version ${entry.version} → ${liveVersion}`);
-          }
-          entry.version = liveVersion;
-          if (!dry) manifestDirty = true;
+      if (liveVersion != null && (entry.version == null || liveVersion > entry.version)) {
+        if (entry.version != null) log.info(`${label(type, name)}: version ${entry.version} → ${liveVersion}`);
+        entry.version = liveVersion;
+        manifestDirty = true;
+        contentChanged = true;
+      }
+
+      // Mirror fidelity: reconcile a skill entry's install_type to the live row (present iff a user
+      // skill, absent for org). Plain sync leaves install_type to the author.
+      if (isMirror && type === 'skills') {
+        const want = preserveFidelity ? result.entry?.install_type : undefined;   // 'user' | undefined
+        if (want !== entry.install_type) {
+          if (want == null) delete entry.install_type; else entry.install_type = want;
+          manifestDirty = true;
+          contentChanged = true;
         }
       }
 
-      results.push({ type: type.replace(/s$/, ''), name, verdict: 'SYNC-OK', action: 'synced' });
+      results.push({ type: singular(type), name, verdict: 'SYNC-OK', action: 'synced' });
       if (!dry) log.ok(`${label(type, name)} → synced`);
+      kept.push(entry);
+    }
+
+    // Mirror rebuilds each type list (dropping removed entries) and prunes empties so the manifest
+    // never carries a dangling `type: []`. Plain sync mutates entries in place and leaves the shape.
+    if (isMirror) {
+      if (kept.length) manifest.components[type] = kept;
+      else if (manifest.components[type] != null) { delete manifest.components[type]; manifestDirty = true; }
     }
   }
 
-  // ── Phase 3: Write updated manifest if anything changed ───────────────────────────────────────
+  // ── Phase 3: mirror package-version bump (only when content actually changed) ──────────────────
+  if (isMirror && manifestExists && contentChanged) {
+    const cur = manifest.version;
+    const next = Number.isInteger(cur) ? cur + 1 : 1;   // non-integer/legacy date label → reset to 1
+    if (next !== cur) {
+      if (dry) {
+        log.dry(`bump package version ${cur ?? '(unset)'} → ${next}`);
+      } else {
+        manifest.version = next;
+        manifestDirty = true;
+        log.info(`package version ${cur ?? '(unset)'} → ${next}`);
+      }
+    }
+  }
+
+  // ── Phase 4: write the updated manifest if anything changed ────────────────────────────────────
   if (manifestDirty) {
     if (dry) {
       log.dry(`write ai1-package.yaml → ${manifestPath}`);
@@ -232,11 +377,12 @@ export async function runSync(ctx, { packageDir, additions = {} }) {
     (acc, r) => {
       if (r.verdict === 'SYNC-ADDED') acc.added++;
       else if (r.verdict === 'SYNC-OK') acc.synced++;
+      else if (r.verdict === 'SYNC-REMOVED') acc.removed++;
       else if (r.verdict === 'SYNC-SKIP') acc.skipped++;
       else if (r.verdict === 'SYNC-FAIL') acc.failed++;
       return acc;
     },
-    { added: 0, synced: 0, skipped: 0, failed: 0 },
+    { added: 0, synced: 0, removed: 0, skipped: 0, failed: 0 },
   );
 
   return { results, counts, manifest, manifestPath };

@@ -12,14 +12,23 @@ export function writeIfChanged(path, content, { dryRun = false } = {}) {
 }
 
 // Recursively copy srcDir → destDir, skipping byte-identical files. Returns the number of files
-// written (or that would be written, in dry-run).
-export function copyTree(srcDir, destDir, { dryRun = false } = {}) {
+// written (or that would be written, in dry-run). `skip(relPath)` (path relative to srcDir, using
+// '/' separators) excludes matching entries — used by exportSkill to avoid copying the installed
+// SKILL.md it is about to regenerate from the DB (which would otherwise flip-flop the file and make
+// the export look "changed" on every run).
+export function copyTree(srcDir, destDir, { dryRun = false, skip = null } = {}) {
+  return copyTreeRel(srcDir, destDir, '', dryRun, skip);
+}
+
+function copyTreeRel(srcDir, destDir, rel, dryRun, skip) {
   let changed = 0;
   for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+    const r = rel ? `${rel}/${entry.name}` : entry.name;
+    if (skip && skip(r)) continue;
     const src = join(srcDir, entry.name);
     const dest = join(destDir, entry.name);
     if (entry.isDirectory()) {
-      changed += copyTree(src, dest, { dryRun });
+      changed += copyTreeRel(src, dest, r, dryRun, skip);
     } else if (entry.isFile()) {
       if (writeBufIfChanged(dest, readFileSync(src), dryRun)) changed++;
     }

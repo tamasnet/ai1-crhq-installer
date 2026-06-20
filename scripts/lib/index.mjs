@@ -2,7 +2,7 @@
 // install_entry scripts, and standalone installers. Canonical absolute import (OQ-U1):
 //   import { createContext, upsertSkill, … } from
 //     '/opt/projects/crhq-satellite/user-skills/ai1-satellite-tools/scripts/lib/index.mjs';
-export { createContext, parseFlags, resolveBase, resolveSchema, resolveBackupBase } from './context.mjs';
+export { createContext, parseFlags, resolveBase, resolveSchema } from './context.mjs';
 export { getDb, getAdminDb, closeDb } from './db.mjs';
 export { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
 export { copyTree, writeIfChanged, removeTree, safeName } from './fs.mjs';
@@ -15,7 +15,7 @@ export { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION } from
 export { makeFilter, compileMatcher, hasFilter, FilterError } from './filter.mjs';
 export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC } from './flags.mjs';
 export { runPlan, ORDER } from './run.mjs';
-export { runBackup, resolveBackupName, dateVersion, BACKUP_TYPES } from './backup.mjs';
+export { runSync, SyncError, SYNC_TYPES } from './sync.mjs';
 export * as sandbox from './sandbox.mjs';
 export { upsertSkill, removeSkill, statusSkill, exportSkill } from './core/skill.mjs';
 export { upsertRecipe, removeRecipe, statusRecipe, exportRecipe } from './core/recipe.mjs';

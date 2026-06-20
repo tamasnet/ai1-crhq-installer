@@ -48,8 +48,8 @@ export async function exportRecipe(ctx, row, { outRoot, relPath }) {
   const version = await currentVersion(ctx.db, 'recipe', row.id);
   const fm = { name: row.name, description: row.description || '', ...(version != null ? { version } : {}) };
   const md = `---\n${dumpYaml(fm)}---\n\n${(row.content || '').replace(/^\n+/, '')}`;
-  writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
-  return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath, ...(version != null ? { version } : {}) } };
+  const changed = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
+  return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath, ...(version != null ? { version } : {}) }, changed };
 }
 
 export async function statusRecipe(ctx, nameOrDef) {

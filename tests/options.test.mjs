@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// CLI option handling — strict validation shared by both entry points (install.mjs + backup.mjs):
+// CLI option handling — strict validation for both entry points (install.mjs + sync.mjs):
 // unsupported option → message + exit 2; a value flag with no value → message + exit 2; --help →
-// usage + exit 0. All of these short-circuit BEFORE any DB/sandbox work, so this suite needs no
-// sandbox. (That a *declared* package-specific install_flag is accepted + forwarded is proven in
-// runner.test.mjs via entry-pkg's --foo.) Run from the project root:  node tests/options.test.mjs
+// usage + exit 0; plus sync's mode-consistency checks (--mirror-only flags, --add* vs --mirror).
+// All of these short-circuit BEFORE any DB/sandbox work, so this suite needs no sandbox. (That a
+// *declared* package-specific install_flag is accepted + forwarded is proven in runner.test.mjs via
+// entry-pkg's --foo.) Run from the project root:  node tests/options.test.mjs
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { validateFlags } from '../scripts/lib/flags.mjs';
 import { harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -18,7 +18,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const run = (script, args) => spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: 'utf8' });
 // install validation fires after the manifest loads, so point it at a real package.
 const install = (args) => run('scripts/install.mjs', ['examples/bundle', ...args]);
-const backup = (args) => run('scripts/backup.mjs', args);
+const sync = (args) => run('scripts/sync.mjs', args);
 const out = (r) => `${r.stdout}${r.stderr}`;
 
 // ── install.mjs ──────────────────────────────────────────────────────────────────────────────
@@ -115,50 +115,53 @@ await test('--list-installed is listed in --help', () => {
   assert.match(install(['--help']).stdout, /--list-installed/);
 });
 
-// ── backup.mjs ───────────────────────────────────────────────────────────────────────────────
-console.log('\nbackup.mjs options:');
+// ── sync.mjs ─────────────────────────────────────────────────────────────────────────────────
+// All sync option failures short-circuit BEFORE getDb()/runSync, so these need no sandbox.
+console.log('\nsync.mjs options:');
 
 await test('--help prints usage and exits 0', () => {
-  const r = backup(['--help']);
+  const r = sync(['--help']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /Usage: node scripts\/backup\.mjs/);
-  assert.match(r.stdout, /read-only export/);
+  assert.match(r.stdout, /Usage: sync\.mjs/);
+  assert.match(r.stdout, /--mirror/);
 });
 
 await test('unknown option → message + exit 2', () => {
-  const r = backup(['--bogus']);
+  const r = sync(['--bogus']);
   assert.equal(r.status, 2);
   assert.match(out(r), /unknown option: --bogus/);
 });
 
-await test('install-lifecycle flag → "not supported by backup" + exit 2', () => {
-  for (const f of ['--sandbox', '--status', '--uninstall']) {
-    const r = backup([f]);
+await test('value flag with no value (bare) → message + exit 2', () => {
+  const r = sync(['--add-skill']);
+  assert.equal(r.status, 2);
+  assert.match(out(r), /option --add-skill requires a value/);
+});
+
+await test('boolean flag given a value → message + exit 2', () => {
+  const r = sync(['--mirror=please']);
+  assert.equal(r.status, 2);
+  assert.match(out(r), /option --mirror does not take a value/);
+});
+
+await test('mirror-only flag without --mirror → message + exit 2', () => {
+  for (const f of ['--normalize', '--type=skills', '--include=foo', '--exclude=bar']) {
+    const r = sync([f]);
     assert.equal(r.status, 2, f);
-    assert.match(out(r), /not supported by backup/, f);
+    assert.match(out(r), /requires? --mirror/, f);
   }
 });
 
-await test('--dry-run is supported by backup (validation + help)', () => {
-  validateFlags(['--dry-run', '--json'], { mode: 'backup' });   // must not throw (D-31)
-  assert.throws(() => validateFlags(['--dry-run=x'], { mode: 'backup' }), /does not take a value/);
-  const r = backup(['--help']);
-  assert.match(r.stdout, /--dry-run\s+preview what would be backed up/);
+await test('--add-* combined with --mirror → message + exit 2', () => {
+  const r = sync(['--mirror', '--add-skill=foo']);
+  assert.equal(r.status, 2);
+  assert.match(out(r), /cannot be combined with --mirror/);
 });
 
-await test('value flag with no value (bare) → message + exit 2', () => {
-  const r = backup(['--name']);
+await test('--mirror with an unknown --type → message + exit 2', () => {
+  const r = sync(['--mirror', '--type=bogus']);
   assert.equal(r.status, 2);
-  assert.match(out(r), /option --name requires a value/);
-});
-
-await test('--type is supported by backup (no usage error from validation)', () => {
-  // A bare --type is a value error; a valued --type passes validation (the run then proceeds to
-  // the DB, which is out of scope here — we only assert it is NOT rejected as unsupported/unknown).
-  const r = backup(['--type']);
-  assert.equal(r.status, 2);
-  assert.match(out(r), /requires a value/);
-  assert.doesNotMatch(out(r), /unknown option|not supported/);
+  assert.match(out(r), /unknown component type/);
 });
 
 done();

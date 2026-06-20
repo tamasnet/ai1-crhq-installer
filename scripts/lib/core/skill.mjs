@@ -100,7 +100,11 @@ export async function removeSkill(ctx, nameOrDef) {
 export async function exportSkill(ctx, row, { outRoot, relPath }) {
   const { db, log } = ctx;
   const destDir = join(outRoot, relPath);
-  const files = row.skill_dir && existsSync(row.skill_dir) ? copyTree(row.skill_dir, destDir, { dryRun: !!ctx.DRY_RUN }) : 0;
+  // Copy the asset tree but NOT the installed SKILL.md — that is regenerated from the DB below, so
+  // copying the on-disk one first would clobber it and make every export report a change.
+  const files = row.skill_dir && existsSync(row.skill_dir)
+    ? copyTree(row.skill_dir, destDir, { dryRun: !!ctx.DRY_RUN, skip: (rel) => rel === 'SKILL.md' })
+    : 0;
 
   let version = await currentVersion(db, 'skill', row.name);
   if (version == null) {
@@ -112,10 +116,12 @@ export async function exportSkill(ctx, row, { outRoot, relPath }) {
   const body = (parsed.meta.name || parsed.meta.version || parsed.meta.description) ? parsed.body : (row.content || '');
   const meta = { name: row.name, version, description: row.description || '' };
   const md = `---\n${dumpYaml(meta)}---\n\n${body.replace(/^\n+/, '')}`;
-  writeIfChanged(join(destDir, 'SKILL.md'), md, { dryRun: !!ctx.DRY_RUN });
+  const mdChanged = writeIfChanged(join(destDir, 'SKILL.md'), md, { dryRun: !!ctx.DRY_RUN });
 
   const entry = { path: relPath, version, ...(row.skill_type === 'user' ? { install_type: 'user' } : {}) };
-  return { ...result(row.name, VERDICT.BACKUP_OK, 'exported', files + 1), entry };
+  // `changed` = did any byte actually get written (tree files or SKILL.md). Drives the mirror
+  // package-version bump (sync) so a no-op run leaves the version alone.
+  return { ...result(row.name, VERDICT.BACKUP_OK, 'exported', files + (mdChanged ? 1 : 0)), entry, changed: files > 0 || mdChanged };
 }
 
 function tryFrontmatter(text) {

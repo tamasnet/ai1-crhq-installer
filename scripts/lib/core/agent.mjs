@@ -138,8 +138,8 @@ export async function exportAgent(ctx, row, { outRoot, relPath }) {
   };
   const body = (row.instructions || '').replace(/^\n+/, '');
   const md = `---\n${dumpYaml(fm)}---\n${body ? `\n${body.endsWith('\n') ? body : `${body}\n`}` : ''}`;
-  writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
-  return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath, ...(version != null ? { version } : {}) } };
+  const changed = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
+  return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath, ...(version != null ? { version } : {}) }, changed };
 }
 
 export async function statusAgent(ctx, nameOrDef) {

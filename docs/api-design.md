@@ -446,6 +446,16 @@ block via `ctx.reportExtra`).
 
 ## 14. `lib/backup.mjs` + `scripts/backup.mjs` — the reverse of install
 
+> **⚠ SUPERSEDED by D-41.** `backup.mjs` / `lib/backup.mjs` were removed and folded into
+> **`sync.mjs --mirror`** (`lib/sync.mjs`). The reverse-of-install behavior now lives in
+> `runSync(ctx, { packageDir, mode:'mirror', typeScope, filterSpec, normalize })` — same `export*`
+> primitives, but it **reconciles** an in-place package (add new / sync existing / remove gone) rather
+> than regenerating into `BACKUP_BASE_DIR` via stage→swap, takes the destination as the `<package-dir>`
+> positional, preserves skill `install_type` unless `--normalize`, and keeps the package `version` an
+> integer bumped only on content change. Verdicts are `SYNC-*` (the `export*` fns still return the
+> `BACKUP-*` taxonomy internally). The historical signatures below are retained for context only — see
+> `lib/sync.mjs` and the `sync` section of `SKILL.md` for the live surface.
+
 ```js
 export const BACKUP_TYPES = ['skills','recipes','agents','jobs'];  // services out of scope (v1)
 
