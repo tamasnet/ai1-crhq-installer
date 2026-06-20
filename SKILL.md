@@ -1,16 +1,18 @@
 ---
 name: ai1-satellite-tools
-description: Manage a CRHQ satellite's resources as versioned packages. Install skills, recipes, agents, background jobs, and standalone services (nginx + PM2 web apps) into a satellite from a declarative ai1-package.yaml manifest; back up the satellite's current resources to such a package; and act as the satellite's client for the Ai1 Platform Hub (register the satellite, pull config, send heartbeats, fetch a GitHub token, and download registered packages for install). DB-direct via knex, idempotent, and sandbox-testable; the hub client is network-only and DB-free. Use to bulk-install or update a packaged set of CRHQ resources, deploy a service alongside a satellite, build/test such a package, take a restorable backup of the satellite's skills/recipes/agents/jobs, or connect a satellite to the hub to receive configuration and packages.
+description: Manage a CRHQ satellite's resources as versioned packages. Install skills, recipes, agents, background jobs, and standalone services (nginx + PM2 web apps) into a satellite from a declarative ai1-package.yaml manifest; back up the satellite's current resources to such a package; sync live satellite state back into an existing package repo for commit; and act as the satellite's client for the Ai1 Platform Hub (register the satellite, pull config, send heartbeats, fetch a GitHub token, and download registered packages for install). DB-direct via knex, idempotent, and sandbox-testable; the hub client is network-only and DB-free. Use to bulk-install or update a packaged set of CRHQ resources, deploy a service alongside a satellite, build/test such a package, take a restorable backup of the satellite's skills/recipes/agents/jobs, sync satellite edits back to a package repo for commit, or connect a satellite to the hub to receive configuration and packages.
 version: 1
 ---
 
 # Ai1 Satellite Tools
 
-A **DB-direct, manifest-driven** toolkit for managing a CRHQ satellite's resources. Three CLIs:
+A **DB-direct, manifest-driven** toolkit for managing a CRHQ satellite's resources. Four CLIs:
 
 - **`install.mjs`** — deploy a **package** (a versioned bundle of skills, recipes, agents, jobs, and
   services) into a satellite.
 - **`backup.mjs`** — the reverse: snapshot the satellite's current resources back into an installable package.
+- **`sync.mjs`** — export the live satellite state back into an *existing* package repo for commit
+  (the author's Git workflow: edit on satellite → sync → `git diff` → commit).
 - **`remote.mjs`** — the satellite's client for the **Ai1 Platform Hub** (register, pull config,
   heartbeat, fetch a GitHub token, download registered packages).
 
@@ -72,6 +74,40 @@ It is **live and read-only against the DB** by design — there is no `--status`
 reporting runs (so you can test `--type`/`--include`/`--exclude` combinations), but **nothing is
 written** and any previous backup is left untouched. `--type`/`--include`/`--exclude`/`--json` work
 exactly as for install (`services` are not DB-resident and not covered); `--help` prints usage.
+
+## Sync (satellite → an existing package repo)
+
+```bash
+node scripts/sync.mjs <repo>                              # sync every component the manifest lists
+node scripts/sync.mjs <repo> --add-skill=my-skill        # register a new skill + export it
+node scripts/sync.mjs <repo> --add-skill=a --add-recipe=b   # bootstrap a manifest from --add-* flags
+node scripts/sync.mjs <repo> --dry-run                   # preview; no filesystem or manifest changes
+node scripts/sync.mjs <repo> --json                      # machine-readable ({ ok, package, counts, results })
+```
+
+`sync` is the author's counterpart to `backup`: where `backup` snapshots the *whole* satellite into
+a fresh package dir, `sync` exports just the components an **existing** `<repo>/ai1-package.yaml`
+already lists, back into that repo for `git diff` / commit. It reuses the same `export*` functions as
+`backup`, so the same byte-level idempotency applies — only genuinely changed files are written.
+
+| Type | Source of truth | Files written |
+|------|----------------|---------------|
+| Skill | DB (`content`) + `skill_dir` (scripts) | `SKILL.md` + all files under `scripts/` |
+| Recipe | DB (`content`) | `<name>.md` |
+| Agent | DB + `agent_skills` + `agent_recipes` | `<key>.md` |
+| Job | DB (`schedule`, `script`, …) | `<name>.yaml` |
+| Service | *not covered* — not DB-resident | — |
+
+**Additions** (`--add-skill`/`--add-recipe`/`--add-agent`/`--add-job`, each repeatable) register a
+component in the manifest and export it in one step; the named component must exist on this satellite.
+**Bootstrap:** if `<repo>` has no `ai1-package.yaml` and at least one `--add-*` flag is given, sync
+writes a minimal manifest (`name` from the dir, `version: 1`, empty `description`). **Version
+handling:** a component pin is bumped when the live DB version is strictly higher; the package-level
+`version` is never auto-changed. **Exit codes:** `0` clean · `1` export failure / missing component
+· `2` usage error.
+
+To validate, lint, or secret-scan a package before publishing, use the author-side
+**`ai1-package-tools`** skill.
 
 ## Remote — Ai1 Platform Hub client
 
@@ -269,8 +305,9 @@ ai1-satellite-tools/
 ├── scripts/
 │   ├── install.mjs        # CLI entry — generic manifest runner
 │   ├── backup.mjs         # CLI entry — backup (reverse of install): DB state → installable package
+│   ├── sync.mjs           # CLI entry — sync live satellite state back into an existing package repo
 │   ├── remote.mjs         # CLI entry — Ai1 Platform Hub client (register/get-config/heartbeat/github-token/get-package)
-│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, version-history, run, backup, remote, sandbox,
+│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, version-history, run, backup, sync, remote, sandbox,
 │       ├── core/          #   index  +  core/{skill,recipe,agent,job,service}
 │       └── vendor/        #   yaml.mjs — vendored single-file YAML parser (zero npm install)
 ├── examples/bundle/       # complete sample package (every component type)
