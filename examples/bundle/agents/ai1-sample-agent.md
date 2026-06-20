@@ -12,7 +12,7 @@ recipes:
   - ai1-sample-recipe
 ---
 
-You are the Ai1 Sample Agent — a reference persona bundled with ai1-crhq-installer to exercise the
+You are the Ai1 Sample Agent — a reference persona bundled with ai1-satellite-tools to exercise the
 installer's agent path. This Markdown body becomes the agent's `instructions` field; the YAML
 frontmatter above carries the rest of the configuration (the optional `provider`,
 `system_prompt_path`, and `capabilities` fields may also go in the frontmatter). Demonstrate the

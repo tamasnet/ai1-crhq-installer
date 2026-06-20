@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ai1-crhq-installer — generic manifest runner (CLI entry). Thin by design: print --help and exit;
+// ai1-satellite-tools — generic manifest runner (CLI entry). Thin by design: print --help and exit;
 // else load + validate the manifest and validate the CLI options (unsupported option / missing value
 // → usage exit 2) BEFORE any side effect; provision the sandbox (if asked) BEFORE building context
 // so the env redirect takes effect; preflight; run the plan (or the --sandbox --lifecycle suite);

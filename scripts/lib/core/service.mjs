@@ -71,7 +71,7 @@ export function renderNginx(def, port, env = process.env) {
   const ssl = def.nginx?.ssl !== false;
   const satId = env.SATELLITE_ID || 'satellite';
   const crhqHost = `${satId}-${sub}.crhq.ai`;
-  const header = `# ${def.name} — managed by ai1-crhq-installer`;
+  const header = `# ${def.name} — managed by ai1-satellite-tools`;
 
   if (!ssl) {
     return [header, 'server {', '    listen 80;', '    listen [::]:80;',

@@ -146,7 +146,7 @@ try {
     assert.equal(meta.version, 1, 'integer version = live CRHQ number from skill_versions (D-34)');
     const sv = await db('skill_versions').where({ skill_name: 'ai1-sample-skill' }).max('version_num as mx').first();
     assert.equal(meta.version, sv.mx, 'exported version == MAX(skill_versions.version_num)');
-    assert.match(meta.description, /Sample skill used by the ai1-crhq-installer test bundle/);
+    assert.match(meta.description, /Sample skill used by the ai1-satellite-tools test bundle/);
     const row = await db('skills').where({ name: 'ai1-sample-skill' }).first();
     assert.equal(body.replace(/^\n+/, ''), row.content.replace(/^\n+/, ''), 'body = DB content (authoritative)');
     assert.ok(existsSync(join(outDir, 'skills', 'ai1-sample-skill', 'scripts', 'hello.js')), 'skill tree copied');

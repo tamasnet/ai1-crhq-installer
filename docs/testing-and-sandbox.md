@@ -1,6 +1,6 @@
 # Testing & Sandbox
 
-How `ai1-crhq-installer` is tested without touching the live satellite. Sandboxing is
+How `ai1-satellite-tools` is tested without touching the live satellite. Sandboxing is
 **built into the utility** (`--sandbox`) — no external harness. The payoff of the library
 design (all DB through `getDb()`, all fs through `INSTALL_BASE_DIR`): the utility points
 those two knobs at an isolated schema + temp dir and runs a real install into there.

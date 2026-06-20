@@ -1,7 +1,7 @@
 {
-  "name": "ai1-crhq-installer",
+  "name": "ai1-satellite-tools",
   "version": "1.0.0",
-  "description": "Install CRHQ resources (skills, agents, recipes) and services into a CRHQ satellite",
+  "description": "Manage a CRHQ satellite's resources: install/backup versioned packages (skills, recipes, agents, jobs, services) and run the satellite's Ai1 Platform Hub client (register, config, heartbeat, packages)",
   "private": true,
   "bin": {
     "ai1-install": "./scripts/install.mjs",

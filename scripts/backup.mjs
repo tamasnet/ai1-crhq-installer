@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ai1-crhq-installer — backup runner (CLI entry): the reverse of install.mjs. Reads the in-scope
+// ai1-satellite-tools — backup runner (CLI entry): the reverse of install.mjs. Reads the in-scope
 // CRHQ DB-resident components (D-25) and writes an installable package (ai1-package.yaml manifest
 // format) to ${BACKUP_BASE_DIR}/<name>/, overwriting the previous backup in place via a staged
 // build + swap (D-26). Read-only against the DB — no sandbox, always live. --dry-run (D-31)

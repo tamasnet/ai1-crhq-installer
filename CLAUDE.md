@@ -1,12 +1,13 @@
-# ai1-crhq-installer
+# ai1-satellite-tools
 
-A **generic, manifest-driven installer** (a CRHQ skill) that deploys a bundle of resources —
-**skills, recipes, agents, jobs, services** — into a CRHQ satellite. DB-direct, idempotent, and
-self-sandboxing. It generalizes the satellite's bespoke canon installers into one reusable utility.
+A **generic, manifest-driven toolkit** (a CRHQ skill) for managing a satellite's resources:
+**install** and **backup** versioned packages of **skills, recipes, agents, jobs, services**, plus a
+**remote** client for the Ai1 Platform Hub. DB-direct, idempotent, and self-sandboxing. It
+generalizes the satellite's bespoke canon installers into one reusable utility.
 
 **Status:** v1 complete and live. `npm test` green (sandbox-backed); zero runtime deps (`yaml`
 vendored — no `npm install`). Deployed to
-`/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/` and registered as a live skill;
+`/opt/projects/crhq-satellite/user-skills/ai1-satellite-tools/` and registered as a live skill;
 the live service apply/remove paths are smoke-tested.
 
 ## Read first (the contracts — in `docs/`)

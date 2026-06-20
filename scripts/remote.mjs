@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ai1-crhq-installer — remote runner (CLI entry): the satellite's client for the Ai1 Platform Hub.
+// ai1-satellite-tools — remote runner (CLI entry): the satellite's client for the Ai1 Platform Hub.
 // Registers a CRHQ satellite as a *remote*, and (in later subcommands) will receive/send config and
 // state, take management instructions, and download packages for installation. Network-only and
 // DB-free; the resulting identity is written to ${REMOTE_BASE_DIR}/id.json (default ~/remote).
@@ -28,7 +28,7 @@ import { makeLogger } from './lib/log.mjs';
 import { UsageError } from './lib/flags.mjs';
 import { registerRemote, pullRemoteConfig, reportRemoteState, fetchGithubToken, fetchRemotePackage, RemoteError } from './lib/remote.mjs';
 
-const USAGE = `ai1-crhq-installer — register a CRHQ satellite with the Ai1 Platform Hub
+const USAGE = `ai1-satellite-tools — register a CRHQ satellite with the Ai1 Platform Hub
 
 Usage: node scripts/remote.mjs <subcommand> [options]
 

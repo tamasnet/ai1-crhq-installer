@@ -45,7 +45,7 @@ export async function recordVersion(ctx, type, { fkValue, version, name, descrip
   }
   if (DRY_RUN) { log.dry(`record ${type} ${name} as version ${version} in ${s.table}`); return; }
 
-  const summary = ctx.PACKAGE ? `Installed from ${ctx.PACKAGE.name} v${ctx.PACKAGE.version}` : 'Installed by ai1-crhq-installer';
+  const summary = ctx.PACKAGE ? `Installed from ${ctx.PACKAGE.name} v${ctx.PACKAGE.version}` : 'Installed by ai1-satellite-tools';
   const snapshot = { name: name ?? null, description: description || '', [s.body]: body || '', changed_by: 'ai1-installer', change_summary: summary };
   await db(s.table)
     .insert({ [s.fk]: fkValue, version_num: version, ...snapshot, created_at: new Date() })

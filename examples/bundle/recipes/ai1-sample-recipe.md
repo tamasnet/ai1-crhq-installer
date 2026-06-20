@@ -1,6 +1,6 @@
 ---
 name: ai1-sample-recipe
-description: "Sample recipe for the ai1-crhq-installer test bundle."
+description: "Sample recipe for the ai1-satellite-tools test bundle."
 version: 1
 ---
 

@@ -6,7 +6,7 @@
 //
 // A production hook would import the installer library and reuse the primitives, e.g.:
 //   import { createContext, requireSkills, upsertSkill } from
-//     '/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/scripts/lib/index.mjs';
+//     '/opt/projects/crhq-satellite/user-skills/ai1-satellite-tools/scripts/lib/index.mjs';
 // This sample stays dependency-free so it runs before the installer is itself installed.
 const argv = process.argv.slice(2);
 const mode = argv.includes('--uninstall') ? 'uninstall' : argv.includes('--status') ? 'status' : 'install';

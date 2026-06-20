@@ -1,6 +1,6 @@
 # ai1-sample-bundle
 
-Complete reference package for `ai1-crhq-installer` — one of **every** component type:
+Complete reference package for `ai1-satellite-tools` — one of **every** component type:
 
 | Component | File | Notes |
 |-----------|------|-------|

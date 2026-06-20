@@ -1,6 +1,6 @@
-# ai1-crhq-installer — Documentation
+# ai1-satellite-tools — Documentation
 
-Design and reference docs for the `ai1-crhq-installer` skill: a **DB-direct,
+Design and reference docs for the `ai1-satellite-tools` skill: a **DB-direct,
 sandbox-testable** installer that deploys a versioned package of resources into a CRHQ
 satellite from a declarative `ai1-package.yaml` manifest.
 

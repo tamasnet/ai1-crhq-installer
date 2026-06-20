@@ -1,7 +1,7 @@
 ---
 name: ai1-sample-skill
 version: 1
-description: "Sample skill used by the ai1-crhq-installer test bundle. Does nothing useful; exists to exercise skill install/uninstall/status and asset copy."
+description: "Sample skill used by the ai1-satellite-tools test bundle. Does nothing useful; exists to exercise skill install/uninstall/status and asset copy."
 ---
 
 # Ai1 Sample Skill

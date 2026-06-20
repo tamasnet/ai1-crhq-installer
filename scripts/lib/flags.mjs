@@ -81,7 +81,7 @@ export function validateFlags(argv, { mode = 'install', declared = [] } = {}) {
   }
 }
 
-const INSTALL_USAGE = `ai1-crhq-installer — install a package of CRHQ resources into a satellite
+const INSTALL_USAGE = `ai1-satellite-tools — install a package of CRHQ resources into a satellite
 
 Usage: node scripts/install.mjs [<package>] [options]
 
@@ -109,7 +109,7 @@ Options:
 A package may declare additional package-specific flags via 'install_flags' in its manifest;
 those are accepted and forwarded to its install_entry hook. Any other option is rejected.`;
 
-const BACKUP_USAGE = `ai1-crhq-installer — back up a satellite's CRHQ resources to an installable package
+const BACKUP_USAGE = `ai1-satellite-tools — back up a satellite's CRHQ resources to an installable package
 
 Usage: node scripts/backup.mjs [<backup-base-dir>] [options]
 

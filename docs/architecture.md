@@ -1,6 +1,6 @@
 # Architecture
 
-What `ai1-crhq-installer` is and how it's put together. The manifest format it consumes is
+What `ai1-satellite-tools` is and how it's put together. The manifest format it consumes is
 `package-manifest-spec.md`; module-level signatures are `api-design.md`; the build rules are
 `canon-conventions.md`.
 
@@ -16,7 +16,7 @@ The utility is a **shared core library** (`scripts/lib/`, exposed via `lib/index
   `createContext` and the parsing/fs/logging helpers) so a package's `install_entry` script —
   or a standalone bespoke installer — reuses them instead of re-implementing the canon
   patterns. Import path: the canonical absolute path
-  `/opt/projects/crhq-satellite/user-skills/ai1-crhq-installer/scripts/lib/index.mjs`
+  `/opt/projects/crhq-satellite/user-skills/ai1-satellite-tools/scripts/lib/index.mjs`
   (mirrors the knex.js convention; a package that imports it declares a minimum `installer: <n>`).
 
 Both consumers share `createContext` and `runPlan`, so the CLI and a package hook exercise
@@ -39,7 +39,7 @@ Services are standalone web apps outside the DB.
 ## 3. Layout
 
 ```
-ai1-crhq-installer/
+ai1-satellite-tools/
 ├── SKILL.md                      # skill doc (canonical usage)
 ├── ai1-package.yaml              # the installer dogfoods its own manifest format
 ├── package.json                  # type: module; zero runtime deps
