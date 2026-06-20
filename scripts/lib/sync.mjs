@@ -91,14 +91,15 @@ async function findRow(db, type, name) {
   }
 }
 
-// The curated live inventory mirror auto-adds FROM (the reverse of install's scope): org/user skills,
-// active recipes, non-system active agents, non-system jobs. Inactive/system rows are intentionally
-// excluded — the manifest can't express them and restoring one would misrepresent the satellite.
-// (Removal is deliberately more conservative — see findRow — so a system/inactive component already
-// listed in the manifest is synced or skipped, never silently purged.)
+// The curated live inventory mirror auto-adds FROM: active `user` skills only (NOT `org`/`store`/
+// `system` — those come from their own source packages, not a satellite backup), active recipes,
+// non-system active agents, non-system jobs. Inactive/system rows are intentionally excluded — the
+// manifest can't express them and restoring one would misrepresent the satellite. (Removal is
+// deliberately more conservative — see findRow — so an org/store/system or already-listed component
+// in the manifest is synced or skipped, never silently purged just because it isn't auto-added.)
 async function discover(db) {
   return {
-    skills: await db('skills').whereIn('skill_type', ['org', 'user']).where({ is_active: true }).orderBy('name'),
+    skills: await db('skills').where({ skill_type: 'user', is_active: true }).orderBy('name'),
     recipes: await db('recipes').where({ is_active: true }).orderBy('name'),
     agents: await db('agents').where({ is_active: true })
       .where((q) => q.where({ is_system: false }).orWhereNull('is_system')).orderBy('key'),

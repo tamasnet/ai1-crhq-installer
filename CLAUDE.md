@@ -39,8 +39,10 @@ the live service apply/remove paths are smoke-tested.
 Install log: `${PACKAGES_DIR:-~/packages}/install.json` (D-24) — updated on real installs/uninstalls only.
 Self-test (no live writes): `node scripts/install.mjs <package> --sandbox --lifecycle`.
 **Sync / backup** (D-25..D-31, D-41): `node scripts/sync.mjs [<package-dir>] [--mirror [--normalize --type= --include= --exclude=] --add-{skill,recipe,agent,job}= --dry-run --json --help]`
-— exports live satellite state (active org/user skills + recipes + non-system agents/jobs; DB + `INSTALL_BASE_DIR`)
-back into a package repo, git-safe + in-place. **Default**: manifest-driven — sync the components it
+— exports live satellite state (DB + `INSTALL_BASE_DIR`) back into a package repo, git-safe + in-place.
+Mirror auto-adds only active **`user`** skills (org/store/system come from their own packages) + recipes
++ non-system agents/jobs; removal is conservative (org/store entries already listed are synced, not purged).
+**Default**: manifest-driven — sync the components it
 lists, `--add-*` to register more; never removes; package version untouched. **`--mirror`** (the former
 `backup.mjs`, D-40): live satellite is authority — add new, sync existing, REMOVE entries+files whose
 component is gone (scoped by `--type`/`--include`/`--exclude`); new skills preserve live `install_type`

@@ -41,8 +41,10 @@ const db = makeCtx().db;
 
 try {
   // ── seed: install the example bundle + out-of-scope / unrepresentable rows ───────────────────
+  // Install the bundle's skill as a USER skill — mirror auto-adds only `user` skills (org/store/system
+  // come from their own packages), so the happy-path fixture must be a user skill.
   const { plan } = loadManifest('examples/bundle');
-  await runPlan(makeCtx({ TYPE: DB_TYPES }), plan);
+  await runPlan(makeCtx({ TYPE: DB_TYPES, INSTALL_SKILLS_AS_USER: true }), plan);
   const now = new Date();
   const base = { is_active: true, is_global: false, created_at: now, updated_at: now };
   await db('skills').insert({
@@ -53,6 +55,15 @@ try {
     name: 'inactive-skill', description: 'off', content: 'off', skill_type: 'user',
     skill_path: 'db://skills/inactive-skill', skill_dir: join(sb.baseDir, 'inactive-skill'),
     ...base, is_active: false,
+  });
+  // Active org + store skills — present on the satellite but NOT auto-added by mirror (only user skills are).
+  await db('skills').insert({
+    name: 'org-skill', description: 'an org skill', content: 'org', skill_type: 'org',
+    skill_path: 'db://skills/org-skill', skill_dir: join(sb.baseDir, 'org-skill'), ...base,
+  });
+  await db('skills').insert({
+    name: 'store-skill', description: 'a store skill', content: 'store', skill_type: 'store',
+    skill_path: 'db://skills/store-skill', skill_dir: join(sb.baseDir, 'store-skill'), ...base,
   });
   await db('agents').insert({ key: 'sys-agent', name: 'Sys Agent', is_system: true, is_active: true, created_at: now, updated_at: now });
   await db('background_jobs').insert({
@@ -86,10 +97,14 @@ try {
     assert.deepEqual(bplan.jobs.map((j) => j.name), ['ai1-sample-job']);
     assert.equal(meta.components.skills[0].version, 1, 'live CRHQ version pinned');
 
-    // out of scope: system + inactive skills, system agent — absent entirely
+    // out of scope: only `user` skills are auto-added — org/store/system/inactive skills and the
+    // system agent are absent entirely.
     assert.ok(!existsSync(join(dirA, 'skills', 'sys-skill')), 'system skill excluded');
     assert.ok(!existsSync(join(dirA, 'skills', 'inactive-skill')), 'inactive skill excluded');
+    assert.ok(!existsSync(join(dirA, 'skills', 'org-skill')), 'org skill not auto-added');
+    assert.ok(!existsSync(join(dirA, 'skills', 'store-skill')), 'store skill not auto-added');
     assert.ok(!existsSync(join(dirA, 'agents', 'sys-agent.md')), 'system agent excluded');
+    assert.equal(meta.components.skills[0].install_type, 'user', 'auto-added user skill keeps install_type:user');
     assert.ok(existsSync(join(dirA, 'skills', 'ai1-sample-skill', 'scripts', 'hello.js')), 'skill tree copied');
   });
 

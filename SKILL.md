@@ -79,11 +79,13 @@ empty `description`).
 `--exclude` scope, sync (a) **adds** live components missing from the manifest, (b) **syncs** the ones
 still present (component versions bumped when live > pinned), and (c) **removes** manifest entries —
 and their files/dirs — whose component is gone from the satellite. An empty/new dir bootstraps a fresh
-manifest. "Live" scope = active `org`/`user` skills (platform `system` skills excluded), active
-recipes, non-system agents, non-system script jobs. Components the format can't express (e.g. a job
-whose script lives outside `INSTALL_BASE_DIR`) are reported `SYNC-SKIP` with a warning, never fatally,
-and are never added. New skills **preserve their live `install_type`** (a user skill stays unlocked)
-for a faithful restore; `--normalize` ships the locked `org` default instead. The package-level
+manifest. **Auto-add scope** = active `user` skills only (`org`/`store`/`system` skills come from
+their own source packages, not a satellite backup), active recipes, non-system agents, non-system
+script jobs. Removal is more conservative than add — an `org`/`store` skill already listed in the
+manifest is synced, never auto-purged just because it isn't a user skill. Components the format can't
+express (e.g. a job whose script lives outside `INSTALL_BASE_DIR`) are reported `SYNC-SKIP` with a
+warning, never fatally, and are never added. New skills **preserve their live `install_type`** (a user
+skill stays unlocked) for a faithful restore; `--normalize` ships the locked `org` default instead. The package-level
 integer `version` is incremented by 1 **only when the run actually changed package content** (a no-op
 run leaves it alone); a freshly bootstrapped package starts at `1`.
 
