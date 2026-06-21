@@ -6,7 +6,8 @@ import { makeLogger } from '../scripts/lib/log.mjs';
 
 export function makeCtx(over = {}) {
   return {
-    db: getDb(), BASE: process.env.INSTALL_BASE_DIR, SCHEMA: process.env.INSTALL_SCHEMA,
+    db: getDb(), BASE: process.env.INSTALL_BASE_DIR, BRAINS: process.env.AGENT_BRAINS_DIR,
+    SCHEMA: process.env.INSTALL_SCHEMA,
     log: makeLogger({ dryRun: !!over.DRY_RUN }),
     DRY_RUN: false, RESPECT_LOCKS: false, INSTALL_SKILLS_AS_USER: false, TYPE: null, mode: 'install',
     results: [], record(r) { this.results.push(r); return r; },

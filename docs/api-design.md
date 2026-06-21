@@ -231,7 +231,7 @@ plan = {
 ```js
 SkillDef   = { key, name, description, version, srcDir, content, installType? }  // content = SKILL.md (full md); installType: 'org'|'user'
 RecipeDef  = { name, description, content, srcFile, version? }
-AgentDef   = { name, display_name, description, mode, default_model?, icon?, provider?, system_prompt_path?, capabilities?, instructions?, skills:[], recipes:[], srcFile }  // .md frontmatter + body→instructions; name → agents.key, display_name → agents.name (D-23/D-32)
+AgentDef   = { name, display_name, description, mode, default_model?, icon?, provider?, system_prompt_path?, capabilities?, instructions?, skills:[], recipes:[], srcDir, srcFile, version? }  // DIRECTORY: srcDir = agents/<key>/ (brain → AGENT_BRAINS_DIR/<key>), srcFile = its AGENTS.md; frontmatter + body→instructions; name → agents.key (D-23/D-32/D-50)
 JobDef     = { name, description, schedule, timezone?, script, args?, timeout_minutes?,
                max_concurrent?, skip_if_running?, enabled?, requires:[], srcFile }
 ServiceDef = { name, version, start, port?, cwd?, build?, env?, nginx?, srcDir }   // port omitted → allocated at deploy
@@ -329,11 +329,15 @@ upsertAgent(ctx, def)
 // 2. sync agent_skills: for each def.skills → attach IFF skill exists+active; onConflict ignore;
 //    remove stale links not in def.skills
 // 3. sync agent_recipes: resolve each name→recipe_id (uuid); onConflict ignore; remove stale
-removeAgent(ctx, nameOrDef)   // del agent_skills + agent_recipes + agents row
+// 4. copy the brain tree def.srcDir → AGENT_BRAINS_DIR/<key> (ctx.BRAINS); byte-idempotent, never
+//    deletes; brain bytes written count toward drift (D-50)
+removeAgent(ctx, nameOrDef)   // del agent_skills + agent_recipes + agents row + version history;
+// the brain folder (AGENT_BRAINS_DIR/<key>) is PRESERVED (D-50) — may hold runtime state
 statusAgent(ctx, nameOrDef)   // { present, active, skills:[], recipes:[] }
-exportAgent(ctx, row, { outRoot, relPath })   // backup: reverse D-23 (key→name, name→display_name) as
-// an .md — frontmatter (incl. provider/system_prompt_path/capabilities when non-default) + body=instructions;
-// joins resolve to names. Fully lossless round trip (D-32)
+exportAgent(ctx, row, { outRoot, relPath })   // backup: reverse D-23 (key→name, name→display_name)
+// into a DIRECTORY (relPath = agents/<key>) — regenerate AGENTS.md (frontmatter incl.
+// provider/system_prompt_path/capabilities when non-default + body=instructions) and copy the brain
+// tree, excluding AGENTS.md + AGENT_BRAIN_EXCLUDE runtime dirs. Lossless agent-record round trip (D-32/D-50)
 ```
 
 ### `core/job.mjs`

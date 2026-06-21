@@ -4,10 +4,26 @@
 // existing+active skills attach; recipe names resolve to uuids. Re-run produces zero drift;
 // stale links are removed.
 import { join } from 'path';
-import { writeIfChanged } from '../fs.mjs';
+import { existsSync } from 'fs';
+import { writeIfChanged, copyTree } from '../fs.mjs';
 import { dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
+
+// Brain runtime/transient dirs excluded from a sync/backup capture (D-50). An agent component is a
+// directory (agents/<key>/, the "brain"); on install the WHOLE tree is copied to AGENT_BRAINS_DIR
+// (so the brain owns AGENTS.md + identity.md + …), but on backup the agent has since written runtime
+// state into it (activity logs, restore copies) that doesn't belong in a distributable package. The
+// default set is overridable via AGENT_BRAIN_EXCLUDE (comma-separated top-level names; set it empty
+// to capture everything). Top-level only — matched against each entry's first path segment.
+export const DEFAULT_BRAIN_EXCLUDE = ['activity', '_backup', '.scratch', 'memory'];
+
+export function brainExcludeSet(env = process.env.AGENT_BRAIN_EXCLUDE) {
+  const list = env != null
+    ? env.split(',').map((s) => s.trim()).filter(Boolean)
+    : DEFAULT_BRAIN_EXCLUDE;
+  return new Set(list);
+}
 
 export async function upsertAgent(ctx, def) {
   const { db, log, DRY_RUN } = ctx;
@@ -57,8 +73,16 @@ export async function upsertAgent(ctx, def) {
   // Version snapshot args (D-34) — optional for agents; recorded only when the package declares one.
   const ver = { fkValue: key, version: def.version, name: def.display_name, description: def.description, body: def.instructions };
 
+  // Brain (D-50): the agent component is a directory whose whole tree copies to AGENT_BRAINS_DIR/<key>
+  // (the agent-side analog of a skill's INSTALL_BASE_DIR/<key>). Present only when the def came from a
+  // package on disk (a hand-built library def may carry no srcDir → DB-only, no brain write).
+  const brainDir = ctx.BRAINS ? join(ctx.BRAINS, key) : null;
+  const hasBrain = !!(def.srcDir && brainDir && existsSync(def.srcDir));
+
   if (DRY_RUN) {
-    log.dry(`${row ? 'update' : 'create'} agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)`);
+    const brainFiles = hasBrain ? copyTree(def.srcDir, brainDir, { dryRun: true }) : 0;
+    log.dry(`${row ? 'update' : 'create'} agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)`
+      + (hasBrain ? `; copy ${brainFiles} brain file(s) → ${brainDir}` : ''));
     await recordVersion(ctx, 'agent', ver);
     return res(key, VERDICT.OK, row ? 'updated' : 'created', { skills: desiredSkills, recipes: desiredRecipes.length });
   }
@@ -87,8 +111,13 @@ export async function upsertAgent(ctx, def) {
   }
   if (delR.length) await db('agent_recipes').where({ agent_key: key }).whereIn('recipe_id', delR).del();
 
+  // Copy the brain tree → AGENT_BRAINS_DIR/<key> (D-50). copyTree is byte-idempotent (a clean re-run
+  // writes nothing) and NEVER deletes, so runtime files the agent itself wrote into the brain
+  // (activity/, data/) survive a reinstall; only files the package ships are (re)written.
+  const brainFiles = hasBrain ? copyTree(def.srcDir, brainDir, { dryRun: false }) : 0;
+
   await recordVersion(ctx, 'agent', ver);
-  const drift = !row || !fieldsSame || addS.length || delS.length || addR.length || delR.length;
+  const drift = !row || !fieldsSame || addS.length || delS.length || addR.length || delR.length || brainFiles > 0;
   return res(key, drift ? VERDICT.OK : VERDICT.ALREADY, row ? 'updated' : 'created', { skills: desiredSkills, recipes: desiredRecipes.length });
 }
 
@@ -97,7 +126,10 @@ export async function removeAgent(ctx, nameOrDef) {
   const key = typeof nameOrDef === 'string' ? nameOrDef : nameOrDef.name;
   const row = await db('agents').where({ key }).first();
   if (!row) return res(key, VERDICT.ALREADY, 'absent');
-  if (DRY_RUN) { log.dry(`delete agent ${key} and its links`); return res(key, VERDICT.OK, 'removed'); }
+  // Uninstall removes the DB row + joins + version history only. The brain folder
+  // (AGENT_BRAINS_DIR/<key>) is deliberately PRESERVED (D-50): it can hold agent-authored runtime
+  // state (activity/, data/, _backup/) that an uninstall must not destroy. Removing it is a manual op.
+  if (DRY_RUN) { log.dry(`delete agent ${key} and its links (brain folder preserved)`); return res(key, VERDICT.OK, 'removed'); }
   await db('agent_skills').where({ agent_key: key }).del();
   await db('agent_recipes').where({ agent_key: key }).del();
   await db('agents').where({ key }).del();
@@ -106,12 +138,13 @@ export async function removeAgent(ctx, nameOrDef) {
 }
 
 // exportAgent — backup: write the row back to package form (the reverse of the D-23 mapping:
-// agents.key → `name`, agents.name → `display_name`). Agents are emitted as Markdown: YAML
-// frontmatter for the scalar/list fields + a body that carries `instructions` (D-32). The
-// formerly-lossy fields (instructions, system_prompt_path, capabilities, non-default provider)
-// now round-trip; each is emitted only when it carries non-default information so restore stays
-// idempotent. Joins resolve to names; an agent_recipes link whose recipe row is gone simply drops
-// out of the join.
+// agents.key → `name`, agents.name → `display_name`). relPath is now the agent DIRECTORY
+// (agents/<key>); AGENTS.md is regenerated from the DB inside it (YAML frontmatter for the
+// scalar/list fields + a body carrying `instructions`, D-32) and the rest of the brain folder
+// (AGENT_BRAINS_DIR/<key>) is copied alongside it (D-50). The formerly-lossy fields (instructions,
+// system_prompt_path, capabilities, non-default provider) round-trip; each is emitted only when it
+// carries non-default information so restore stays idempotent. Joins resolve to names; an
+// agent_recipes link whose recipe row is gone simply drops out of the join.
 export async function exportAgent(ctx, row, { outRoot, relPath }) {
   const { db } = ctx;
   const key = row.key;
@@ -136,10 +169,26 @@ export async function exportAgent(ctx, row, { outRoot, relPath }) {
     ...(skills.length ? { skills } : {}),
     ...(recipes.length ? { recipes } : {}),
   };
+  const destDir = join(outRoot, relPath);   // the agent directory in the package (agents/<key>)
+
+  // Copy the brain tree (AGENT_BRAINS_DIR/<key>) into the package dir, skipping (a) AGENTS.md —
+  // regenerated from the DB below, so copying the installed one would clobber it and flip-flop the
+  // file every run (the exportSkill/SKILL.md bug, D-41) — and (b) the runtime/transient dirs the
+  // operator excludes from a distributable capture (D-50). Missing brain → AGENTS.md alone.
+  const brainDir = ctx.BRAINS ? join(ctx.BRAINS, key) : null;
+  const exclude = brainExcludeSet();
+  const files = brainDir && existsSync(brainDir)
+    ? copyTree(brainDir, destDir, {
+        dryRun: !!ctx.DRY_RUN,
+        skip: (rel) => rel === 'AGENTS.md' || exclude.has(rel.split('/')[0]),
+      })
+    : 0;
+
   const body = (row.instructions || '').replace(/^\n+/, '');
   const md = `---\n${dumpYaml(fm)}---\n${body ? `\n${body.endsWith('\n') ? body : `${body}\n`}` : ''}`;
-  const changed = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
-  return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath, ...(version != null ? { version } : {}) }, changed };
+  const mdChanged = writeIfChanged(join(destDir, 'AGENTS.md'), md, { dryRun: !!ctx.DRY_RUN });
+  // `changed` = a byte was written (brain file or AGENTS.md) → drives the mirror package-version bump.
+  return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath, ...(version != null ? { version } : {}) }, changed: files > 0 || mdChanged };
 }
 
 export async function statusAgent(ctx, nameOrDef) {

@@ -4,6 +4,9 @@
 // then runs a full lifecycle with an agent referencing the sample skill + recipe. Tears down.
 // Run from the project root:  node tests/agent.test.mjs
 import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { provisionSandbox, runLifecycle } from '../scripts/lib/sandbox.mjs';
 import { closeDb } from '../scripts/lib/db.mjs';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
@@ -65,10 +68,19 @@ try {
     assert.equal(row.provider, 'claude', 'provider rides DB default');
     assert.equal(row.icon, '🧪', 'icon from def');
     assert.equal(row.default_model, 'sonnet');
-    assert.ok(agentDef.instructions && agentDef.instructions.length, 'def carries instructions from the .md body');
+    assert.ok(agentDef.instructions && agentDef.instructions.length, 'def carries instructions from the AGENTS.md body');
     assert.equal(row.instructions, agentDef.instructions, 'instructions persisted from the Markdown body');
     assert.deepEqual(await skillsOf(agentDef.name), ['ai1-sample-skill']);
     assert.deepEqual(await recipeIdsOf(agentDef.name), [sampleRecipeId], 'recipe name resolved to uuid');
+    // Brain (D-50): the whole agent directory is copied to AGENT_BRAINS_DIR/<key>.
+    const brainDir = join(ctx.BRAINS, agentDef.name);
+    assert.ok(existsSync(join(brainDir, 'AGENTS.md')), 'brain AGENTS.md copied to AGENT_BRAINS_DIR/<key>');
+    assert.ok(existsSync(join(brainDir, 'identity.md')), 'sibling brain file copied alongside AGENTS.md');
+  });
+
+  await test('brain is idempotent: re-run writes nothing new, stays ALREADY', async () => {
+    const r = await upsertAgent(ctx, agentDef);
+    assert.equal(r.verdict, 'ALREADY-INSTALLED', 'unchanged row + identical brain → no drift');
   });
 
   await test('full field set: instructions + capabilities + provider + system_prompt_path persist; idempotent', async () => {
@@ -148,7 +160,21 @@ try {
     assert.equal(await agentRow(agentDef.name), undefined);
     assert.deepEqual(await skillsOf(agentDef.name), []);
     assert.deepEqual(await recipeIdsOf(agentDef.name), []);
+    assert.ok(existsSync(join(ctx.BRAINS, agentDef.name)), 'brain folder PRESERVED on uninstall (D-50)');
     assert.equal((await removeAgent(ctx, agentDef)).verdict, 'ALREADY-INSTALLED', 'absent → ALREADY');
+  });
+
+  await test('clean break: a flat agents/<name>.md is rejected by the manifest loader', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'ai1-agent-fmt-'));
+    try {
+      mkdirSync(join(tmp, 'agents'), { recursive: true });
+      writeFileSync(join(tmp, 'agents', 'legacy.md'), '---\nname: legacy\ndisplay_name: Legacy\n---\nbody\n');
+      writeFileSync(join(tmp, 'ai1-package.yaml'),
+        'name: fmt-test\nversion: 1\ndescription: d\ncomponents:\n  agents:\n    - path: agents/legacy.md\n');
+      assert.throws(() => loadManifest(tmp), /directory with an AGENTS\.md/, 'flat .md points the author at the directory form');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 } finally {
   await sb.teardown(false);

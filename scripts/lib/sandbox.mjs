@@ -15,6 +15,7 @@ export async function provisionSandbox({ ts, seed = true } = {}) {
   const admin = getAdminDb();
   const schema = `sandbox_${ts}`;
   const baseDir = join(tmpdir(), `ai1-sandbox-${ts}`);
+  const brainsDir = join(tmpdir(), `ai1-sandbox-${ts}-brains`);      // agent brains land here, not in the real AGENT_BRAINS_DIR (D-50)
   const packagesDir = join(tmpdir(), `ai1-sandbox-${ts}-packages`);  // install log lands here, not in the real PACKAGES_DIR (D-24)
 
   await admin.raw('CREATE SCHEMA ??', [schema]);
@@ -35,16 +36,19 @@ export async function provisionSandbox({ ts, seed = true } = {}) {
 
   process.env.INSTALL_SCHEMA = schema;       // redirect BEFORE createContext/getDb (§2/§8)
   process.env.INSTALL_BASE_DIR = baseDir;
+  process.env.AGENT_BRAINS_DIR = brainsDir;
   process.env.PACKAGES_DIR = packagesDir;
   mkdirSync(baseDir, { recursive: true });
+  mkdirSync(brainsDir, { recursive: true });
   mkdirSync(packagesDir, { recursive: true });
 
   return {
-    schema, baseDir, packagesDir,
+    schema, baseDir, brainsDir, packagesDir,
     async teardown(keep = false) {
       if (keep) return;
       await admin.raw('DROP SCHEMA ?? CASCADE', [schema]);
       rmSync(baseDir, { recursive: true, force: true });
+      rmSync(brainsDir, { recursive: true, force: true });
       rmSync(packagesDir, { recursive: true, force: true });
     },
   };

@@ -40,6 +40,14 @@ The `user-skills/` literal appears **only** in the legacy-compat shim + the defa
 in the core logic. The sandbox sets `INSTALL_BASE_DIR` to a temp dir so installs never touch
 the real tree.
 
+**Agent brains — `AGENT_BRAINS_DIR` (D-50).** Agents are directory components like skills, so they
+have the exact analog: `AGENT_BRAINS_DIR` is the parent dir under which each agent's `<key>` brain
+folder is created (`join(AGENT_BRAINS_DIR, key)`). Same resolution shape — `AGENT_BRAINS_DIR` →
+`CRHQ_BASE_DIR`-relative `documents/agent-brains` → the `/opt/projects/crhq-satellite/documents/agent-brains`
+default — with the `documents/agent-brains` literal confined to the fallback + default. The sandbox
+redirects it to a temp dir alongside `INSTALL_BASE_DIR`. Capture-time excludes for backup live in
+`AGENT_BRAIN_EXCLUDE` (default `activity,_backup,.scratch,memory`).
+
 ## C3 — Skill install dir = `INSTALL_BASE_DIR/<key>`
 
 - Skill assets copy to `${INSTALL_BASE_DIR}/<key>/...`. On a CRHQ satellite that resolves to

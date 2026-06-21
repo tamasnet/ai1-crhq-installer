@@ -73,11 +73,12 @@ export function isInsideGitRepo(dir) {
 // Component types covered by sync (services are not DB-resident).
 export const SYNC_TYPES = ['skills', 'recipes', 'agents', 'jobs'];
 
-// Default relative path within the package for a newly added component.
+// Default relative path within the package for a newly added component. Skills and agents are
+// directories (SKILL.md / AGENTS.md inside); recipes and jobs are single files.
 const DEFAULT_PATH = {
   skills:  (name) => `skills/${safeName(name)}`,
   recipes: (name) => `recipes/${safeName(name)}.md`,
-  agents:  (name) => `agents/${safeName(name)}.md`,
+  agents:  (name) => `agents/${safeName(name)}`,
   jobs:    (name) => `jobs/${safeName(name)}.yaml`,
 };
 
@@ -85,15 +86,16 @@ const DEFAULT_PATH = {
 const ROW_NAME = { skills: (r) => r.name, recipes: (r) => r.name, agents: (r) => r.key, jobs: (r) => r.name };
 
 // Derive the component's canonical DB name from a manifest entry path.
-// For skills: try the SKILL.md frontmatter 'name' field; fall back to the directory basename.
-// For recipes/agents/jobs: basename of path minus the extension.
+// For skills + agents (directory components): try the SKILL.md / AGENTS.md frontmatter 'name' field;
+// fall back to the directory basename. For recipes/jobs: basename of path minus the extension.
 // If the component file already exists in the package dir, the frontmatter is authoritative.
 function deriveName(packageDir, type, entryPath) {
-  if (type === 'skills') {
-    const skillMd = join(packageDir, entryPath, 'SKILL.md');
-    if (existsSync(skillMd)) {
+  if (type === 'skills' || type === 'agents') {
+    const mdName = type === 'skills' ? 'SKILL.md' : 'AGENTS.md';
+    const mdPath = join(packageDir, entryPath, mdName);
+    if (existsSync(mdPath)) {
       try {
-        const { meta } = parseFrontmatter(readFileSync(skillMd, 'utf8'));
+        const { meta } = parseFrontmatter(readFileSync(mdPath, 'utf8'));
         if (meta.name) return meta.name;
       } catch { /* fall through to basename */ }
     }
@@ -148,8 +150,9 @@ const label = (type, name) => `${type.replace(/s$/, '')}:${name}`;
 const singular = (type) => type.replace(/s$/, '');
 
 // The component's manifest file relative to the package root — the install log's `source` field
-// (mirrors install-log.mjs's sourceOf). Skills carry a SKILL.md under their dir; the rest are a file.
-const sourceOf = (type, path) => (type === 'skills' ? `${path}/SKILL.md` : path);
+// (mirrors install-log.mjs's sourceOf). Skills/agents carry a SKILL.md/AGENTS.md under their dir;
+// the rest are a single file.
+const sourceOf = (type, path) => (type === 'skills' ? `${path}/SKILL.md` : type === 'agents' ? `${path}/AGENTS.md` : path);
 
 // ──────────────────────────────────────────────────────────────────────────────────────────────────
 

@@ -13,6 +13,18 @@ export function resolveBase() {
     || '/opt/projects/crhq-satellite/user-skills';
 }
 
+// AGENT_BRAINS_DIR = the parent dir under which each agent's <key> brain folder is created (D-50) —
+// the agent-side analog of INSTALL_BASE_DIR. An agent component is now a directory (agents/<key>/
+// with AGENTS.md, like a skill's SKILL.md); install copies that whole tree to join(AGENT_BRAINS_DIR,
+// key). Same vendor-neutral / CRHQ_BASE_DIR-relative / default shape as resolveBase() so the sandbox
+// can redirect it to a temp dir. The `documents/agent-brains` literal lives ONLY in the fallback +
+// default, never in core logic.
+export function resolveBrains() {
+  return process.env.AGENT_BRAINS_DIR
+    || (process.env.CRHQ_BASE_DIR && join(process.env.CRHQ_BASE_DIR, 'documents/agent-brains'))
+    || '/opt/projects/crhq-satellite/documents/agent-brains';
+}
+
 export function resolveSchema() {
   return process.env.INSTALL_SCHEMA || process.env.SANDBOX_SCHEMA || null;
 }
@@ -53,6 +65,7 @@ export async function createContext(argv, opts = {}) {
   const ctx = {
     ...flags,
     BASE: resolveBase(),
+    BRAINS: resolveBrains(),
     SCHEMA: resolveSchema(),
     PACKAGES_DIR: resolvePackagesDir(),
     db: getDb(),

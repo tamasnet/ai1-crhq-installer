@@ -108,7 +108,7 @@ try {
     assert.ok(!existsSync(join(dirA, 'skills', 'inactive-skill')), 'inactive skill excluded');
     assert.ok(!existsSync(join(dirA, 'skills', 'org-skill')), 'org skill not auto-added');
     assert.ok(!existsSync(join(dirA, 'skills', 'store-skill')), 'store skill not auto-added');
-    assert.ok(!existsSync(join(dirA, 'agents', 'sys-agent.md')), 'system agent excluded');
+    assert.ok(!existsSync(join(dirA, 'agents', 'sys-agent')), 'system agent excluded');
     assert.equal(meta.components.skills[0].install_type, 'user', 'auto-added user skill keeps install_type:user');
     assert.ok(existsSync(join(dirA, 'skills', 'ai1-sample-skill', 'scripts', 'hello.js')), 'skill tree copied');
   });
@@ -125,7 +125,7 @@ try {
     const srow = await db('skills').where({ name: 'ai1-sample-skill' }).first();
     assert.equal(sbody.replace(/^\n+/, ''), srow.content.replace(/^\n+/, ''), 'skill body = DB content');
 
-    const agent = parseFrontmatter(readFileSync(join(dirA, 'agents', 'ai1-sample-agent.md'), 'utf8')).meta;
+    const agent = parseFrontmatter(readFileSync(join(dirA, 'agents', 'ai1-sample-agent', 'AGENTS.md'), 'utf8')).meta;
     assert.equal(agent.provider, 'openai');
     assert.deepEqual(agent.capabilities, ['search', 'recall']);
     assert.deepEqual(agent.skills, ['ai1-sample-skill']);
@@ -133,6 +133,29 @@ try {
     const job = loadYaml(readFileSync(join(dirA, 'jobs', 'ai1-sample-job.yaml'), 'utf8'));
     assert.equal(job.script, 'ai1-sample-skill/scripts/hello.js', 'script reverse-resolved relative to BASE');
     assert.deepEqual(job.requires, ['ai1-sample-skill'], 'requires re-derived from the script skill segment');
+  });
+
+  await test('agent brain round-trips into the package; runtime dirs are excluded (D-50)', async () => {
+    const brainDir = join(process.env.AGENT_BRAINS_DIR, 'ai1-sample-agent');
+    assert.ok(existsSync(join(brainDir, 'identity.md')), 'install copied the brain (sibling file) to AGENT_BRAINS_DIR/<key>');
+    // Simulate runtime state the agent wrote into its own brain after install.
+    mkdirSync(join(brainDir, 'activity'), { recursive: true });
+    writeFileSync(join(brainDir, 'activity', 'log.md'), 'runtime log');
+
+    const dirB = pkgDir('pkg-brain');
+    await mirror(dirB);
+    const ap = join(dirB, 'agents', 'ai1-sample-agent');
+    assert.ok(existsSync(join(ap, 'AGENTS.md')), 'AGENTS.md regenerated from the DB');
+    assert.ok(existsSync(join(ap, 'identity.md')), 'sibling brain file captured');
+    assert.ok(!existsSync(join(ap, 'activity')), 'runtime dir excluded from the capture');
+
+    const { meta, body } = parseFrontmatter(readFileSync(join(ap, 'AGENTS.md'), 'utf8'));
+    assert.equal(meta.name, 'ai1-sample-agent');
+    assert.equal(meta.provider, 'openai', 'DB config emitted to AGENTS.md frontmatter');
+    const arow = await db('agents').where({ key: 'ai1-sample-agent' }).first();
+    assert.equal(body.replace(/^\n+/, ''), (arow.instructions || '').replace(/^\n+/, ''), 'AGENTS.md body = DB instructions');
+
+    rmSync(join(brainDir, 'activity'), { recursive: true, force: true });   // keep later runs pristine
   });
 
   // ── round trip ───────────────────────────────────────────────────────────────────────────────
@@ -308,7 +331,7 @@ try {
     assert.equal(sk.version, 2, 'component version reflects the live row');
     assert.equal(sk.source, 'skills/ai1-sample-skill/SKILL.md', 'skill source path');
     assert.ok(byKey['agent:ai1-sample-agent'], 'the live agent is recorded');
-    assert.equal(byKey['agent:ai1-sample-agent'].source, 'agents/ai1-sample-agent.md');
+    assert.equal(byKey['agent:ai1-sample-agent'].source, 'agents/ai1-sample-agent/AGENTS.md');
     assert.ok(!byKey['job:ai1-sample-job'], 'a component absent from the satellite is not recorded');
   });
 

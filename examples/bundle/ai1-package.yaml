@@ -16,7 +16,7 @@ components:
   recipes:
     - path: recipes/ai1-sample-recipe.md
   agents:
-    - path: agents/ai1-sample-agent.md
+    - path: agents/ai1-sample-agent
   jobs:
     - path: jobs/ai1-sample-job.yaml
   services:

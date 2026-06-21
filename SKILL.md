@@ -116,10 +116,10 @@ where `counts` tallies `added / synced / unchanged / removed / skipped / failed`
 
 | Type | Source of truth | Files written |
 |------|----------------|---------------|
-| Skill | DB (`content`) + `skill_dir` (scripts) | `SKILL.md` + all files under `scripts/` |
-| Recipe | DB (`content`) | `<name>.md` |
-| Agent | DB + `agent_skills` + `agent_recipes` | `<key>.md` |
-| Job | DB (`schedule`, `script`, …) | `<name>.yaml` |
+| Skill | DB (`content`) + `skill_dir` (scripts) | `skills/<key>/SKILL.md` + all files under `scripts/` |
+| Recipe | DB (`content`) | `recipes/<name>.md` |
+| Agent | DB + `agent_skills` + `agent_recipes` + brain (`AGENT_BRAINS_DIR/<key>`) | `agents/<key>/AGENTS.md` + brain files (excl. runtime dirs in `AGENT_BRAIN_EXCLUDE`) |
+| Job | DB (`schedule`, `script`, …) | `jobs/<name>.yaml` |
 | Service | *not covered* — not DB-resident | — |
 
 Each **component** version is the live CRHQ integer (`MAX(version_num)` from its `*_versions` table,
@@ -206,7 +206,7 @@ components:
     - path: recipes/my-recipe.md
       version: 1                # optional integer (round-trips via recipe_versions)
   agents:
-    - path: agents/my-agent.md
+    - path: agents/my-agent     # DIRECTORY with AGENTS.md (+ brain files)
       version: 1                # optional integer (round-trips via agent_versions)
   jobs:
     - path: jobs/my-job.yaml
@@ -229,11 +229,14 @@ Full specification: [`docs/package-manifest-spec.md`](./docs/package-manifest-sp
   the assets live under `INSTALL_BASE_DIR` (we don't write to where real org skills live; only the
   registration differs).
 - **Recipe** — `recipes/<name>.md`: frontmatter (`name`, `description`) + body → `recipes.content`.
-- **Agent** — `agents/<name>.md`: YAML frontmatter (`name` → CRHQ agent key, `display_name`, `mode`,
-  `default_model`, `icon`, `provider`, `system_prompt_path`, `capabilities`, `skills:[]`,
-  `recipes:[]`) + a Markdown body that becomes the agent's `instructions`. Omitted frontmatter
-  fields ride DB defaults. Only existing+active skills attach; recipe names resolve to ids; stale
-  links are removed on re-run.
+- **Agent** — `agents/<key>/` (a DIRECTORY, like a skill — the agent's "brain"): an `AGENTS.md` index
+  with YAML frontmatter (`name` → CRHQ agent key, `display_name`, `mode`, `default_model`, `icon`,
+  `provider`, `system_prompt_path`, `capabilities`, `skills:[]`, `recipes:[]`) + a Markdown body that
+  becomes the agent's `instructions`, plus any supporting brain files. Omitted frontmatter fields ride
+  DB defaults. The **whole directory** copies to `AGENT_BRAINS_DIR/<key>/` (default
+  `documents/agent-brains`, the agent analog of `INSTALL_BASE_DIR`). Only existing+active skills
+  attach; recipe names resolve to ids; stale links are removed on re-run. **Uninstall preserves the
+  brain folder** (it may hold runtime state); a flat `agents/<name>.md` is no longer accepted.
 - **Job** — `jobs/<name>.yaml`: `name`/`schedule`/`script`/`requires:[]`. `schedule` accepts a cron
   expression or an alias (`hourly`, `daily`, `every-15-min`, `every-30-min`). `script` resolves to
   `INSTALL_BASE_DIR/<script>`; `requires` skill dirs must exist first (prereq guard).

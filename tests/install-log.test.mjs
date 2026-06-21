@@ -51,7 +51,7 @@ try {
     assert.ok(skill.installed_at);
 
     const agent = find(packagesDir, 'agent');
-    assert.equal(agent.source, `agents/${plan.agents[0].name}.md`);
+    assert.equal(agent.source, `agents/${plan.agents[0].name}/AGENTS.md`);
     assert.equal(agent.version, plan.agents[0].version, 'agent carries its (optional) integer version');
     assert.equal(agent.version, 1);
     assert.equal(agent.package, meta.name);
@@ -189,7 +189,7 @@ try {
     const p = updateInstallLogForMirror(ctx, {
       installed: [
         { type: 'skill', name: 'sk', version: 2, source: 'skills/sk/SKILL.md' },   // ownership transfers to mirror
-        { type: 'agent', name: 'ag', source: 'agents/ag.md' },                      // brand-new slot
+        { type: 'agent', name: 'ag', source: 'agents/ag/AGENTS.md' },               // brand-new slot
       ],
       removed: [{ type: 'recipe', name: 'gone' }],
       pkg: { name: 'ai1-tamas', version: 3 },

@@ -35,7 +35,7 @@ The manifest is the installer's input; `install_entry` is the escape hatch.
 |------|-----------|
 | **Skill** | A capability the platform's agents can invoke: instructions (`SKILL.md`) plus optional scripts and tests. |
 | **Recipe** | A reusable piece of agent-facing content: a named, described Markdown document. |
-| **Agent** | A configured agent persona: identity and config plus Markdown `instructions`, and references to the skills and recipes it uses. |
+| **Agent** | A configured agent persona: a directory (the agent's "brain") with an `AGENTS.md` — identity and config plus Markdown `instructions` — and any supporting brain files, plus references to the skills and recipes it uses. |
 | **Job** | A scheduled (cron-style) background task that runs a script shipped by one of the bundled skills. |
 | **Service** | A standalone long-running web application, deployed behind the platform's reverse proxy and process manager. |
 
@@ -54,7 +54,9 @@ The manifest is the installer's input; `install_entry` is the escape hatch.
     scripts/                     ← implementation
     tests/                       ← optional
   recipes/<name>.md              ← frontmatter + body (content component)
-  agents/<name>.md               ← frontmatter + body (instructions) — content component
+  agents/<agent-key>/            ← each a complete agent "brain" tree (directory component)
+    AGENTS.md                    ← frontmatter + body (instructions); the loader / system prompt
+    (brain files…)               ← identity.md, world.md, … — copied to the brain dir on install
   jobs/<name>.yaml               ← scheduled (background) job — config component
   services/<name>/               ← service.yaml + app source
 
@@ -101,7 +103,7 @@ components:
     - path: recipes/plaud-pipeline.md
       version: 3                   # optional integer; round-trips through recipe_versions
   agents:
-    - path: agents/plaud-agent.md
+    - path: agents/plaud-agent     # DIRECTORY containing AGENTS.md (+ brain files)
       version: 1                   # optional integer; round-trips through agent_versions
   jobs:
     - path: jobs/plaud-ingest-crawl.yaml
@@ -158,8 +160,9 @@ install_flags:
 
 **One syntax, two file kinds — no JSON.** Content-bearing components (skill, recipe, agent) are
 **Markdown** (`.md`): YAML frontmatter + a body that becomes the component's content (for an
-agent, the body is its `instructions`). Config-only components (job, service descriptor) are
-**YAML** (`.yaml`). Each
+agent, the body is its `instructions`). A recipe is a single `.md` file; a skill and an agent are
+**directories** carrying a Markdown index (`SKILL.md` / `AGENTS.md`) plus supporting files.
+Config-only components (job, service descriptor) are **YAML** (`.yaml`). Each
 component's fields are fully specified below — **a package is self-describing**; the
 installer maps these to its platform's stores itself, so nothing here defers to an external
 "platform definition."
@@ -221,12 +224,22 @@ version: 3                     # optional positive integer; if set, must equal c
 | `description` | ✅ | required discovery text |
 | `version` | – | optional positive-integer pin; round-trips via `recipe_versions` (D-34) |
 
-### 5.3 Agent — `agents/<name>.md`
-Markdown file: YAML frontmatter for the config fields + a Markdown body that becomes the agent's
+### 5.3 Agent — `agents/<agent-key>/`
+A **directory** (the agent's "brain"), mirroring the skill layout: an `AGENTS.md` index plus any
+number of supporting brain files (`identity.md`, `world.md`, workflows, data, …). `AGENTS.md`
+carries YAML frontmatter for the config fields + a Markdown body that becomes the agent's
 **`instructions`** (its persona / system-prompt text). An empty body leaves `instructions` at the
 DB default.
 
+```
+agents/plaud-agent/
+  AGENTS.md          ← frontmatter + body (instructions)
+  identity.md        ← supporting brain file(s) — any names/subdirs
+  world.md
+```
+
 ```yaml
+# AGENTS.md
 ---
 name: plaud-agent              # canonical identifier — same pattern as every other component
 display_name: Plaud Agent
@@ -246,7 +259,7 @@ recipes: [plaud-pipeline]                      # attached by recipe name
 
 | Field | Req | Meaning / use |
 |-------|-----|---------------|
-| `name` | ✅ | unique agent identifier; ≤50 chars |
+| `name` | ✅ | unique agent identifier (the directory key); ≤50 chars |
 | `display_name` | ✅ | human display name |
 | `version` | – | optional positive-integer pin; round-trips via `agent_versions` (D-34) |
 | `description` | – | discovery text |
@@ -264,6 +277,13 @@ Every frontmatter field is optional except `name`/`display_name`; an omitted fie
 default rather than overwriting an existing value. Agents install after skills and recipes, so the
 bundled components they reference are attachable. Re-installing an agent **syncs** its attachments:
 desired links are added, stale links are removed.
+
+**The brain folder.** The installer registers the agent (the `AGENTS.md` frontmatter + body → the
+agent record) and copies the **whole `agents/<agent-key>/` directory** — `AGENTS.md` included — to a
+configured **brain root**, exactly as a skill's tree copies to the skill root. The manifest is
+deliberately **unaware of that location** (an installer/operator concern). A flat `agents/<name>.md`
+file is **no longer accepted** — agents are always a directory. (Runtime files an agent later writes
+into its own brain are an installer-lifecycle concern, not a manifest field; see §7.)
 
 ### 5.4 Job (scheduled / background) — `jobs/<name>.yaml`
 ```yaml
@@ -374,9 +394,12 @@ compliant installer guarantees:
 
 - **Idempotency** — re-running an install converges to the same state with zero drift.
 - **Clean lifecycle** — uninstall removes everything the install created; reinstall
-  reproduces the original state.
-- **Configurable install locations** — where skill trees land and where registry writes go
-  are operator/installer configuration; the manifest never encodes them.
+  reproduces the original state. (An installer **may** preserve state a component itself wrote
+  *after* install — e.g. an agent's brain runtime files — rather than destroy user data; the CRHQ
+  installer does exactly this, see `integration-reference.md`.)
+- **Configurable install locations** — where skill trees land, where an agent's brain directory
+  lands, and where registry writes go are operator/installer configuration; the manifest never
+  encodes them.
 - **Dry-run** — a preview mode with zero side effects (build-only for services, §5.5).
 - **Prerequisite checks before any write** — halt with an actionable message, not a
   half-installed package.

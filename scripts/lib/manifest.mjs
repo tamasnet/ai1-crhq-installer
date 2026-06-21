@@ -128,11 +128,19 @@ function loadRecipeDef(entry, root) {
 }
 
 function loadAgentDef(entry, root) {
-  const srcFile = join(root, entry.path);
-  if (!existsSync(srcFile)) throw new ManifestError(`Agent not found: ${entry.path}`);
-  // Agents are a content-bearing component (like skills/recipes): YAML frontmatter for the
-  // scalar/list fields + a Markdown body that becomes the agent's `instructions` (D-32).
-  const { meta: a, body } = parseFrontmatter(readFileSync(srcFile, 'utf8'));
+  const srcDir = join(root, entry.path);
+  // Agents are now a DIRECTORY with an AGENTS.md (the agent's "brain"), exactly like a skill's
+  // <key>/SKILL.md (D-50). Clean break (D-50): a flat agents/<name>.md is no longer accepted —
+  // point the author at the directory form.
+  if (entry.path.endsWith('.md') || (existsSync(srcDir) && statSync(srcDir).isFile())) {
+    throw new ManifestError(`Agent '${entry.path}': agents are now a directory with an AGENTS.md — use agents/<key>/ (a folder), not a flat .md file`);
+  }
+  const mdPath = join(srcDir, 'AGENTS.md');
+  if (!existsSync(mdPath)) throw new ManifestError(`Agent missing AGENTS.md: ${entry.path}`);
+  // Content-bearing component (like skills/recipes): YAML frontmatter for the scalar/list fields +
+  // a Markdown body that becomes the agent's `instructions` (D-32). The rest of the directory is the
+  // brain — copied to AGENT_BRAINS_DIR/<key> on install (D-50).
+  const { meta: a, body } = parseFrontmatter(readFileSync(mdPath, 'utf8'));
   // Agents follow the same name/description pattern as every other component type: `name` is the
   // canonical identifier (stored as CRHQ agents.key), `display_name` the human label (stored as
   // agents.name) — D-23.
@@ -150,7 +158,9 @@ function loadAgentDef(entry, root) {
     name: a.name, display_name: a.display_name, description: a.description || '', mode: a.mode || 'cli',
     default_model: a.default_model, icon: a.icon, skills: a.skills || [], recipes: a.recipes || [],
     instructions, system_prompt_path: a.system_prompt_path, capabilities: a.capabilities, provider: a.provider,
-    srcFile, ...(version != null ? { version } : {}),
+    // srcDir = the agent/brain directory (copied to AGENT_BRAINS_DIR/<key> on install); srcFile = its
+    // AGENTS.md (the install log's `source`, mirroring a skill's SKILL.md).
+    srcDir, srcFile: mdPath, ...(version != null ? { version } : {}),
   };
 }
 
