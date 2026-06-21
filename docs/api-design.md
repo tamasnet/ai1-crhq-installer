@@ -528,3 +528,44 @@ integer) → `registerRemote(flags, { now: new Date(), log })` → print the res
 `main().catch` maps `UsageError`→exit 2, `RemoteError`→exit 1, anything else→exit 1 (`fatal:`).
 Tested DB-free in `tests/remote.test.mjs` against an out-of-process stub hub (an in-process server
 would deadlock under the client's `spawnSync`).
+
+## 16. `lib/polaris.mjs` + `scripts/polaris.mjs` — the GitHub Client-Repository client (D-45/D-46)
+
+DB-free: shells out to `git` and reuses `lib/remote.mjs`'s `fetchGithubToken()` for auth. A
+**subcommand** CLI like `remote.mjs`. The Client Repository model is `docs/repo-methodology.md`.
+
+```js
+export class PolarisError extends Error {}     // non-usage failure (existing checkout, git error) → exit 1
+export const DEFAULT_GITHUB_OWNER = 'MyZone-AI';
+
+resolveReposBase()        // → REPOS_BASE_DIR || `${homedir()}/repos`
+resolveOwner(flag)        // → flag || AI1_GITHUB_OWNER || DEFAULT_GITHUB_OWNER
+resolveRepo(flag)         // → flag || satellitePackageName()   (D-43)
+
+resolveInitInputs(flags)  // → { owner, repo, reposBase, dest, remoteUrl }
+// owner/repo charset-guarded ([A-Za-z0-9._-], no bare '.'/'..') → UsageError on violation, so the
+// value can't escape REPOS_BASE_DIR or steer the URL off github.com. dest = reposBase/repo;
+// remoteUrl = https://github.com/<owner>/<repo>.git (clean, tokenless).
+
+gitClone({ remoteUrl, token, dest }, { runGit?, log? })   // → void; throws PolarisError on failure
+// Credential injected via git ENV config (GIT_CONFIG_COUNT/KEY_0/VALUE_0) as a host-scoped
+// http.https://github.com/.extraheader Basic header (x-access-token:<token>) — NOT in URL/argv, NOT
+// persisted to .git/config (D-46). GIT_TERMINAL_PROMPT=0. r.error → "could not run git"; r.status≠0 →
+// "git clone failed (exit N)". token/header never logged. `runGit` injected by tests (default = real git).
+
+runInit(flags, { log?, getToken?, runGit? })   // → { owner, repo, dir, url }
+// 1. resolveInitInputs. 2. mkdir REPOS_BASE_DIR. 3. if dest exists → PolarisError (no --force; BEFORE
+//    the token call, so it fails fast with no network). 4. token = (getToken ?? fetchGithubToken)()
+//    — a missing identity/404 surfaces as RemoteError. 5. gitClone the default branch. `getToken`/
+//    `runGit` injected by tests; url returned is the clean tokenless one (safe to echo).
+```
+
+`scripts/polaris.mjs` control flow: no args / `--help` / `help` → print usage (exit 2 for bare
+no-args, else 0) → dispatch on `argv[0]`; unknown subcommand → message + exit 2. For `init`: parse +
+strict-validate its own flag set (boolean `--json`, value `--owner`/`--repo`; reuses `UsageError`) →
+`runInit(flags, { log })` → print the result (or `--json`). `main().catch` maps `UsageError`→exit 2,
+`PolarisError`/`RemoteError`→exit 1, anything else→exit 1 (`fatal:`). Tested DB-free in
+`tests/polaris.test.mjs`: input-resolution units, `runInit` with injected `getToken`/`runGit`
+(asserting the credential rides git's env config and never argv), a real-git `file://` integration
+clone (clean origin, no persisted header), and CLI spawn tests (usage, strict options, the
+not-registered + existing-checkout failure mappings).

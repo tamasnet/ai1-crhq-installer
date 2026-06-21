@@ -1,12 +1,12 @@
 ---
 name: ai1-satellite-tools
-description: Manage a CRHQ satellite's resources as versioned packages. Install skills, recipes, agents, background jobs, and standalone services (nginx + PM2 web apps) into a satellite from a declarative ai1-package.yaml manifest; sync live satellite state back into a package repo for commit, or with --mirror back up the whole satellite into a package (add new, sync existing, remove what's gone); and act as the satellite's client for the Ai1 Platform Hub (register the satellite, pull config, send heartbeats, fetch a GitHub token, and download registered packages for install). DB-direct via knex, idempotent, and sandbox-testable; the hub client is network-only and DB-free. Use to bulk-install or update a packaged set of CRHQ resources, deploy a service alongside a satellite, build/test such a package, take a restorable backup of the satellite's skills/recipes/agents/jobs, sync satellite edits back to a package repo for commit, or connect a satellite to the hub to receive configuration and packages.
+description: Manage a CRHQ satellite's resources as versioned packages. Install skills, recipes, agents, background jobs, and standalone services (nginx + PM2 web apps) into a satellite from a declarative ai1-package.yaml manifest; sync live satellite state back into a package repo for commit, or with --mirror back up the whole satellite into a package (add new, sync existing, remove what's gone); act as the satellite's client for the Ai1 Platform Hub (register the satellite, pull config, send heartbeats, fetch a GitHub token, and download registered packages for install); and manage the satellite from its GitHub Client Repository (polaris init clones the repo's platform/ + user/ Ai1 Packages). DB-direct via knex, idempotent, and sandbox-testable; the hub and polaris clients are network-only and DB-free. Use to bulk-install or update a packaged set of CRHQ resources, deploy a service alongside a satellite, build/test such a package, take a restorable backup of the satellite's skills/recipes/agents/jobs, sync satellite edits back to a package repo for commit, connect a satellite to the hub to receive configuration and packages, or clone the satellite's GitHub Client Repository to install/sync its platform and user content.
 version: 1
 ---
 
 # Ai1 Satellite Tools
 
-A **DB-direct, manifest-driven** toolkit for managing a CRHQ satellite's resources. Three CLIs:
+A **DB-direct, manifest-driven** toolkit for managing a CRHQ satellite's resources. Four CLIs:
 
 - **`install.mjs`** — deploy a **package** (a versioned bundle of skills, recipes, agents, jobs, and
   services) into a satellite.
@@ -16,6 +16,9 @@ A **DB-direct, manifest-driven** toolkit for managing a CRHQ satellite's resourc
   satellite (add new, sync existing, remove what's gone). Restore = `install.mjs`.
 - **`remote.mjs`** — the satellite's client for the **Ai1 Platform Hub** (register, pull config,
   heartbeat, fetch a GitHub token, download registered packages).
+- **`polaris.mjs`** — manage the satellite from its **GitHub Client Repository** (a `platform/` +
+  `user/` pair of Ai1 Packages). `init` clones that repo; you then `install.mjs` both packages and
+  `sync.mjs --mirror` user edits back.
 
 Idempotent, sandbox-testable, and self-contained except for its CRHQ dependencies
 (`server/db/knex.js`, the database, and nginx/PM2 for services). The remote client is network-only
@@ -140,6 +143,34 @@ Inputs resolve flag → env: `--hub=`/`AI1_HUB_URL`, `--token=`/`AI1_BOOTSTRAP_T
 `SATELLITE_ID`/hostname-minus-`crhq-`. Auth maps cleanly: `401` ⇒ re-register, `403` ⇒ valid token
 but the remote isn't active yet. Every subcommand takes `--json` (machine-readable) and `--help`.
 Signed download URLs and tokens are credentials — never echoed on the `--json` path.
+
+## Polaris — GitHub Client-Repository client
+
+`scripts/polaris.mjs` manages the satellite from its **GitHub Client Repository**: a repo that pairs
+a `platform/` directory (an Ai1 Package fed from the shared platform **parent** repo via git subtree)
+with a `user/` directory (an Ai1 Package of this satellite's own customer/user content). Both are
+installable; the `user/` package is the one `sync.mjs --mirror` pushes live satellite edits back into.
+A **network-only, DB-free** subcommand CLI that shells out to `git` and reuses the hub client's
+GitHub-token resolver. See [`docs/repo-methodology.md`](./docs/repo-methodology.md) for the
+parent–client model. First subcommand: **`init`** (clone).
+
+```bash
+node scripts/polaris.mjs init                                   # clone <owner>/<repo> → ${REPOS_BASE_DIR}/<repo>
+node scripts/polaris.mjs init --owner=MyZone-AI --repo=ai1-foo  # override owner / repo
+node scripts/install.mjs ~/repos/<repo>/platform               # then install the platform package
+node scripts/install.mjs ~/repos/<repo>/user                   # …and the user package
+node scripts/sync.mjs ~/repos/<repo>/user --mirror             # later: push live user edits back out
+```
+
+| Subcommand | Does | Writes |
+|------------|------|--------|
+| `init` | Clones the Client Repository's **default branch** into `${REPOS_BASE_DIR:-~/repos}/<repo>`. Authenticates with the per-remote GitHub token the hub mints (the same one `remote.mjs github-token` resolves), injected via git's env-config so it never lands in argv or `.git/config` — `origin` stays a clean tokenless URL. **Refuses to overwrite** an existing checkout (no `--force`). | clone dir under `${REPOS_BASE_DIR}` |
+
+`init` resolves the GitHub coordinates flag → env → default: **owner** `--owner=` → `AI1_GITHUB_OWNER`
+→ `MyZone-AI`; **repo** `--repo=` → `satellitePackageName()` (e.g. `myzone-tamas` → `ai1-tamas`). The
+satellite must be **registered with the hub first** (the token call needs `id.json`). Takes `--json`
+and `--help`. **Exit codes:** `0` ok · `1` failure (existing checkout / no token / git error) · `2`
+usage. The GitHub token is a credential — never echoed.
 
 ## The package manifest (`ai1-package.yaml`)
 
@@ -310,7 +341,8 @@ ai1-satellite-tools/
 │   ├── install.mjs        # CLI entry — generic manifest runner
 │   ├── sync.mjs           # CLI entry — sync satellite → package repo; --mirror = full backup (reverse of install)
 │   ├── remote.mjs         # CLI entry — Ai1 Platform Hub client (register/get-config/heartbeat/github-token/get-package)
-│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, version-history, run, sync, remote, sandbox,
+│   ├── polaris.mjs        # CLI entry — GitHub Client-Repository client (init = clone)
+│   └── lib/               # db, manifest, parse, fs, log, prereq, preflight, context, filter, install-log, version-history, run, sync, remote, polaris, sandbox,
 │       ├── core/          #   index  +  core/{skill,recipe,agent,job,service}
 │       └── vendor/        #   yaml.mjs — vendored single-file YAML parser (zero npm install)
 ├── examples/bundle/       # complete sample package (every component type)

@@ -45,8 +45,9 @@ ai1-satellite-tools/
 ├── package.json                  # type: module; zero runtime deps
 ├── scripts/
 │   ├── install.mjs               # generic CLI entry: flags → preflight → plan → dispatch
-│   ├── backup.mjs                # reverse-of-install CLI entry (§10)
+│   ├── sync.mjs                  # sync satellite → package repo; --mirror = reverse-of-install backup (§10)
 │   ├── remote.mjs                # Ai1 Platform Hub client CLI — subcommand dispatch (§12)
+│   ├── polaris.mjs               # GitHub Client-Repository client CLI — subcommand dispatch (§13)
 │   └── lib/
 │       ├── index.mjs            # public API barrel — the stable import surface
 │       ├── context.mjs          # createContext: flag parse + env resolve → bound ctx
@@ -62,8 +63,10 @@ ai1-satellite-tools/
 │       ├── install-log.mjs      # ${PACKAGES_DIR}/install.json — record of installed components
 │       ├── version-history.mjs  # component integer version ↔ CRHQ *_versions round-trip (D-34)
 │       ├── run.mjs              # runPlan: ordered dispatch shared by CLI + lifecycle suite
-│       ├── backup.mjs           # reverse-of-install export pipeline (§10)
-│       ├── remote.mjs           # hub client: register (and later subcommands) — DB-free, fetch-based (§12)
+│       ├── sync.mjs            # sync/--mirror export pipeline (§10), reusable as runSync()
+│       ├── identity.mjs        # resolveSatelliteId / satellitePackageName — dependency-free (D-43)
+│       ├── remote.mjs           # hub client: register/get-config/heartbeat/github-token/get-package — DB-free, fetch-based (§12)
+│       ├── polaris.mjs          # Client-Repository client: init (clone) — DB-free, shells out to git (§13)
 │       ├── sandbox.mjs          # --sandbox: provision (LIKE-clone) + seed + redirect + teardown
 │       ├── vendor/yaml.mjs      # the yaml package, bundled (zero `npm install`)
 │       └── core/                # per-type primitives
@@ -132,11 +135,17 @@ remote.mjs <subcommand> [flags]          # Ai1 Platform Hub client — see §12;
     --force                    overwrite an existing id.json (discards the stored token)
     --json / --help
 
+polaris.mjs <subcommand> [flags]         # GitHub Client-Repository client — see §13; DB-free
+  init             clone this satellite's Client Repository into ${REPOS_BASE_DIR}/<repo> (default ~/repos)
+    --owner=<org>              GitHub owner/org (else AI1_GITHUB_OWNER, else MyZone-AI)
+    --repo=<name>              repository name (else satellitePackageName())
+    --json / --help
+
 Option validation (lib/flags.mjs): install and backup reject an unsupported option, or a value flag
 given no value (a bare --type or empty --type=), with a message + usage exit 2 — before any side
 effect. In install, the supported set is the standard flags PLUS the package manifest's declared
 install_flags (forwarded to install_entry); any other option is rejected. --help short-circuits.
-remote applies the same strict validation per-subcommand (its own supported set), reusing UsageError.
+remote and polaris apply the same strict validation per-subcommand (their own supported sets), reusing UsageError.
 ```
 
 ## 6. Configuration
@@ -298,3 +307,37 @@ install/backup split). Decisions: D-36..D-39.
   validation, mirroring §5).
 - **To follow:** config/state poll (`GET /remote/config`, `PUT /remote/state`), management
   instructions, and package download — each a further subcommand using the stored per-remote token.
+
+## 13. Polaris — the GitHub Client-Repository client (`polaris.mjs`)
+
+`polaris.mjs` manages a satellite from its **GitHub Client Repository** — the parent–client model in
+[`repo-methodology.md`](./repo-methodology.md). That repo pairs a `platform/` directory (an Ai1
+Package fed from the shared platform **parent** via git subtree) with a `user/` directory (an Ai1
+Package of this satellite's own customer/user content). polaris is the bridge between that repo and
+the live satellite: `install.mjs <repo>/platform` + `install.mjs <repo>/user` load content in,
+`sync.mjs --mirror <repo>/user` pushes live user edits back out to the `user/` package only.
+
+Like `remote.mjs` it is a **subcommand** CLI and **DB-free** — but instead of `fetch`, it shells out
+to `git`, and it reuses the hub client's `fetchGithubToken()` for auth (no new network code). Module
+`lib/polaris.mjs`, entry `scripts/polaris.mjs`; no sandbox. First subcommand `init` (D-45/D-46):
+
+- **Inputs:** **owner** `--owner=` → `AI1_GITHUB_OWNER` → the `MyZone-AI` default; **repo** `--repo=`
+  → `satellitePackageName()` (D-43). Both charset-guarded (`[A-Za-z0-9._-]`, no bare `.`/`..`) so they
+  can't escape `REPOS_BASE_DIR` or steer the URL off `github.com/<owner>/<repo>`. Clone root =
+  `${REPOS_BASE_DIR:-~/repos}`; dest = `${REPOS_BASE_DIR}/<repo>`; remote = `https://github.com/<owner>/<repo>.git`.
+- **Flow:** ensure `REPOS_BASE_DIR` exists → **refuse if `dest` exists** (no `--force`; checked
+  *before* the token call, so an existing checkout fails fast with no network) → resolve the GitHub
+  token (`fetchGithubToken()`, the same per-remote token `remote.mjs github-token` prints — the
+  satellite must be registered first) → `git clone` the **default branch**.
+- **Credential handling (D-46):** the token is injected via git's **env-based config**
+  (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0`, git ≥ 2.31) as a host-scoped
+  `http.https://github.com/.extraheader` HTTP Basic header — **not** in the URL, **not** in argv. So
+  the token never appears in `ps` and is never persisted to the cloned `.git/config`; `origin` is left
+  as the clean tokenless URL. `GIT_TERMINAL_PROMPT=0` makes a bad/missing token fail fast. The token
+  and header are never logged/echoed (incl. `--json`).
+- **Errors:** `PolarisError` (existing checkout, git failure) and `RemoteError` (token resolution) →
+  exit 1; `UsageError` → exit 2; strict per-subcommand option validation (mirroring §5). Tested
+  DB-free in `tests/polaris.test.mjs` (injected token/git for the wiring + a real-git `file://`
+  integration clone proving the spawn path and clean origin).
+- **To follow:** further verbs (pull/update an existing checkout, push synced `user/` changes, manage
+  the `platform/` subtree) — each a subcommand reusing the same token + git plumbing.

@@ -33,8 +33,8 @@ the live service apply/remove paths are smoke-tested.
   **Skills default to org + `locked`** (`skill_type:'org'`); per-skill `install_type: user` in the manifest entry, or `--install-skills-as-user` (wins), registers them unlocked as `user` skills. Assets stay under `INSTALL_BASE_DIR` either way (D-22).
 
 ## Code map
-`scripts/install.mjs` + `scripts/sync.mjs` + `scripts/remote.mjs` (CLIs) + `scripts/lib/` per `api-design.md`:
-`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, flags, install-log, run, sync, remote, sandbox}.mjs`
+`scripts/install.mjs` + `scripts/sync.mjs` + `scripts/remote.mjs` + `scripts/polaris.mjs` (CLIs) + `scripts/lib/` per `api-design.md`:
+`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, flags, install-log, version-history, run, sync, remote, polaris, identity, sandbox}.mjs`
 + `core/{skill,recipe,agent,job,service}.mjs` + `vendor/yaml.mjs`.
 Install log: `${PACKAGES_DIR:-~/packages}/install.json` (D-24) — updated on real installs/uninstalls only.
 Self-test (no live writes): `node scripts/install.mjs <package> --sandbox --lifecycle`.
@@ -84,6 +84,20 @@ the archive unless `--keep-download`. The extracted dir is a ready `install.mjs 
 is required and `--version` must be a positive integer; a hub `404` = that (name, version) isn't
 registered → exit 1; same 401/403 mapping, DB-free. The signed URL is a credential — never echoed to
 stdout/`--json`. More subcommands (instructions) to follow.
+**Polaris** (D-45/D-46): GitHub Client-Repository client, DB-free, **subcommand** CLI — `node scripts/polaris.mjs <subcommand>`.
+The Client Repository (see `docs/repo-methodology.md`) pairs a `platform/` Ai1 Package (subtree from the
+shared platform parent) with a `user/` Ai1 Package (this satellite's own content); install both with
+`install.mjs`, mirror user edits back with `sync.mjs --mirror <repo>/user`. `init` clones it into
+`${REPOS_BASE_DIR:-~/repos}/<repo>`: owner resolves `--owner=`/`AI1_GITHUB_OWNER`/`MyZone-AI`, repo
+resolves `--repo=`/`satellitePackageName()`; owner/repo are charset-guarded against path/URL escape.
+Clones the **default branch**; **always errors if the dest exists** (no `--force`), checked *before* the
+token call so it fails fast with no network. Auth reuses `lib/remote.mjs`'s `fetchGithubToken()` (the same
+per-remote token `github-token` prints) — so the satellite must be **registered first** — injected via
+git's **env-based config** (`GIT_CONFIG_COUNT`/`KEY_0`/`VALUE_0`, a host-scoped `http.extraheader` Basic
+header) so the token never hits argv (`ps`) or the cloned `.git/config`; `origin` stays a clean tokenless
+URL. The token is a credential — never logged/echoed. `PolarisError`→exit 1, `RemoteError`→exit 1 (token
+resolution), `UsageError`→exit 2. Logic in `lib/polaris.mjs`, entry `scripts/polaris.mjs`; DB-free, so
+tested in `tests/polaris.test.mjs` (injected token/git + a real-git file:// integration clone), no sandbox.
 
 ## Safety & workflow
 - **`git push` only when explicitly asked.** Trunk branch is `main`. Commit only when asked;
