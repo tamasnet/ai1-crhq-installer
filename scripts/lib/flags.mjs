@@ -77,7 +77,7 @@ export function validateFlags(argv, { mode = 'install', declared = [] } = {}) {
   }
 }
 
-const INSTALL_USAGE = `ai1-satellite-tools — install a package of CRHQ resources into a satellite
+const INSTALL_USAGE = `ai1-satellite-tools — install a package of satellite resources
 
 Usage: node scripts/install.mjs [<package>] [options]
 

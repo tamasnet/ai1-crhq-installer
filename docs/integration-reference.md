@@ -1,162 +1,130 @@
-# CRHQ Integration Reference — DB schema & manifest mapping
+# Satellite integration reference
 
-**Authoritative** — the schema below was verified against the live satellite DB
-(`columnInfo()` over all 9 managed tables). The built-in sandbox clones from live (`CREATE TABLE …
-LIKE`), so there is no separate DDL to drift.
+This document maps Ai1 Package components to satellite storage. The installer writes satellite resources directly through knex so sandbox mode can redirect writes to an isolated schema.
 
-Resource writes are **DB-direct via knex** (see `canon-conventions.md` C1, C9). REST is
-read-only here and not used for installs.
+## Database access
 
-## 1. knex accessor
+All DB work goes through `scripts/lib/db.mjs`, which imports the satellite knex accessor at runtime and applies `INSTALL_SCHEMA` as an optional search path. Do not read or modify satellite core application source files; the import path is a runtime dependency only.
 
-```js
-import { getDb } from '/opt/projects/crhq-satellite/server/db/knex.js';  // hardcoded — C1
-const db = getDb();
-// ... await db.destroy() on every exit
-```
-Connection: pg, `DB_HOST` localhost, `DB_PORT` 5433, `DB_USER`/`DB_PASSWORD`/`DB_NAME` from
-`.env`. When `INSTALL_SCHEMA` (legacy `SANDBOX_SCHEMA`) is set, the utility's `getDb()`
-wrapper applies it as the knex `searchPath`.
+`preflight()` verifies DB reachability before install/uninstall work.
 
-## 2. Tables
+## Tables managed
 
-### `skills` — PK `name` (no `id`)
+| Table | Purpose |
+|-------|---------|
+| `skills` | Skill registry rows. |
+| `skill_versions` | Version snapshots for skills. |
+| `recipes` | Recipe content rows. |
+| `recipe_versions` | Version snapshots for recipes. |
+| `agents` | Agent personas/configuration. |
+| `agent_versions` | Version snapshots for agents. |
+| `agent_skills` | Agent-to-skill links. |
+| `agent_recipes` | Agent-to-recipe links. |
+| `background_jobs` | Scheduled script jobs. |
 
-| Column | Type / default | Notes |
-|--------|----------------|-------|
-| `name` | varchar(100) PK | unique key; never `.returning('id')` |
-| `description` | text | parsed from SKILL.md frontmatter |
-| `skill_path` | text **NOT NULL, no default on live** | always set it: **`db://skills/<name>`** (location-independent) |
-| `skill_dir` | text | `${INSTALL_BASE_DIR}/<key>` (absolute; `INSTALL_BASE_DIR` = the skill-parent dir) |
-| `is_global` | bool default false | installers set false |
-| `is_active` | bool default true | |
-| `locked`, `locked_at`, `locked_by` | bool/ts/varchar | PG trigger blocks UPDATE on locked rows → unlock first (C5) |
-| `content` | text | the SKILL.md body (or full md) |
-| `skill_type` | varchar **NOT NULL** default `'system'` | installer default `'org'` + `locked:true`; `install_type: user` / `--install-skills-as-user` → `'user'` + unlocked |
-| `created_at`, `updated_at` | timestamptz | set `new Date()` |
-| `search_embedding` | vector(1536) | leave null; backfilled elsewhere |
-| `hub_version`, `hub_synced_at`, `org_skill_id`, `org_version` | | hub/org sync — leave default |
+The sandbox creates an isolated schema and clones these table shapes from live with `CREATE TABLE ... LIKE ... INCLUDING ALL`.
 
-Insert minimal set: `name, description, content, skill_type, locked, skill_path, skill_dir,
-is_active:true, is_global:false, created_at, updated_at`.
+## Component mappings
 
-### `skill_versions` / `recipe_versions` / `agent_versions` — version history (D-34)
+### Skill
 
-Parallel tables, one per versioned DB type. `PK id serial`; FK to the main row **ON DELETE
-CASCADE**; `UNIQUE (<fk>, version_num)`; the live version is `MAX(version_num)`.
+Source: `skills/<key>/SKILL.md` and sibling files.
 
-| Table | FK column | body column |
-|-------|-----------|-------------|
-| `skill_versions` | `skill_name` → `skills(name)` | `content` |
-| `recipe_versions` | `recipe_id` (**uuid**) → `recipes(id)` | `content` |
-| `agent_versions` | `agent_key` → `agents(key)` | `instructions` |
+Install behavior:
 
-Common columns: `version_num` (int), `name`, `description`, `<body>`, `changed_by`,
-`change_summary`, `created_at`.
+- Parse frontmatter `name`, `version`, `description`; body becomes `skills.content`.
+- Upsert `skills` by `name`.
+- Set `skill_path` to `db://skills/<name>`.
+- Set `skill_dir` to `INSTALL_BASE_DIR/<name>`.
+- Default to `skill_type='org'` and `locked=true`.
+- Use `skill_type='user'` and `locked=false` for `install_type: user` or `--install-skills-as-user`.
+- Copy the entire skill directory to `skill_dir`.
+- Record `skill_versions.version_num` from the component version.
 
-**The installer reads and writes these (D-34):** on install it upserts a row at
-`version_num = <the package's integer component version>` (`changed_by='ai1-installer'`,
-`change_summary='Installed from <pkg> v<pkgver>'`, `onConflict(<fk>,version_num).merge` →
-idempotent); on backup it reads `MAX(version_num)` as the pin. So the package's integer version
-and CRHQ's number stay in lockstep. The FK cascade drops history on a real uninstall; the FK-less
-`--sandbox` deletes it explicitly for parity. The `hub_version`/`org_version`/`source_version`
-columns on the main tables are hub/org sync metadata and are left untouched.
+Uninstall removes the DB row, version history, and skill directory unless `--respect-locks` skips a locked row.
 
-### `recipes` — PK `id uuid` (gen_random_uuid), `name` UNIQUE
+### Recipe
 
-| Column | Type / default | Notes |
-|--------|----------------|-------|
-| `id` | uuid PK default gen_random_uuid() | **omit on insert** — auto-generated |
-| `name` | varchar(200) **NOT NULL UNIQUE** | lookup key |
-| `description` | text NOT NULL default `''` | never pass `null` (empty string is fine) |
-| `content` | text NOT NULL default `''` | never pass `null` |
-| `is_active` | bool default true | |
-| `created_by` | varchar | optional |
-| `created_at`, `updated_at` | timestamptz | |
-| `search_embedding` | vector(1536) | leave null |
+Source: `recipes/<name>.md`.
 
-> ⚠️ `agent_recipes.recipe_id` is this **uuid**. To link, look up
-> `db('recipes').where('name', X).select('id').first()` and use `.id`.
+Install behavior:
 
-### `agents` — PK `key`
+- Parse frontmatter `name`, `description`, optional `version`; body becomes `recipes.content`.
+- Upsert `recipes` by `name`; UUID primary key is database-generated.
+- Set `is_active=true`.
+- Record `recipe_versions.version_num` when a version is declared.
 
-| Column | Type / default | Notes |
-|--------|----------------|-------|
-| `key` | varchar(50) PK | e.g. `dev-handoff-agent` |
-| `name` | varchar NOT NULL | |
-| `description` | text | |
-| `icon` | varchar NOT NULL default `'🤖'` | |
-| `default_model` | varchar(20) default `'sonnet'` | **column is `default_model`, not `model`** |
-| `mode` | varchar(10) default `'cli'` | installers set `'cli'` |
-| `system_prompt_path` | text | optional |
-| `is_active` | bool default true | |
-| `capabilities` | jsonb default `'[]'` | |
-| `instructions` | text | optional |
-| `is_system` | bool default false | |
-| `provider` | varchar NOT NULL default `'claude'` | |
-| `cloned_from`, `hub_version` | | leave default |
-| `created_at`, `updated_at` | timestamptz | |
+Agent recipe links resolve recipe names to recipe UUIDs.
 
-Insert sets `key, name, description, mode, is_active, created_at, updated_at` plus any of
-`default_model, icon, provider, system_prompt_path, capabilities, instructions` the manifest
-carries (the agent `.md` frontmatter + body, D-32); anything omitted rides its DB default.
-`capabilities` is `jsonb` — `JSON.stringify` it on write. The update path re-applies the same set
-(only when one drifted) and otherwise preserves the row.
+### Agent
 
-### `agent_skills` — PK `(agent_key, skill_name)`
+Source: `agents/<key>/AGENTS.md` and sibling brain files.
 
-- Columns: `agent_key`, `skill_name` (varchar(100)), `added_at`, `source` (NOT NULL default `'hub'`).
-- FKs: `agents(key) ON DELETE CASCADE`, `skills(name) ON UPDATE CASCADE ON DELETE CASCADE`.
-- **Only attach skills that exist and are active.** Insert with
-  `.onConflict(['agent_key','skill_name']).ignore()`.
+Install behavior:
 
-### `agent_recipes` — PK `(agent_key, recipe_id)`
+- `AGENTS.md` frontmatter `name` maps to `agents.key`.
+- `display_name` maps to `agents.name`.
+- Body maps to `agents.instructions` when non-empty.
+- Optional frontmatter maps to `description`, `mode`, `default_model`, `icon`, `provider`, `system_prompt_path`, and `capabilities`.
+- Upsert `agents` by `key`, with `is_active=true`.
+- Sync `agent_skills` to the declared installed active skill names.
+- Sync `agent_recipes` to declared recipe names resolved to UUIDs.
+- Copy the whole agent directory to `AGENT_BRAINS_DIR/<key>` without deleting existing runtime files.
+- Record `agent_versions.version_num` when a version is declared.
 
-- Columns: `agent_key`, `recipe_id` (**uuid** FK `recipes(id)`), `added_at`.
-- Resolve `recipe_id` from name first; `.onConflict(['agent_key','recipe_id']).ignore()`.
+Uninstall removes the agent row, joins, and version history. It preserves the brain folder because it may contain runtime state.
 
-### `background_jobs` — PK `id varchar(50)`
+### Job
 
-Key columns installers set: `id` (`job-<ts>-<rand>`), `name` (varchar(255)), `description`,
-`schedule` (varchar(100), cron), `timezone` (varchar(50)), `job_type` (`'script'`),
-`script_path` (`'node'`), `script_args` (`<abs script> <args>`), `timeout_minutes`,
-`max_concurrent`, `skip_if_running`, `enabled`, `run_count` (0), `created_at`, `updated_at`.
-Optional: `agent`, `task`, `recipe_id`, `model`, `is_system`, `background_sessions`,
-`is_toggleable`.
+Source: `jobs/<name>.yaml`.
 
-## 3. Manifest → CRHQ mapping (how each component type installs)
+Install behavior:
 
-The component semantics live in `package-manifest-spec.md` §5; this is how the CRHQ
-implementation realizes them.
+- Required fields: `name`, `schedule`, `script`.
+- Schedule aliases expand to cron before storage.
+- Insert/update `background_jobs` by `name`.
+- New rows get an id shaped like `job-<timestamp>-<random>`.
+- Store `job_type='script'`, `script_path='node'`, and `script_args=<INSTALL_BASE_DIR>/<script> [args]`.
+- Set timeout/concurrency/enabled fields from YAML or defaults.
+- Validate `requires` by checking required installed skill directories before writes.
 
-| Component | Install |
-|-----------|---------|
-| **Skill** | upsert `skills` by `name` — `skill_path='db://skills/<name>'`, `skill_dir='${INSTALL_BASE_DIR}/<key>'`, `skill_type`/`locked` from `install_type` (default `'org'`+locked), `is_active:true` — copy the skill tree to `${INSTALL_BASE_DIR}/<key>/`, then record `skill_versions.version_num` = the integer version (D-34) |
-| **Recipe** | upsert `recipes` by `name` (uuid auto; frontmatter → `description`, body → `content`, `is_active:true`); if a version is declared, record `recipe_versions.version_num` (D-34) |
-| **Agent** | a **directory** component `agents/<key>/` (D-50). upsert `agents` by `key` — the manifest's `name` maps to `agents.key`, `display_name` to `agents.name` (D-23); the `AGENTS.md` body maps to `instructions`, frontmatter to `default_model`/`icon`/`provider`/`system_prompt_path`/`capabilities` (jsonb) when present, else DB defaults (D-32). Copy the **whole brain tree** (AGENTS.md included) to `${AGENT_BRAINS_DIR}/<key>/` — the agent-side analog of a skill's `${INSTALL_BASE_DIR}/<key>` (`copyTree` is byte-idempotent and never deletes, so agent-written runtime files survive a reinstall). **Sync** `agent_skills` and `agent_recipes` (add desired, drop stale, `onConflict` ignore); recipe names resolve to `recipes.id` uuids. If a version is declared, record `agent_versions.version_num` (D-34). **Uninstall** removes the row + joins + version history but **preserves the brain folder** (it may hold runtime state). **Backup/`--mirror`** regenerates `AGENTS.md` from the row and re-captures the brain tree, excluding `AGENTS.md` (regenerated) and the runtime dirs in `AGENT_BRAIN_EXCLUDE` (default `activity,_backup,.scratch,memory`) |
-| **Job** | upsert `background_jobs` by `name` — `id='job-<ts>-<rand>'` on insert, `job_type:'script'`, `script_path:'node'`, `script_args=join(INSTALL_BASE_DIR, script)[+ ' ' + args]`, `run_count:0`; schedule aliases expand to cron |
-| **Service** | not DB-resident — copy source to `/opt/projects/user/<name>/`, write `.env` (chmod 640), `ecosystem.config.cjs`, and the nginx vhost (127.0.0.1 binding; `{SATELLITE_ID}-<subdomain>.crhq.ai`); allocate the port; PM2 start + save; nginx reload. Never touches the `crhq-satellite` PM2 process. |
+Jobs are unversioned.
 
-Varchar length limits worth validating at manifest load: `skills.name(100)`,
-`agents.key(50)`, `agents.mode(10)`, `agents.default_model(20)`, `recipes.name(200)`,
-`agent_skills.skill_name(100)`, `background_jobs.id(50)/name(255)/schedule(100)/timezone(50)`.
+### Service
 
-## 4. REST (read-only context; NOT used for installs)
+Source: `services/<name>/service.yaml` and service source tree.
 
-- `GET /api/skills`, `GET /api/skills/<name>`, `GET /api/skills/search?q=` — discovery.
-- `GET /api/agents` → `{agents:[{key,name,icon,description,mode,model,skills[]...}]}`.
-- `GET /api/recipes` → `{recipes:[...]}`.
-- content-api.js / `PUT /api/settings/skills/<name>` exist but are **not** the install path
-  (can't be sandbox-intercepted). Listed only so we don't accidentally reach for them.
+Install behavior:
 
-## 5. Re-verifying the schema (safe, read-only)
+- Required fields: `name`, `version`, `start`.
+- Optional `build` runs before apply, including during dry-run.
+- Copy source to `/opt/projects/user/<name>`.
+- Write `.env`, `ecosystem.config.cjs`, and nginx vhost.
+- Bind nginx upstream to `127.0.0.1:<port>`.
+- Start/save PM2 and reload nginx.
 
-```bash
-node --input-type=module -e "import('/opt/projects/crhq-satellite/server/db/knex.js').then(async m=>{const db=m.getDb();for(const t of ['skills','skill_versions','recipes','recipe_versions','agents','agent_versions','agent_skills','agent_recipes','background_jobs']){console.log('\n#',t);console.log(Object.keys(await db(t).columnInfo()).join(', '));}await db.destroy();})"
-```
-If the live schema ever differs from this doc, update this doc — it is the build contract's
-schema half.
+Services are not DB-resident and are not exported by `sync.mjs`.
 
-**Sandbox privilege (confirmed):** the DB user can `CREATE SCHEMA` / `DROP … CASCADE`, and a
-schema-qualified table is fully isolated — which is what makes the built-in `--sandbox`
-DB-isolation mechanism viable on a satellite.
+## Version history
+
+`version-history.mjs` stores positive integer component versions in satellite version tables:
+
+| Component | Table | Entity key | Body snapshot column |
+|-----------|-------|------------|----------------------|
+| Skill | `skill_versions` | `skill_name` | `content` |
+| Recipe | `recipe_versions` | `recipe_id` | `content` |
+| Agent | `agent_versions` | `agent_key` | `instructions` |
+
+On install, the declared component version is upserted. On sync/mirror, the current live version is read as `MAX(version_num)` and written back to the package. A missing skill version history exports as version `1` with a warning. A lower declared version warns but still records.
+
+## Sync/export mappings
+
+`sync.mjs` uses the reverse of the install mappings:
+
+- Skills: regenerate `SKILL.md` from the DB row and copy installed skill files except the old `SKILL.md`.
+- Recipes: regenerate the Markdown file from the DB row.
+- Agents: regenerate `AGENTS.md` from the DB row/joins and copy brain files except excluded runtime dirs.
+- Jobs: export only script/node jobs whose script path is under `INSTALL_BASE_DIR`.
+- Services: not exported.
+
+Unrepresentable components are reported as skipped rather than exported incorrectly.

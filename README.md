@@ -1,51 +1,76 @@
 # ai1-satellite-tools
 
-A DB-direct, manifest-driven CRHQ skill for managing a satellite's resources. Four CLIs:
+`ai1-satellite-tools` is a satellite management skill. It installs, updates, removes, backs up, and restores satellite resources from a declarative Ai1 Package (`ai1-package.yaml`).
 
-- **install** — deploy a versioned **package** (skills, recipes, agents, background jobs, standalone
-  nginx + PM2 services) into a CRHQ satellite.
-- **sync** — export live satellite state back into a package repo. Default syncs the components the
-  manifest lists (Git workflow); **`--mirror`** backs up the whole satellite (add new, sync existing,
-  remove what's gone). Restore = `install`.
-- **remote** — the satellite's client for the **Ai1 Platform Hub** (register, pull config, heartbeat,
-  fetch a GitHub token, download registered packages).
-- **polaris** — manage the satellite from its **GitHub Client Repository** (a `platform/` + `user/`
-  pair of Ai1 Packages). `init` clones the repo; then `install` both packages and `sync --mirror` the
-  user content back. See [`docs/repo-methodology.md`](./docs/repo-methodology.md).
+It manages:
 
-Idempotent and sandbox-testable; the remote and polaris clients are network-only and DB-free.
+- Satellite **skills**, **recipes**, **agents**, and **background jobs** directly through the satellite database.
+- Standalone **services** as nginx + PM2 web apps under `/opt/projects/user/<service>`.
+- Satellite backups by syncing live DB/filesystem state back into an installable package.
+- Ai1 Platform Hub registration/config/package download workflows.
+- GitHub Client Repository checkout flows for `platform/` + `user/` packages.
 
-See [`SKILL.md`](./SKILL.md) for full usage and [`docs/`](./docs/) for the design + manifest spec.
+The package has zero runtime npm dependencies. YAML parsing is vendored; the satellite supplies Node, knex, Postgres access, nginx, and PM2.
 
 ## Quick start
 
-No `npm install` needed — zero runtime dependencies (`yaml` is vendored; knex/pg come from the satellite).
+```bash
+# Validate a package without touching live state
+node scripts/install.mjs examples/bundle --sandbox --lifecycle
+node scripts/install.mjs examples/bundle --dry-run
+
+# Install, inspect, and remove a package
+node scripts/install.mjs <package-dir>
+node scripts/install.mjs <package-dir> --status
+node scripts/install.mjs <package-dir> --uninstall
+
+# Back up the live satellite into an installable package
+node scripts/sync.mjs <repo-or-package-dir> --mirror
+
+# Register with the Ai1 Platform Hub and fetch packages
+node scripts/remote.mjs register --hub=<hub-url> --token=<bootstrap-token>
+node scripts/remote.mjs get-package --name=<package> --version=<version>
+
+# Clone the satellite's GitHub Client Repository
+node scripts/polaris.mjs init
+```
+
+## CLIs
+
+| CLI | Purpose |
+|-----|---------|
+| `scripts/install.mjs` | Install, uninstall, status-check, dry-run, sandbox-test, and list local package availability. |
+| `scripts/sync.mjs` | Export live satellite components back into a package; `--mirror` makes the package a restorable backup. |
+| `scripts/remote.mjs` | Register with the Ai1 Platform Hub, pull config, heartbeat, resolve GitHub tokens, and download registered packages. |
+| `scripts/polaris.mjs` | Clone the satellite's GitHub Client Repository using the hub-provided GitHub token. |
+
+## Repository layout
+
+```text
+ai1-satellite-tools/
+├── SKILL.md                 # agent-facing skill instructions
+├── README.md                # quick project overview
+├── build-installer.sh       # builds a self-extracting hub-registration installer
+├── docs/                    # current v1.0 references
+├── examples/bundle/         # complete package example with every component type
+├── scripts/                 # CLIs and shared library
+└── tests/                   # sandbox-backed and DB-free tests
+```
+
+## Documentation
+
+Start with:
+
+- [`SKILL.md`](./SKILL.md) — canonical operational instructions for agents.
+- [`docs/package-manifest-spec.md`](./docs/package-manifest-spec.md) — package format.
+- [`docs/architecture.md`](./docs/architecture.md) — how the CLIs and library fit together.
+- [`docs/testing-and-sandbox.md`](./docs/testing-and-sandbox.md) — validation workflow.
+
+## Validation
 
 ```bash
-node scripts/install.mjs examples/bundle --sandbox --lifecycle   # isolated full-lifecycle self-test
-node scripts/install.mjs examples/bundle --dry-run               # preview, zero writes
-node scripts/sync.mjs ./my-backup --mirror                       # backup: mirror the whole satellite into ./my-backup
-node scripts/remote.mjs register --hub=<url> --token=<tok>       # enroll this satellite with the Ai1 Platform Hub
-node scripts/polaris.mjs init                                    # clone this satellite's GitHub Client Repository
+npm test
+node scripts/install.mjs examples/bundle --sandbox --lifecycle
 ```
 
-## Status
-
-v1 — complete and live. ESM core library, all component types (skill / recipe / agent / job /
-service), the generic runner (`install.mjs` — preflight + `install_entry`), the built-in `--sandbox`,
-a `sync` command (satellite → package repo; `--mirror` is the full backup, reverse of install), and a
-`remote` client for the Ai1 Platform Hub. Verified via `npm test` (sandbox-backed); the live service
-apply/remove paths are smoke-tested. Deployed and registered as a skill on the satellite.
-
-## Layout
-
-```
-ai1-satellite-tools/
-├── SKILL.md          # skill instructions (canonical doc)
-├── README.md         # this file
-├── build-installer.sh # build a self-extracting installer of this package
-├── scripts/          # install.mjs / sync.mjs / remote.mjs / polaris.mjs (CLIs) + lib/ (core library)
-├── examples/bundle/  # complete sample package
-├── tests/            # sandbox-backed test suites
-└── docs/             # design + manifest spec
-```
+Services are skipped in sandbox mode because nginx and PM2 are live host resources. Use `--dry-run` first for any service package; a real service install mutates nginx, PM2, and `/opt/projects/user/<service>`.

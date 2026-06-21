@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ai1-satellite-tools — remote runner (CLI entry): the satellite's client for the Ai1 Platform Hub.
-// Registers a CRHQ satellite as a *remote*, and (in later subcommands) will receive/send config and
+// Registers a satellite as a *remote*, and (in later subcommands) will receive/send config and
 // state, take management instructions, and download packages for installation. Network-only and
 // DB-free; the resulting identity is written to ${REMOTE_BASE_DIR}/id.json (default ~/remote).
 //
@@ -14,8 +14,8 @@
 // register options:
 //   --hub=<url>                hub base URL (else AI1_HUB_URL / HUB_URL)
 //   --token=<tok>              shared enrollment secret (else AI1_BOOTSTRAP_TOKEN / BOOTSTRAP_TOKEN)
-//   --remote-id=<id>           identity to claim (else SATELLITE_ID, else hostname minus 'crhq-')
-//   --remote-type=<type>       remote type reported at enrollment (default 'crhq-satellite')
+//   --remote-id=<id>           identity to claim (else SATELLITE_ID, else normalized hostname)
+//   --remote-type=<type>       remote type reported at enrollment (default satellite type)
 //   --schema-version=<n>       schema version reported at enrollment (default 1)
 //   --force                    overwrite an existing id.json (discards the stored token)
 //   --json                     machine-readable result output
@@ -28,7 +28,7 @@ import { makeLogger } from './lib/log.mjs';
 import { UsageError } from './lib/flags.mjs';
 import { registerRemote, pullRemoteConfig, reportRemoteState, fetchGithubToken, fetchRemotePackage, RemoteError } from './lib/remote.mjs';
 
-const USAGE = `ai1-satellite-tools — register a CRHQ satellite with the Ai1 Platform Hub
+const USAGE = `ai1-satellite-tools — register a satellite with the Ai1 Platform Hub
 
 Usage: node scripts/remote.mjs <subcommand> [options]
 
@@ -51,8 +51,8 @@ Subcommands:
 register options:
   --hub=<url>                hub base URL (else AI1_HUB_URL / HUB_URL env)
   --token=<tok>              shared enrollment secret (else AI1_BOOTSTRAP_TOKEN / BOOTSTRAP_TOKEN)
-  --remote-id=<id>           identity to claim (else SATELLITE_ID env, else hostname minus 'crhq-')
-  --remote-type=<type>       remote type reported at enrollment (default 'crhq-satellite')
+  --remote-id=<id>           identity to claim (else SATELLITE_ID env, else normalized hostname)
+  --remote-type=<type>       remote type reported at enrollment (default satellite type)
   --schema-version=<n>       schema version reported at enrollment (default 1)
   --force                    overwrite an existing id.json (discards the stored token)
   --json                     machine-readable result output

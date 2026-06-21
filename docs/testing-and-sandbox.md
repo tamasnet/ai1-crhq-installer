@@ -1,92 +1,81 @@
-# Testing & Sandbox
+# Testing and sandbox
 
-How `ai1-satellite-tools` is tested without touching the live satellite. Sandboxing is
-**built into the utility** (`--sandbox`) — no external harness. The payoff of the library
-design (all DB through `getDb()`, all fs through `INSTALL_BASE_DIR`): the utility points
-those two knobs at an isolated schema + temp dir and runs a real install into there.
+`ai1-satellite-tools` includes a built-in sandbox for validating DB-backed installs without touching live satellite resources.
 
-## Built-in `--sandbox`
+## Sandbox mode
 
 ```bash
-# Install a package into a throwaway isolated schema + temp dir, report, tear down:
 node scripts/install.mjs examples/bundle --sandbox
-
-# Keep the sandbox (schema + temp dir) for inspection:
 node scripts/install.mjs examples/bundle --sandbox --keep
-
-# Full lifecycle assertion suite in the sandbox:
 node scripts/install.mjs examples/bundle --sandbox --lifecycle
 ```
 
-What `--sandbox` does (`lib/sandbox.mjs`):
-1. **Provision** — `CREATE SCHEMA sandbox_<ts>`; for each managed table
-   `CREATE TABLE sandbox_<ts>.<t> (LIKE public.<t> INCLUDING ALL)` — clones the **live**
-   schema, so the sandbox can never drift from production. The managed set includes the three
-   version tables (`skill_versions`/`recipe_versions`/`agent_versions`) so the install/backup
-   version round-trip (D-34) works in the sandbox; since `LIKE` omits FKs, `remove*` deletes
-   version rows explicitly to mirror the real-DB `ON DELETE CASCADE`. Seeds prerequisite `skills`
-   rows copied from live so agent-attach + dependency checks mirror the real satellite.
-2. **Redirect** — set `INSTALL_SCHEMA=sandbox_<ts>` + `INSTALL_BASE_DIR=<tempdir>` +
-   `PACKAGES_DIR=<tempdir>`. All DB writes land in the sandbox schema; all fs writes
-   (including the install log) under the temp dirs.
-3. **Run** — the requested op (install by default).
-4. **Teardown** — `DROP SCHEMA … CASCADE` + rm tempdir, unless `--keep`.
+Sandbox mode:
 
-## `--lifecycle` assertion suite
+1. Creates an isolated Postgres schema named `sandbox_<timestamp>`.
+2. Clones the managed satellite table structures from live into that schema.
+3. Seeds prerequisite skill rows needed for realistic agent/job checks.
+4. Redirects `INSTALL_SCHEMA`, `INSTALL_BASE_DIR`, `AGENT_BRAINS_DIR`, and `PACKAGES_DIR` to isolated locations.
+5. Runs the requested install/status/uninstall workflow.
+6. Drops the schema and removes temp dirs unless `--keep` is set.
 
-With `--sandbox --lifecycle`, the utility runs and asserts:
+Services are skipped in sandbox mode because nginx and PM2 are live host resources.
 
-| Phase | Assert |
+## Lifecycle assertions
+
+`--sandbox --lifecycle` runs a full assertion suite against the package:
+
+| Phase | Checks |
 |-------|--------|
-| Fresh install | completes; skills have content; recipes/agents/jobs created; agent joins populated |
-| Status | runs clean |
-| Idempotency | second install → **zero** state drift |
-| Uninstall | completes; schema left clean (rows + joins + jobs gone) |
-| Reinstall | reproduces the original state |
+| Fresh install | Creates rows/files and links agents to available skills/recipes. |
+| Status | Reports current state without writes. |
+| Idempotency | A second install produces no state drift. |
+| Uninstall | Removes managed DB rows/files; agent brain folders remain preserved. |
+| Reinstall | Recreates the same managed state. |
 
-Exit non-zero if any phase fails; `--json` emits a machine-readable verdict.
+A lifecycle failure exits non-zero. `--json` emits machine-readable phase results.
 
-## Pre-flight: `--dry-run`
-
-`--dry-run` makes **zero** writes (DB/fs; build-only for services) and prints the plan with
-"would …" lines. This is the fast pre-flight check — run it on every change:
+## Dry-run
 
 ```bash
-node scripts/install.mjs examples/bundle --dry-run
+node scripts/install.mjs <package> --dry-run
+node scripts/sync.mjs <package-dir> --dry-run
+node scripts/sync.mjs <package-dir> --mirror --dry-run
 ```
 
-## Test suite (`npm test`)
+Dry-run performs validation and planning with zero DB or package filesystem writes. Service build commands still run during install dry-run so build failures surface before a live deploy.
 
-Sandbox-backed suites, one per area (a reachable satellite DB is required):
+## Test suite
 
-| Suite | Covers |
-|-------|--------|
-| `tests/skill-recipe.test.mjs` | skill row fields, org+locked default + `install_type`/`--install-skills-as-user` overrides, asset copy + idempotency, C5 lock handling both ways, dry-run zero-write, removal, recipe lifecycle, version-history round-trip (D-34: `*_versions` row at `version_num`=package version, bump/downgrade-warn/`MAX`-is-current, remove clears history), negatives (missing SKILL.md, version pin mismatch, non-integer version, invalid `install_type`) |
-| `tests/agent.test.mjs` | minimal-row + DB defaults, recipe name→uuid resolution, attach filtering (missing/inactive skipped), stale-link sync both directions, clean removal of row + joins |
-| `tests/job.test.mjs` | id minting + canon columns, `script_args` under `INSTALL_BASE_DIR`, schedule aliases + raw cron, stable id across re-runs, C12 `requires` → `PrereqError` |
-| `tests/runner.test.mjs` | preflight pass/fail, `install_entry` flag forwarding across all modes (incl. a declared package flag), multi-valued `--type` |
-| `tests/service.test.mjs` | template renderers (127.0.0.1 binding, TLS, white-label branch, secrets excluded), `nextFreePort`, dry-run no-write, sandbox-skip, secret hygiene |
-| `tests/filter.test.mjs` | `--include`/`--exclude` matcher semantics (exact vs regex, compose with `--type`, zero-match exit 0, invalid regex exit 2) |
-| `tests/options.test.mjs` | CLI option validation (D-30) for both entries: `--help` usage/exit 0, unsupported option + value-flag-without-value → exit 2, backup's "not supported by backup" (and `--dry-run` accepted, D-31), undeclared package flag rejected; `--list-installed` (D-33) standalone table/`--json`/empty-log/`--help` listing — **DB-free** |
-| `tests/install-log.test.mjs` | install.json bookkeeping (D-24): flat entry shape (incl. `package`/`package_version`), ALREADY date preservation, dry-run/status no-write, partial + full uninstall removal, ownership transfer (newer package version + different package name → no duplicate), partial-upgrade mixed `package_version`s, corrupt-log recovery, `sortInstalled`/`formatInstalledList` rendering (D-33), `PACKAGES_DIR` override — **DB-free** |
-| `tests/identity.test.mjs` | `resolveSatelliteId` / `satellitePackageName` heuristic (D-43): `SATELLITE_ID`/hostname source, `myzone-` strip, `ai1-` ensure — **DB-free** |
-| `tests/sync.test.mjs` | sync + `--mirror` (D-25..D-29, D-31, D-34, D-41..D-44): dumpYaml round-trips, scope + skip rules, component reconstruction vs DB rows, integer version = `MAX(*_versions.version_num)` (+ no-history → pinned 1), reconcile (add/sync/remove) in place, fidelity vs `--normalize`, package-version bump only on change, `synced` vs `unchanged` verdicts (D-44), user-skill-only auto-add (D-42), bootstrap naming (D-43), `--type`/`--include` filters, dry-run (full reporting, zero fs writes) |
-| `tests/remote.test.mjs` | hub client (D-36..D-40) against an out-of-process stub hub: register (201/401/409, clobber guard), get-config (200/304 ETag-conditional/401/403), heartbeat (state report + actions cache), github-token (raw stdout/404/401/403), get-package (signed-URL resolve → download → extract; 404/401/403; token never echoed) — **DB-free** |
-| `tests/polaris.test.mjs` | Client-Repository client (D-45/D-46): input resolution (owner/repo flag→env→default precedence, `REPOS_BASE_DIR`, charset/traversal guard), `runInit` with injected `getToken`/`runGit` (clones, returns summary, credential rides git's **env config** not argv, existing-dest/no-token/git-fail paths), a real-git `file://` integration clone (clean tokenless origin, no persisted header), CLI spawn tests (usage/exit codes, strict options, not-registered + existing-checkout mappings) — **DB-free** |
+Run the full suite:
 
-Each suite provisions its own sandbox; several also run a scoped `--sandbox --lifecycle`.
+```bash
+npm test
+```
 
-> Note: `LIKE` doesn't clone the skills lock **trigger**, so the suite validates the
-> installer's lock *logic*, not the DB trigger itself.
+Coverage summary:
 
-## Notes & boundaries
+| Suite | Coverage |
+|-------|----------|
+| `skill-recipe.test.mjs` | Skill/recipe install, uninstall, lock handling, versions, dry-run, validation failures. |
+| `agent.test.mjs` | Agent rows, config fields, skill/recipe joins, brain directory handling, removal. |
+| `job.test.mjs` | Job schedule aliases, script args, prereqs, idempotency, removal. |
+| `service.test.mjs` | Service artifact rendering, port selection, dry-run, sandbox skip, secret placement. |
+| `runner.test.mjs` | Preflight, install entry forwarding, component type selection. |
+| `filter.test.mjs` | Include/exclude matching and invalid regex handling. |
+| `options.test.mjs` | Strict option validation and installed/available list modes. |
+| `install-log.test.mjs` | Install log shape, ownership transfer, mirror reconciliation, formatting. |
+| `list-available.test.mjs` | Package store scanning and status classification. |
+| `sync.test.mjs` | Plain sync, mirror backup, manifest reconciliation, version handling, filters, dry-run. |
+| `remote.test.mjs` | Hub client protocol against a stub server. |
+| `polaris.test.mjs` | GitHub Client Repository clone helper and token handling. |
+| `identity.test.mjs` | Satellite id and package name resolution. |
 
-- **Services aren't sandbox-covered** (no nginx/PM2 model) — `--sandbox` skips them
-  entirely. The live apply/remove paths are verified by an explicit, authorized,
-  non-sandbox smoke test (`--type=services` install + uninstall of the sample service).
-- The sandbox **seeds** prerequisite skills from live; if a package's agent references a
-  skill not present on the satellite, attach is skipped (by design) — keep agents' skills
-  within the installed/seeded set or have the package install them first.
-- `LIKE INCLUDING ALL` **omits foreign keys**; they are deliberately not re-created —
-  guarded join inserts + explicit join cleanup make them unnecessary for the lifecycle
-  assertions.
+## Service validation boundary
+
+Sandbox tests do not apply nginx or PM2 changes. Before a real service install:
+
+1. Run `node scripts/install.mjs <package> --dry-run`.
+2. Inspect the service's `service.yaml`, build command, and environment values.
+3. Confirm the intended service name is not the satellite core service name.
+4. Install only on the satellite where the service should become live.

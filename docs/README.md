@@ -1,50 +1,32 @@
-# ai1-satellite-tools — Documentation
+# ai1-satellite-tools documentation
 
-Design and reference docs for the `ai1-satellite-tools` skill: a **DB-direct,
-sandbox-testable** installer that deploys a versioned package of resources into a CRHQ
-satellite from a declarative `ai1-package.yaml` manifest.
+Current v1.0 reference for `ai1-satellite-tools`, a satellite management skill that installs Ai1 Packages, syncs live components back into packages, talks to the Ai1 Platform Hub, and clones GitHub Client Repositories.
 
-| Resource | Store | Sandbox-testable? |
-|----------|-------|-------------------|
-| Skill | `skills` table + `INSTALL_BASE_DIR/<key>/` | ✅ |
-| Recipe | `recipes` table (uuid PK) | ✅ |
-| Agent | `agents` + `agent_skills` + `agent_recipes` | ✅ |
-| Job | `background_jobs` table | ✅ |
-| Service | nginx vhost + PM2 | ❌ (build-only dry-run; skipped in sandbox) |
+## Start here
 
-For usage, start at the repo root: `SKILL.md` (canonical usage) and `README.md`
-(quick start). `examples/bundle/` is a complete runnable sample package.
+| Document | Purpose |
+|----------|---------|
+| [`../SKILL.md`](../SKILL.md) | Canonical agent/operator usage instructions. |
+| [`package-manifest-spec.md`](./package-manifest-spec.md) | Ai1 Package layout and `ai1-package.yaml` schema. |
+| [`architecture.md`](./architecture.md) | CLI/library structure, install/sync flows, storage model, safety boundaries. |
+| [`integration-reference.md`](./integration-reference.md) | satellite DB/file/service mappings used by the installer. |
+| [`testing-and-sandbox.md`](./testing-and-sandbox.md) | Sandbox lifecycle and test suite coverage. |
+| [`repo-methodology.md`](./repo-methodology.md) | GitHub Client Repository model used by `polaris.mjs`. |
 
-## The documents
+## Resource coverage
 
-| Doc | Purpose |
-|-----|---------|
-| [`package-manifest-spec.md`](./package-manifest-spec.md) | **The package manifest format** (`ai1-package.yaml`, v1.0) — the installer's input contract (platform-independent) |
-| [`architecture.md`](./architecture.md) | Product shape (CLI + library), module layout, control flow, CLI surface, configuration, services, safety boundaries, backup (§10), the hub client (§12) |
-| [`api-design.md`](./api-design.md) | **Module reference** — signatures, def shapes, `createContext`, primitives, `runPlan`, `lib/sandbox.mjs`, exit codes, `lib/backup.mjs` (§14), `lib/remote.mjs` (§15) |
-| [`canon-conventions.md`](./canon-conventions.md) | **The build contract** — conventions C1–C13 + the sandbox contract |
-| [`integration-reference.md`](./integration-reference.md) | **Authoritative DB schema** (9 managed tables, live-verified) + the manifest → CRHQ storage mapping |
-| [`testing-and-sandbox.md`](./testing-and-sandbox.md) | The built-in `--sandbox` / `--lifecycle` testing model + the `npm test` suites |
-| [`decisions.md`](./decisions.md) | Settled design decisions (D-* / OQ-* / C-* rationale index, referenced from code comments) |
+| Resource | Store | Managed by | Sandbox behavior |
+|----------|-------|------------|------------------|
+| Skill | `skills` + skill files under `INSTALL_BASE_DIR/<key>` | `install.mjs`, `sync.mjs` | Full DB/filesystem coverage |
+| Recipe | `recipes` | `install.mjs`, `sync.mjs` | Full DB coverage |
+| Agent | `agents`, joins, brain files under `AGENT_BRAINS_DIR/<key>` | `install.mjs`, `sync.mjs` | Full DB/filesystem coverage |
+| Job | `background_jobs` | `install.mjs`, `sync.mjs` | Full DB coverage |
+| Service | `/opt/projects/user/<name>`, nginx, PM2 | `install.mjs` only | Skipped in sandbox; dry-run builds but does not apply |
 
-## Cornerstones
+## Validation commands
 
-- **DB-direct via knex** — REST can't be sandbox-intercepted. ESM `.mjs` with the hardcoded
-  knex import (C1); all skill fs ops under `INSTALL_BASE_DIR` (C2).
-- **Manifest in, lifecycle owned by the utility** — packages declare `components`; an
-  optional `install_entry` covers only what the utility can't infer.
-- **Built-in `--sandbox`** — self-provisions an isolated schema cloned from live + a temp
-  dir, installs there, tears down; `--lifecycle` runs the full assertion suite. No external
-  harness.
-- **Configurable** — `INSTALL_BASE_DIR` (skill-parent dir) + `INSTALL_SCHEMA`
-  (knex `searchPath`); vendor-neutral names, with legacy `CRHQ_BASE_DIR`/`SANDBOX_SCHEMA` fallbacks.
-- **Zero npm runtime deps** — `yaml` vendored; knex/pg resolve from the satellite. The hub
-  client (`remote.mjs`) keeps this even off-DB by using Node's built-in `fetch`.
-- **Three CLIs** — `install.mjs` (deploy a package), `backup.mjs` (the reverse — export the
-  satellite to a package), and `remote.mjs` (the satellite's **Ai1 Platform Hub** client; DB-free,
-  subcommand-based, starting with `register` — see `architecture.md` §12).
-
-## Hard rule
-
-Do **not** install onto the live satellite unless explicitly told. All testing is
-sandbox-only (isolated schema + temp dir via `--sandbox`).
+```bash
+npm test
+node scripts/install.mjs examples/bundle --sandbox --lifecycle
+node scripts/install.mjs examples/bundle --dry-run
+```

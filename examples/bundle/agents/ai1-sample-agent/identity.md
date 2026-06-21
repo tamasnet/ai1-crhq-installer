@@ -1,11 +1,8 @@
 # Identity — Ai1 Sample Agent
 
-A sample **brain file** that ships alongside `AGENTS.md` in the agent's directory. It demonstrates
-the directory-form agent: an agent is no longer a single `.md` file but a folder whose whole tree is
-copied to `AGENT_BRAINS_DIR/<key>/` on install (D-50).
+This sample brain file ships alongside `AGENTS.md` in the agent directory and demonstrates that an agent can carry supporting files in addition to its loader/config document.
 
-- **Role:** reference persona for exercising the installer's agent path.
-- **Ownership:** none — this agent is illustrative only.
-- **Brain layout:** `AGENTS.md` (the loader / system prompt → `agents.instructions`) plus any number
-  of supporting files like this one. Runtime/transient dirs (`activity/`, `_backup/`, …) an agent
-  writes here are preserved on uninstall and excluded from a `sync --mirror` capture.
+- **Role:** reference persona for exercising the installer agent path.
+- **Ownership:** illustrative only.
+- **Brain layout:** `AGENTS.md` supplies the DB row and instructions; sibling files like this one are copied to `AGENT_BRAINS_DIR/<key>/` on install.
+- **Runtime state:** directories such as `activity/`, `_backup/`, `.scratch/`, and `memory/` are preserved on uninstall and excluded from mirror captures by default.
