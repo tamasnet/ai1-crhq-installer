@@ -21,6 +21,7 @@ import { closeDb } from '../scripts/lib/db.mjs';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
 import { runPlan } from '../scripts/lib/run.mjs';
 import { runSync } from '../scripts/lib/sync.mjs';
+import { updateInstallLogForMirror, readInstallLog, installLogPath } from '../scripts/lib/install-log.mjs';
 import { recordVersion } from '../scripts/lib/version-history.mjs';
 import { dumpYaml, loadYaml, parseFrontmatter } from '../scripts/lib/parse.mjs';
 import { makeCtx, harness } from './_helpers.mjs';
@@ -283,6 +284,51 @@ try {
     assert.equal(counts.unchanged, 3, 'the unchanged components are tallied as unchanged, not synced');
     assert.equal(readManifest(dirG).version, 3, 'version unchanged on a clean run');
     assert.equal(readFileSync(join(dirG, 'ai1-package.yaml'), 'utf8'), before, 'manifest byte-identical');
+  });
+
+  // ── install.json reconciliation (D-48): the delta runSync returns, applied like the CLI does ────
+  console.log('\nmirror → install.json:');
+
+  await test('mirror records its components in install.json, attributed to the mirror package', async () => {
+    const packagesDir = pkgDir('pkgs-log');                 // isolated install log dir
+    const ictx = makeCtx({ PACKAGES_DIR: packagesDir });
+    const { manifest, installLog } = await runSync(ictx, { packageDir: pkgDir('pkg-log'), mode: 'mirror' });
+
+    const p = updateInstallLogForMirror(ictx, {
+      installed: installLog.installed, removed: installLog.removed,
+      pkg: { name: manifest.name, version: manifest.version },
+    });
+    assert.equal(p, installLogPath(packagesDir), 'install.json written');
+
+    const byKey = Object.fromEntries(readInstallLog(packagesDir).map((c) => [`${c.type}:${c.name}`, c]));
+    const sk = byKey['skill:ai1-sample-skill'];
+    assert.ok(sk, 'the live skill is recorded as installed');
+    assert.equal(sk.package, 'ai1-tamas', 'attributed to the mirror package');
+    assert.equal(sk.package_version, String(manifest.version));
+    assert.equal(sk.version, 2, 'component version reflects the live row');
+    assert.equal(sk.source, 'skills/ai1-sample-skill/SKILL.md', 'skill source path');
+    assert.ok(byKey['agent:ai1-sample-agent'], 'the live agent is recorded');
+    assert.equal(byKey['agent:ai1-sample-agent'].source, 'agents/ai1-sample-agent.md');
+    assert.ok(!byKey['job:ai1-sample-job'], 'a component absent from the satellite is not recorded');
+  });
+
+  await test('re-mirroring after a component is deleted drops it from install.json', async () => {
+    const packagesDir = pkgDir('pkgs-log2');
+    const ictx = makeCtx({ PACKAGES_DIR: packagesDir });
+    const dirL = pkgDir('pkg-log2');
+
+    // First mirror: recipe present → recorded.
+    let res = await runSync(ictx, { packageDir: dirL, mode: 'mirror' });
+    updateInstallLogForMirror(ictx, { installed: res.installLog.installed, removed: res.installLog.removed, pkg: { name: res.manifest.name, version: res.manifest.version } });
+    assert.ok(readInstallLog(packagesDir).some((c) => c.type === 'recipe' && c.name === 'ai1-sample-recipe'), 'recipe recorded initially');
+
+    // Delete the recipe from the satellite and re-mirror the SAME package.
+    await db('recipes').where({ name: 'ai1-sample-recipe' }).del();
+    res = await runSync(ictx, { packageDir: dirL, mode: 'mirror' });
+    assert.deepEqual(res.installLog.removed, [{ type: 'recipe', name: 'ai1-sample-recipe' }], 'delta reports the removal');
+    updateInstallLogForMirror(ictx, { installed: res.installLog.installed, removed: res.installLog.removed, pkg: { name: res.manifest.name, version: res.manifest.version } });
+
+    assert.ok(!readInstallLog(packagesDir).some((c) => c.name === 'ai1-sample-recipe'), 'recipe dropped from install.json');
   });
 } finally {
   if (prevSatelliteId === undefined) delete process.env.SATELLITE_ID; else process.env.SATELLITE_ID = prevSatelliteId;

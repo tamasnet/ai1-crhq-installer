@@ -8,9 +8,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isInsideGitRepo } from '../scripts/lib/sync.mjs';
 import { harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -163,5 +164,55 @@ await test('--mirror with an unknown --type → message + exit 2', () => {
   assert.equal(r.status, 2);
   assert.match(out(r), /unknown component type/);
 });
+
+// ── sync.mjs git-safety guard (D-49) ────────────────────────────────────────────────────────────
+// sync edits the package in place and leans on git to recover a bad run, so a non-git destination is
+// refused unless --force. The guard runs before any DB work; the post-guard "No ai1-package.yaml"
+// error (a real empty-dir run) is what proves the guard PASSED without reaching a DB query.
+console.log('\nsync.mjs git-safety guard:');
+
+const gitTmps = [];
+const mkTmp = (init) => {
+  const d = mkdtempSync(join(tmpdir(), 'ai1-gitguard-'));
+  gitTmps.push(d);
+  if (init) spawnSync('git', ['init', '-q', d], { encoding: 'utf8' });
+  return d;
+};
+
+await test('isInsideGitRepo: false outside a repo, true inside (and for a not-yet-created subdir)', () => {
+  const plain = mkTmp(false);
+  const repo = mkTmp(true);
+  assert.equal(isInsideGitRepo(plain), false, 'a plain temp dir is not a repo');
+  assert.equal(isInsideGitRepo(repo), true, 'a git-init dir is a repo');
+  assert.equal(isInsideGitRepo(join(repo, 'does', 'not', 'exist')), true, 'a new subdir inside a repo counts (ancestor walk)');
+  assert.equal(isInsideGitRepo(join(plain, 'sub')), false, 'a new subdir of a non-repo does not');
+});
+
+await test('sync on a non-git destination → error + exit 1 (before any DB work)', () => {
+  const r = sync([mkTmp(false)]);
+  assert.equal(r.status, 1);
+  assert.match(out(r), /not inside a git repository/);
+  assert.match(out(r), /--force/);
+});
+
+await test('--force proceeds past the guard (then hits the normal no-manifest error, not the git one)', () => {
+  const r = sync([mkTmp(false), '--force']);
+  assert.equal(r.status, 1);
+  assert.doesNotMatch(out(r), /not inside a git repository/, 'git guard bypassed by --force');
+  assert.match(out(r), /No ai1-package\.yaml/, 'fell through to the normal empty-dir error');
+});
+
+await test('a real git repo is accepted without --force', () => {
+  const r = sync([mkTmp(true)]);
+  assert.equal(r.status, 1);
+  assert.doesNotMatch(out(r), /not inside a git repository/, 'a git repo passes the guard');
+  assert.match(out(r), /No ai1-package\.yaml/);
+});
+
+await test('--force is listed in --help', () => {
+  assert.match(sync(['--help']).stdout, /--force/);
+});
+
+for (const d of gitTmps) rmSync(d, { recursive: true, force: true });
 
 done();

@@ -19,7 +19,7 @@ export class UsageError extends Error {
 export const FLAG_SPEC = {
   install: {
     bool: ['--dry-run', '--status', '--uninstall', '--respect-locks', '--install-skills-as-user',
-      '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed'],
+      '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available'],
     value: ['--type', '--include', '--exclude'],
   },
 };
@@ -89,6 +89,10 @@ Options:
   --uninstall                remove the package's components (reverse order)
   --list-installed           print the install log (sorted by type, then name) and exit; standalone
                              — needs no package; combine with --json for the raw sorted array
+  --list-available           scan the local package stores (PACKAGE_BASE_DIR + REPOS_BASE_DIR),
+                             cross-reference the install log, and print every component with a STATUS
+                             (available | installed | missing) + where its package lives, then exit;
+                             standalone — needs no package or DB; combine with --json for the rows array
   --respect-locks            skip locked skills instead of auto-unlocking them
   --install-skills-as-user   register all skills as unlocked user skills (default: org, locked)
   --type=<types>             restrict to component types: skills,recipes,agents,jobs,services

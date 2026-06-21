@@ -47,6 +47,7 @@ node scripts/install.mjs <package>                        # real install (writes
 node scripts/install.mjs <package> --status              # report per-component state
 node scripts/install.mjs <package> --uninstall           # remove (reverse order)
 node scripts/install.mjs --list-installed                # list what's recorded in the install log
+node scripts/install.mjs --list-available                # scan local package stores + show each component's status
 ```
 
 `<package>` is a directory containing an `ai1-package.yaml` (or a path to the file itself; defaults
@@ -93,11 +94,25 @@ skill stays unlocked) for a faithful restore; `--normalize` ships the locked `or
 integer `version` is incremented by 1 **only when the run actually changed package content** (a no-op
 run leaves it alone); a freshly bootstrapped package starts at `1`.
 
+**`--mirror` also reconciles the install log** (`${PACKAGES_DIR:-~/packages}/install.json`) so it
+reflects the live satellite for **exactly the components this mirror carries**: each one it added or
+synced is recorded as installed (its slot attributed to the mirror package), and each one it removed
+(gone from the satellite) is dropped. Components this run didn't touch — out-of-scope entries, other
+packages' components — are left alone. So a mirror immediately followed by `install.mjs --list-available`
+shows those components as `installed`. Bookkeeping only: a log write failure warns, never fails the
+mirror; `--dry-run` reports the intended change and writes nothing (D-48).
+
+**Git-safety guard.** sync edits the package **in place** and relies on git to recover a bad run, so
+it **refuses a `<package-dir>` that isn't inside a git repository** (both modes, including `--dry-run`)
+— `git init` there, point at a checkout, or pass **`--force`** to proceed anyway. A not-yet-created
+bootstrap dir inside a repo (e.g. `<repo>/user`) counts as git-safe (D-49).
+
 Both modes are **live and read-only against the DB**. `--dry-run` previews everything with zero
 writes. A component is only reported **`synced`** when the run actually changed it (a byte written, or
 a version / `install_type` pin moved); an export that produced no change is **`unchanged`** (silent
 per-line, so repeated runs are quiet). `--json` emits `{ ok, mode, package, version, counts, results }`
-where `counts` tallies `added / synced / unchanged / removed / skipped / failed`.
+where `counts` tallies `added / synced / unchanged / removed / skipped / failed` (plus, for `--mirror`,
+`installLog`: the install.json path written, or `null`).
 
 | Type | Source of truth | Files written |
 |------|----------------|---------------|
@@ -242,6 +257,7 @@ Full field reference: [`docs/package-manifest-spec.md` §5](./docs/package-manif
 | `--status` | Report per-component install state. |
 | `--uninstall` | Remove components in reverse order. |
 | `--list-installed` | Print the install log (`${PACKAGES_DIR}/install.json`) as a table sorted by type then name, and exit. Standalone — needs no `<package>`, DB, or sandbox; add `--json` for the raw sorted array. |
+| `--list-available` | Scan the two local package stores — `${PACKAGE_BASE_DIR:-~/packages}` (get-package extracts here) and `${REPOS_BASE_DIR:-~/repos}` (polaris clones Client Repos here) — enumerate every component each package declares, cross-reference the install log, and print a table with a `STATUS` (`available` \| `installed` \| `missing`), the providing `PACKAGE`, and its concise `LOCATION`, then exit. A component found at **multiple versions** across packages lists as **one row per version** (the install log marks the installed version); same-version copies from different packages merge into one row that lists every source `LOCATION`. Standalone like `--list-installed` (no `<package>`, DB, or sandbox); add `--json` for the rows array. |
 | `--respect-locks` | Skip locked skills instead of auto-unlocking them. |
 | `--install-skills-as-user` | Register **all** skills as unlocked `user` skills (overrides the org default and any per-skill `install_type`). |
 | `--type=<types>` | Process only the listed types — one or more of `skills`/`recipes`/`agents`/`jobs`/`services`, comma-separated and/or the flag repeated (e.g. `--type=skills,recipes`). |

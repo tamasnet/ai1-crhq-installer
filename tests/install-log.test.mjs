@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'no
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
-import { updateInstallLog, readInstallLog, installLogPath, resolvePackagesDir, sortInstalled, formatInstalledList } from '../scripts/lib/install-log.mjs';
+import { updateInstallLog, updateInstallLogForMirror, readInstallLog, installLogPath, resolvePackagesDir, sortInstalled, formatInstalledList } from '../scripts/lib/install-log.mjs';
 import { makeLogger, VERDICT } from '../scripts/lib/log.mjs';
 import { harness } from './_helpers.mjs';
 
@@ -171,9 +171,87 @@ try {
     ]);
     assert.match(out, /Installed components \(2\):/);
     assert.match(out, /TYPE\s+NAME\s+VERSION\s+FROM/);
-    assert.match(out, /skill\s+my-skill\s+v2\s+bundle@0\.1\.0/, 'integer component version rendered as v2');
+    assert.match(out, /skill\s+my-skill\s+2\s+bundle@0\.1\.0/, 'integer component version rendered bare');
     assert.match(out, /job\s+nightly\s+—\s+bundle@0\.1\.0/, 'no component version → —');
     assert.ok(out.indexOf('my-skill') < out.indexOf('nightly'), 'skill (type rank 0) before job');
+  });
+
+  // ── updateInstallLogForMirror (D-48): sync --mirror reconciles install.json ──────────────────
+
+  await test('mirror: upserts included components (attributed to the mirror pkg), drops removed ones', () => {
+    const dir = freshDir();
+    // Pre-existing log: a skill from another package + a recipe the mirror will drop.
+    writeFileSync(installLogPath(dir), JSON.stringify([
+      { type: 'skill', name: 'sk', version: 1, package: 'vendor-pkg', package_version: '7', source: 'skills/sk/SKILL.md', installed_at: '2020-01-01T00:00:00Z' },
+      { type: 'recipe', name: 'gone', package: 'vendor-pkg', package_version: '7', installed_at: '2020-01-01T00:00:00Z' },
+    ]));
+    const ctx = { DRY_RUN: false, PACKAGES_DIR: dir, log: makeLogger({}) };
+    const p = updateInstallLogForMirror(ctx, {
+      installed: [
+        { type: 'skill', name: 'sk', version: 2, source: 'skills/sk/SKILL.md' },   // ownership transfers to mirror
+        { type: 'agent', name: 'ag', source: 'agents/ag.md' },                      // brand-new slot
+      ],
+      removed: [{ type: 'recipe', name: 'gone' }],
+      pkg: { name: 'ai1-tamas', version: 3 },
+    });
+    assert.equal(p, installLogPath(dir));
+    const log = readInstallLog(dir);
+    assert.equal(log.length, 2, 'recipe removed; skill + agent remain');
+
+    const sk = log.find((c) => c.type === 'skill' && c.name === 'sk');
+    assert.equal(sk.package, 'ai1-tamas', 'ownership transferred to the mirror package');
+    assert.equal(sk.package_version, '3');
+    assert.equal(sk.version, 2, 'component version reflects the mirror');
+    assert.equal(sk.installed_at, '2020-01-01T00:00:00Z', 'existing install date preserved (already live)');
+
+    const ag = log.find((c) => c.type === 'agent' && c.name === 'ag');
+    assert.equal(ag.package, 'ai1-tamas');
+    assert.ok(ag.installed_at, 'a fresh slot gets an install date');
+    assert.ok(!ag.version, 'no version → omitted');
+
+    assert.ok(!log.some((c) => c.name === 'gone'), 'removed component dropped from the log');
+  });
+
+  await test('mirror: leaves untouched components (other packages) alone', () => {
+    const dir = freshDir();
+    writeFileSync(installLogPath(dir), JSON.stringify([
+      { type: 'skill', name: 'other', version: 5, package: 'unrelated', package_version: '9', installed_at: '2021-01-01T00:00:00Z' },
+    ]));
+    const ctx = { DRY_RUN: false, PACKAGES_DIR: dir, log: makeLogger({}) };
+    updateInstallLogForMirror(ctx, {
+      installed: [{ type: 'skill', name: 'mine', version: 1, source: 'skills/mine/SKILL.md' }],
+      removed: [], pkg: { name: 'ai1-tamas', version: 1 },
+    });
+    const log = readInstallLog(dir);
+    const other = log.find((c) => c.name === 'other');
+    assert.equal(other.package, 'unrelated', 'a component this mirror does not carry is untouched');
+    assert.equal(other.package_version, '9');
+    assert.ok(log.some((c) => c.name === 'mine'), 'the mirrored component is recorded');
+  });
+
+  await test('mirror: dry-run writes nothing; no-op run leaves the file byte-identical', () => {
+    const dir = freshDir();
+    const ctx = (over) => ({ DRY_RUN: false, PACKAGES_DIR: dir, log: makeLogger({}), ...over });
+    // dry-run → null, no file
+    assert.equal(updateInstallLogForMirror(ctx({ DRY_RUN: true }), {
+      installed: [{ type: 'skill', name: 's', version: 1 }], pkg: { name: 'p', version: 1 },
+    }), null);
+    assert.ok(!existsSync(installLogPath(dir)), 'dry-run wrote nothing');
+    // real write
+    const p = updateInstallLogForMirror(ctx(), { installed: [{ type: 'skill', name: 's', version: 1 }], pkg: { name: 'p', version: 1 } });
+    assert.equal(p, installLogPath(dir));
+    const snapshot = readFileSync(installLogPath(dir), 'utf8');
+    // identical mirror again → write-if-changed returns null, file untouched
+    assert.equal(updateInstallLogForMirror(ctx(), { installed: [{ type: 'skill', name: 's', version: 1 }], pkg: { name: 'p', version: 1 } }), null);
+    assert.equal(readFileSync(installLogPath(dir), 'utf8'), snapshot, 'no-op mirror leaves install.json byte-identical');
+  });
+
+  await test('mirror: empty delta or missing pkg → null (nothing to do)', () => {
+    const dir = freshDir();
+    const ctx = { DRY_RUN: false, PACKAGES_DIR: dir, log: makeLogger({}) };
+    assert.equal(updateInstallLogForMirror(ctx, { installed: [], removed: [], pkg: { name: 'p', version: 1 } }), null);
+    assert.equal(updateInstallLogForMirror(ctx, { installed: [{ type: 'skill', name: 's' }] }), null, 'no pkg → null');
+    assert.ok(!existsSync(installLogPath(dir)));
   });
 
   await test('PACKAGES_DIR env override + ~/packages default', () => {

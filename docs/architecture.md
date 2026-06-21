@@ -61,6 +61,7 @@ ai1-satellite-tools/
 │       ├── filter.mjs           # --include/--exclude name matcher
 │       ├── flags.mjs            # supported-option contract: validateFlags + --help usage (dependency-free)
 │       ├── install-log.mjs      # ${PACKAGES_DIR}/install.json — record of installed components
+│       ├── list-available.mjs   # --list-available: scan local package stores + join the install log (§5)
 │       ├── version-history.mjs  # component integer version ↔ CRHQ *_versions round-trip (D-34)
 │       ├── run.mjs              # runPlan: ordered dispatch shared by CLI + lifecycle suite
 │       ├── sync.mjs            # sync/--mirror export pipeline (§10), reusable as runSync()
@@ -113,6 +114,9 @@ install.mjs [<package>] [flags]          # <package> = dir with ai1-package.yaml
   --include=<pat>  process only components whose name matches <pat> (regex; metachar-free = exact ^pat$)
   --exclude=<pat>  skip components whose name matches <pat> (applied after --include)
   --json           machine-readable result report
+  --list-installed  print the install log (sorted; +--json for the array) and exit — standalone, DB-free
+  --list-available  scan PACKAGE_BASE_DIR + REPOS_BASE_DIR, join the install log, print every component
+                    with STATUS (available|installed|missing) + its package LOCATION; exit — standalone, DB-free
   --sandbox        run into a throwaway isolated schema + temp dir (self-contained)
     --keep         preserve the sandbox (schema + temp dir) for inspection
     --lifecycle    run install→status→idempotency→uninstall→reinstall assertions
@@ -171,8 +175,10 @@ relative to its package root). One slot per component mirrors the DB's one-row-p
 so re-installing a component — from a newer version of the same package or from a different
 package — transfers ownership by overwriting that slot; duplicates can't occur and a partial
 upgrade shows as mixed `package_version`s across a package's components. Dry-run and status
-never touch it; uninstalling deletes the entry. Bookkeeping only — a log write failure warns,
-it doesn't fail the install.
+never touch it; uninstalling deletes the entry. **`sync.mjs --mirror` also reconciles it** (D-48):
+for the components a mirror carries it upserts installed slots (attributed to the mirror package) and
+drops removed ones, leaving untouched components alone. Bookkeeping only — a log write failure warns,
+it doesn't fail the install or the mirror.
 
 **Version round-trip (D-34):** component `version`s are positive integers. On install,
 `lib/version-history.mjs` records the integer as the component's CRHQ `version_num`
@@ -238,7 +244,10 @@ fs, not nginx/PM2). Never run PM2 against `crhq-satellite`.
 > destination as the `<package-dir>` positional (no `BACKUP_BASE_DIR`/`--name`), **reconciles in
 > place** (add new / sync existing / remove gone — git-recoverable, no stage→swap), preserves skill
 > `install_type` unless `--normalize`, and bumps an integer package `version` only on a
-> content-changing run. Read `backup.mjs` below as `sync.mjs --mirror`.
+> content-changing run. It also **reconciles `${PACKAGES_DIR}/install.json`** to the live satellite
+> for the components it carries — installed slots upserted (attributed to the mirror package), removed
+> ones dropped (D-48). Both sync modes **refuse a `<package-dir>` not inside a git repository** (the
+> in-place recovery net) unless `--force` (D-49). Read `backup.mjs` below as `sync.mjs --mirror`.
 
 `sync.mjs --mirror` reads the satellite's CRHQ-resident components from the DB and writes them back
 out as an **installable package** in the same `ai1-package.yaml` manifest format, under

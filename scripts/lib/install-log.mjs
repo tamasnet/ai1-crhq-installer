@@ -15,7 +15,9 @@ import { join, relative } from 'path';
 import { homedir } from 'os';
 import { VERDICT } from './log.mjs';
 
-const COMPONENT_TYPES = ['skill', 'recipe', 'agent', 'job', 'service'];
+// Canonical component types in install order (singular form, as stored in the log). Exported so the
+// availability view (list-available.mjs) shares one source of truth for type ranking.
+export const COMPONENT_TYPES = ['skill', 'recipe', 'agent', 'job', 'service'];
 
 export function resolvePackagesDir() {
   return process.env.PACKAGES_DIR || join(homedir(), 'packages');
@@ -55,7 +57,7 @@ export function formatInstalledList(entries) {
   const rows = sortInstalled(entries).map((r) => ({
     type: r.type,
     name: String(r.name),
-    version: r.version != null ? `v${r.version}` : '—',
+    version: r.version != null ? String(r.version) : '—',
     from: `${r.package ?? '?'}@${r.package_version ?? '?'}`,
   }));
   const head = { type: 'TYPE', name: 'NAME', version: 'VERSION', from: 'FROM' };
@@ -115,5 +117,63 @@ export function updateInstallLog(ctx, meta, plan, packageRoot) {
   mkdirSync(packagesDir, { recursive: true });
   const p = installLogPath(packagesDir);
   writeFileSync(p, `${JSON.stringify([...byKey.values()], null, 2)}\n`);
+  return p;
+}
+
+// Apply a finished `sync --mirror` run to the install log (D-48) so it reflects the live satellite
+// for the components THIS mirror package now carries — and ONLY those. A mirror exports live
+// components out of the satellite into the package, so each component it included (added/synced/
+// unchanged) UPSERTS its slot, attributed to the mirror package: ownership transfers in place under
+// the same one-slot-per-`type:name` rule a real install from this package would follow (D-24). Each
+// component the mirror REMOVED (gone from the satellite) drops its slot. Components this run did not
+// touch — out-of-scope entries, other packages' components — are left exactly as they were. No-op in
+// dry-run or when there's nothing to apply; write-if-changed, so a no-op mirror never rewrites the
+// file. Bookkeeping only — the CLI treats a throw as a warning, never a failure. Returns the log path
+// when it actually wrote, else null.
+//
+//   applied.installed: [{ type, name, version?, source? }]  — present in the package after the run
+//   applied.removed:   [{ type, name }]                       — dropped (gone from the satellite)
+//   applied.pkg:       { name, version }                      — the mirror package, for provenance
+export function updateInstallLogForMirror(ctx, { installed = [], removed = [], pkg } = {}) {
+  if (ctx.DRY_RUN) return null;
+  if (!pkg || (!installed.length && !removed.length)) return null;
+
+  const packagesDir = ctx.PACKAGES_DIR || resolvePackagesDir();
+  let entries;
+  try {
+    entries = readInstallLog(packagesDir);
+  } catch (e) {
+    ctx.log?.warn?.(`install log unreadable (${e.message}) — starting a fresh one`);
+    entries = [];
+  }
+
+  const keyOf = (c) => `${c.type}:${c.name}`;
+  const byKey = new Map(entries.map((c) => [keyOf(c), c]));
+  const now = new Date().toISOString();
+
+  for (const c of removed) byKey.delete(keyOf(c));
+
+  for (const c of installed) {
+    const prior = byKey.get(keyOf(c));
+    byKey.set(keyOf(c), {
+      type: c.type,
+      name: c.name,
+      ...(c.version != null ? { version: c.version } : {}),
+      package: pkg.name,
+      package_version: String(pkg.version),
+      ...(c.source ? { source: c.source } : {}),
+      // The component was already live (the mirror captured it) — keep its original install date.
+      installed_at: prior?.installed_at ?? now,
+    });
+  }
+
+  const out = `${JSON.stringify([...byKey.values()], null, 2)}\n`;
+  const p = installLogPath(packagesDir);
+  let prev = null;
+  try { prev = readFileSync(p, 'utf8'); } catch { /* absent → write below */ }
+  if (prev === out) return null;            // unchanged → don't rewrite (a no-op mirror stays a no-op)
+
+  mkdirSync(packagesDir, { recursive: true });
+  writeFileSync(p, out);
   return p;
 }

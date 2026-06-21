@@ -10,7 +10,7 @@ import { existsSync } from 'fs';
 import { spawnSync } from 'child_process';
 import {
   createContext, loadManifest, runPlan, preflight, sandbox, closeDb, updateInstallLog,
-  readInstallLog, sortInstalled, formatInstalledList,
+  readInstallLog, sortInstalled, formatInstalledList, buildAvailableReport, formatAvailableList,
   validateFlags, usage, wantsHelp, declaredFlagNames, UsageError,
   ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
 } from './lib/index.mjs';
@@ -26,6 +26,9 @@ if (wantsHelp(argv)) { console.log(usage('install')); process.exit(0); }
 // --list-installed is a standalone, read-only report of ${PACKAGES_DIR}/install.json — no manifest,
 // DB, or sandbox. Like --help, it short-circuits before any of that work.
 if (has(argv, '--list-installed')) { listInstalled(argv); }
+// --list-available is the same kind of standalone read-only report, one level wider: it scans the
+// local package stores and joins them against the install log. Also no manifest, DB, or sandbox.
+if (has(argv, '--list-available')) { listAvailable(argv); }
 
 let sb = null;
 try {
@@ -107,6 +110,20 @@ function listInstalled(rawArgv) {
     process.exit(0);
   } catch (e) {
     console.error(`❌ install log unreadable: ${e.message}`);
+    process.exit(2);
+  }
+}
+
+// Scan the local package stores (PACKAGE_BASE_DIR + REPOS_BASE_DIR), cross-reference the install
+// log, and print the availability table — or the raw rows array under --json. Read-only; like
+// --list-installed it short-circuits before manifest/DB/sandbox. Exits 0; never returns.
+function listAvailable(rawArgv) {
+  try {
+    const report = buildAvailableReport();
+    console.log(has(rawArgv, '--json') ? JSON.stringify(report.rows, null, 2) : formatAvailableList(report));
+    process.exit(0);
+  } catch (e) {
+    console.error(`❌ could not list available components: ${e.message}`);
     process.exit(2);
   }
 }

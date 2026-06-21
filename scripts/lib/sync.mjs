@@ -22,13 +22,18 @@
 //         its file/dir in the package;
 //       • the package-level integer `version` is incremented by 1, but only when the run actually
 //         changed package content (a no-op run leaves it alone). A freshly bootstrapped package
-//         starts at version 1 and is not bumped on first create.
+//         starts at version 1 and is not bumped on first create;
+//       • the run returns an `installLog` delta (components it included vs. removed) so the CLI can
+//         reconcile the global install log (${PACKAGES_DIR}/install.json) to the live satellite for
+//         exactly the components this mirror carries — installed slots upserted (attributed to this
+//         package), removed ones dropped (D-48). Plain sync returns an empty delta.
 //
 // Manifest is updated in place when needed (versions, new/removed entries, package version). The
 // package-level `version` is auto-incremented ONLY in mirror mode; plain sync never touches it.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join, basename, extname } from 'node:path';
+import { join, basename, extname, dirname } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 // Import siblings directly (not the index barrel) so sync.mjs can itself be re-exported from index
 // without an import cycle — the same convention the former backup.mjs followed.
@@ -45,6 +50,24 @@ import { satellitePackageName } from './identity.mjs';
 
 export class SyncError extends Error {
   constructor(msg) { super(msg); this.name = 'SyncError'; }
+}
+
+// True iff `dir` is inside a git working tree (D-49). sync edits the package IN PLACE — git is the
+// recovery net for a bad run — so the CLI refuses a non-git destination unless --force. For a
+// not-yet-created bootstrap dir (`<repo>/user` that mirror will create) the check walks up to the
+// nearest existing ancestor, so a new subdir inside a repo still counts as git-safe. Shells out to
+// `git rev-parse --is-inside-work-tree` (the same git dependency polaris already relies on); a git
+// error, missing git, or a "false" result → not a repo.
+export function isInsideGitRepo(dir) {
+  let probe = dir;
+  while (probe && !existsSync(probe)) {
+    const parent = dirname(probe);
+    if (parent === probe) break;                 // reached the filesystem root
+    probe = parent;
+  }
+  if (!probe || !existsSync(probe)) return false;
+  const r = spawnSync('git', ['-C', probe, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' });
+  return r.status === 0 && r.stdout.trim() === 'true';
 }
 
 // Component types covered by sync (services are not DB-resident).
@@ -124,6 +147,10 @@ async function exportComponent(ctx, type, row, { packageDir, relPath, skillNames
 const label = (type, name) => `${type.replace(/s$/, '')}:${name}`;
 const singular = (type) => type.replace(/s$/, '');
 
+// The component's manifest file relative to the package root — the install log's `source` field
+// (mirrors install-log.mjs's sourceOf). Skills carry a SKILL.md under their dir; the rest are a file.
+const sourceOf = (type, path) => (type === 'skills' ? `${path}/SKILL.md` : path);
+
 // ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 // ctx must have: db, log, DRY_RUN, BASE (needed by exportJob for script-path resolution).
@@ -182,6 +209,12 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
   let manifestDirty = !manifestExists;   // bootstrapped manifests must always be written
   let contentChanged = false;            // any byte actually written/removed → drives the mirror version bump
   const results = [];
+  // Mirror-only: the delta the CLI applies to the global install log (D-48). `logInstalled` = the
+  // components this run faithfully exported into the package (so install.json marks them installed,
+  // attributed to this mirror package); `logRemoved` = ones gone from the satellite (slot dropped).
+  // Populated only in mirror mode; skips/failures (not faithfully captured) are excluded.
+  const logInstalled = [];
+  const logRemoved = [];
 
   // Skill names known to the package — used by exportJob to populate 'requires:'.
   const skillNamesInManifest = new Set(
@@ -262,6 +295,7 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
 
       handled.add(`${type}:${name}`);
       contentChanged = true;
+      if (isMirror) logInstalled.push({ type: singular(type), name, version: result.entry?.version ?? null, source: sourceOf(type, relPath) });
       results.push({ type: singular(type), name, verdict: 'SYNC-ADDED', action: dry ? 'added (dry-run)' : 'added' });
       if (dry) log.dry(`add ${label(type, name)} to manifest at ${relPath}`);
       else      log.ok(`${label(type, name)} → added to manifest and exported`);
@@ -286,6 +320,7 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
           if (removeTree(join(packageDir, entry.path), { dryRun: dry })) contentChanged = true;
           manifestDirty = true;
           contentChanged = true;
+          logRemoved.push({ type: singular(type), name });
           results.push({ type: singular(type), name, verdict: 'SYNC-REMOVED', action: dry ? 'removed (dry-run)' : 'removed' });
           if (dry) log.dry(`remove ${label(type, name)} from package (${entry.path})`);
           else      log.ok(`${label(type, name)} → removed from package (gone from satellite)`);
@@ -351,6 +386,8 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
       } else {
         results.push({ type: singular(type), name, verdict: 'SYNC-UNCHANGED', action: 'unchanged' });
       }
+      // Faithfully present in the mirror package → record it as installed (attributed to this package).
+      if (isMirror) logInstalled.push({ type: singular(type), name, version: entry.version ?? null, source: sourceOf(type, entry.path) });
       kept.push(entry);
     }
 
@@ -400,5 +437,8 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
     { added: 0, synced: 0, unchanged: 0, removed: 0, skipped: 0, failed: 0 },
   );
 
-  return { results, counts, manifest, manifestPath };
+  // Mirror's effect on the global install log, for the CLI to apply (D-48). Empty in plain sync.
+  const installLog = { installed: logInstalled, removed: logRemoved };
+
+  return { results, counts, manifest, manifestPath, installLog };
 }

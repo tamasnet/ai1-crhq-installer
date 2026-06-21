@@ -34,19 +34,22 @@ the live service apply/remove paths are smoke-tested.
 
 ## Code map
 `scripts/install.mjs` + `scripts/sync.mjs` + `scripts/remote.mjs` + `scripts/polaris.mjs` (CLIs) + `scripts/lib/` per `api-design.md`:
-`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, flags, install-log, version-history, run, sync, remote, polaris, identity, sandbox}.mjs`
+`{index, context, db, manifest, parse, fs, log, prereq, preflight, filter, flags, install-log, list-available, version-history, run, sync, remote, polaris, identity, sandbox}.mjs`
 + `core/{skill,recipe,agent,job,service}.mjs` + `vendor/yaml.mjs`.
-Install log: `${PACKAGES_DIR:-~/packages}/install.json` (D-24) — updated on real installs/uninstalls only.
+Install log: `${PACKAGES_DIR:-~/packages}/install.json` (D-24) — updated on real installs/uninstalls, and reconciled by `sync --mirror` for the components it carries (upsert installed / drop removed / leave others, D-48).
+Read-only queries (standalone, DB-free, short-circuit before manifest/DB/sandbox): `--list-installed` (the log, D-33) and `--list-available` (scan `PACKAGE_BASE_DIR`+`REPOS_BASE_DIR`, join the log → per-component STATUS available/installed/missing + package LOCATION, D-47; `lib/list-available.mjs`).
 Self-test (no live writes): `node scripts/install.mjs <package> --sandbox --lifecycle`.
-**Sync / backup** (D-25..D-31, D-41): `node scripts/sync.mjs [<package-dir>] [--mirror [--normalize --type= --include= --exclude=] --add-{skill,recipe,agent,job}= --dry-run --json --help]`
+**Sync / backup** (D-25..D-31, D-41): `node scripts/sync.mjs [<package-dir>] [--mirror [--normalize --type= --include= --exclude=] --add-{skill,recipe,agent,job}= --dry-run --force --json --help]`
 — exports live satellite state (DB + `INSTALL_BASE_DIR`) back into a package repo, git-safe + in-place.
+Refuses a `<package-dir>` not inside a git repo (the in-place recovery net) unless `--force` (D-49).
 Mirror auto-adds only active **`user`** skills (org/store/system come from their own packages) + recipes
 + non-system agents/jobs; removal is conservative (org/store entries already listed are synced, not purged).
 **Default**: manifest-driven — sync the components it
 lists, `--add-*` to register more; never removes; package version untouched. **`--mirror`** (the former
 `backup.mjs`, D-40): live satellite is authority — add new, sync existing, REMOVE entries+files whose
 component is gone (scoped by `--type`/`--include`/`--exclude`); new skills preserve live `install_type`
-unless `--normalize`; integer package `version` +1 only on a content-changing run. Empty dir → mirror
+unless `--normalize`; integer package `version` +1 only on a content-changing run; also reconciles
+`install.json` for the carried set (D-48). Empty dir → mirror
 bootstraps a manifest named `satellitePackageName()` (D-43: satellite id → drop `myzone-` → ensure
 `ai1-`; shared DB-free helper in `lib/identity.mjs`); plain-sync `--add` bootstrap uses the dir name.
 Live + read-only on the DB (no sandbox); `--dry-run` previews with zero writes; restore =

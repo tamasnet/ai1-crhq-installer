@@ -108,6 +108,7 @@ Any line matching `^(error:|❌|fatal:|uncaught|throw)` is a failure signal (C7)
 | `installLogPath(dir?)` | `(string?) => string` | `<packagesDir>/install.json`. |
 | `readInstallLog(dir?)` | `(string?) => Array` | Parsed log (`[]` if absent); throws on a non-array. |
 | `updateInstallLog(ctx, meta, plan, packageRoot)` | `=> string\|null` | Applies the finished run to the log; returns the path written, or `null` when skipped (dry-run, status, nothing processed). |
+| `updateInstallLogForMirror(ctx, {installed, removed, pkg})` | `=> string\|null` | Reconciles the log to a finished `sync --mirror` (D-48): UPSERTS each `installed` `{type,name,version?,source?}` slot attributed to `pkg` `{name,version}` (ownership transfers in place, install date preserved) and DELETES each `removed` `{type,name}`; components not named are untouched. No-op in dry-run / empty delta; write-if-changed. Returns the path written, or `null`. |
 | `sortInstalled(entries)` | `(Array) => Array` | New array ordered by component type (canonical install order) then name. |
 | `formatInstalledList(entries)` | `(Array) => string` | Aligned `TYPE / NAME / VERSION / FROM` table sorted by type then name (powers `--list-installed`); `'No components installed.'` when empty. |
 
@@ -132,6 +133,28 @@ deletes the slot. A partial upgrade therefore leaves a package's components at m
 `package_version`s — the honest current state. Failures leave the log alone. A corrupt log is
 warned about and rebuilt. The CLI wraps the call so a log write failure warns instead of failing
 the install.
+
+## 6b-a. `lib/list-available.mjs` — local package-store discovery view (D-47)
+
+Scans the two places install-ready packages land on a satellite and joins them against the install
+log, so `--list-available` can show **what's installable and the state of what's installed** — all
+**DB-free** (read-only fs + the log). Stores: `PACKAGE_BASE_DIR` (`resolvePackageBase`, default
+`~/packages` — where `remote.mjs get-package` extracts) and `REPOS_BASE_DIR` (`resolveReposBase`,
+default `~/repos` — where `polaris.mjs init` clones Client Repos; each Repo's `platform/` + `user/`
+are packages). One row per component identity **and version** (`type:name@version`) — a component
+present at multiple versions across packages lists once per version; `STATUS` is per-version:
+
+- **available** — declared by a local package at this version, not the version in the install log.
+- **installed** — the version in the install log, still declared by a local package.
+- **missing** — the version in the install log, found in NO local package (its source is gone).
+
+| Export | Signature | Behavior |
+|--------|-----------|----------|
+| `discoverPackages(baseDir, {maxDepth?})` | `(string,{maxDepth?:number}) => string[]` | Package dirs (those holding `ai1-package.yaml`) under `baseDir`, walking ≤`maxDepth` (default 3) and **stopping descent at each package root** (component subtrees aren't packages). Skips hidden dirs (`.git`, `.<slug>.stage-*`), `node_modules`, and symlinks (no loops); absent base → `[]`. |
+| `collectAvailable({stores, installLog})` | `({stores:[{label,base}], installLog:Array}) => {rows, warnings, scanned}` | One `row` per `type:name@version`: `{type, name, version, status, providers:[{package, package_version, version, location, store}], log}`. A component at multiple versions yields one row per version; same-version copies from different packages merge into one row with multiple `providers`. The install log attaches to the row whose `version` it pins (→ `installed`), leaving other versions `available`. Dedupes equal store bases; a package whose manifest fails to load → a `warning` (the listing keeps going). `scanned` = the bases inspected (`present` flag). |
+| `sortAvailable(rows)` | `(Array) => Array` | New array ordered by component type (canonical install order), then name, then version (numeric where possible; null last). |
+| `formatAvailableList({rows, warnings?, scanned?})` | `=> string` | Aligned `STATUS / TYPE / NAME / VERSION / PACKAGE / LOCATION` table sorted by type then name (powers `--list-available`); `PACKAGE`/`LOCATION` list every provider so duplicates are visible, a `missing` row falls back to the log's package + an em-dash location; empty → `'No components available.'`. |
+| `buildAvailableReport()` | `() => {rows, warnings, scanned}` | Resolves the default stores + install log and returns `collectAvailable`'s report; an unreadable log degrades to empty + a warning (available/missing still work). The CLI prints the table, or `rows` as JSON under `--json`. |
 
 ## 6b-v. `lib/version-history.mjs` — component version round-trip (D-34)
 
@@ -175,6 +198,12 @@ so `manifest.mjs` can reuse `STANDARD_FLAG_NAMES` without pulling in the knex la
 `install.mjs` *before* manifest load, validation, DB, or sandbox — it only reads the install log,
 formats it via `formatInstalledList` (or emits `sortInstalled` as JSON under `--json`), and exits
 `0` (or `2` if the log is unreadable). D-33.
+
+`--list-available` is the same kind of standalone install-mode boolean, one level wider: it
+short-circuits before manifest/DB/sandbox and calls `buildAvailableReport()` (scan the local package
+stores + join the install log), printing `formatAvailableList` or the `rows` array under `--json`,
+exit `0`. An unreadable log here is a warning (the report still lists available packages), not a hard
+failure — exit `2` is reserved for an unexpected fault in the scan. D-47.
 
 ---
 
@@ -453,8 +482,14 @@ block via `ctx.reportExtra`).
 > than regenerating into `BACKUP_BASE_DIR` via stage→swap, takes the destination as the `<package-dir>`
 > positional, preserves skill `install_type` unless `--normalize`, and keeps the package `version` an
 > integer bumped only on content change. Verdicts are `SYNC-*` (the `export*` fns still return the
-> `BACKUP-*` taxonomy internally). The historical signatures below are retained for context only — see
-> `lib/sync.mjs` and the `sync` section of `SKILL.md` for the live surface.
+> `BACKUP-*` taxonomy internally). In mirror mode `runSync` also returns an `installLog` delta
+> (`{ installed:[{type,name,version?,source}], removed:[{type,name}] }`) for the CLI to apply via
+> `updateInstallLogForMirror` (§6b) — reconciling `${PACKAGES_DIR}/install.json` to the live satellite
+> for the components this mirror carries (D-48). `lib/sync.mjs` also exports `isInsideGitRepo(dir)`
+> (`(string) => boolean`; nearest-existing-ancestor walk, shells out to `git rev-parse
+> --is-inside-work-tree`): the `sync.mjs` CLI calls it to **refuse a non-git `<package-dir>` unless
+> `--force`** (D-49) — exit 1, before any DB work. The historical signatures below are retained for
+> context only — see `lib/sync.mjs` and the `sync` section of `SKILL.md` for the live surface.
 
 ```js
 export const BACKUP_TYPES = ['skills','recipes','agents','jobs'];  // services out of scope (v1)

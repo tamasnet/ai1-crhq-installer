@@ -17,9 +17,9 @@
 
 import { resolve } from 'node:path';
 import {
-  getDb, closeDb, makeLogger, resolveBase, wantsHelp, UsageError,
+  getDb, closeDb, makeLogger, resolveBase, wantsHelp, UsageError, updateInstallLogForMirror,
 } from './lib/index.mjs';
-import { runSync, SyncError, SYNC_TYPES } from './lib/sync.mjs';
+import { runSync, SyncError, SYNC_TYPES, isInsideGitRepo } from './lib/sync.mjs';
 
 const USAGE = `\
 Usage: sync.mjs [<package-dir>] [options]
@@ -47,12 +47,17 @@ never touched — run before git diff/add/commit.
   --exclude=<pat>       With --mirror: skip components whose name matches <pat> (after --include)
 
   --dry-run             Preview what would be written/removed; no filesystem or manifest changes
+  --force               Proceed even if <package-dir> is not inside a git repository (see below)
   --json                Machine-readable output ({ ok, package, counts, results })
   --help                Print this usage and exit
 
 <package-dir> defaults to the current directory.
 
 No ai1-package.yaml? Use --mirror to snapshot the whole satellite, or at least one --add-* flag.
+
+sync edits the package IN PLACE and relies on git to recover a bad run, so it refuses a
+<package-dir> that is not inside a git repository. Run 'git init' there (or point at a checkout),
+or pass --force to proceed anyway.
 
 Version handling: component versions in the manifest are bumped to match the live DB version if the
 live version is higher. The package-level version is auto-incremented only by --mirror, and only
@@ -63,7 +68,7 @@ Exit codes: 0 = clean  1 = error or export failure  2 = usage error
 
 // sync's own flag set — a spec the satellite-tools mode-based validator doesn't cover.
 const FLAG_SPEC = {
-  bool:  ['--mirror', '--normalize', '--dry-run', '--json', '--help'],
+  bool:  ['--mirror', '--normalize', '--dry-run', '--force', '--json', '--help'],
   value: ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--type', '--include', '--exclude'],
 };
 // Flags that only make sense inside --mirror.
@@ -157,6 +162,17 @@ try {
   const lastOf = (key) => (flags[key]?.length ? flags[key][flags[key].length - 1] : undefined);
   const filterSpec = { include: lastOf('include') ?? null, exclude: lastOf('exclude') ?? null };
 
+  // Git-safety guard (D-49): sync edits the package IN PLACE and relies on git to recover a bad run,
+  // so refuse a destination that isn't inside a git work tree unless --force. Checked before any DB
+  // work; --dry-run is held to the same rule (a preview here is the moment to catch a missing repo).
+  if (!flags['force'] && !isInsideGitRepo(packageDir)) {
+    throw new SyncError(
+      `destination is not inside a git repository: ${packageDir}\n` +
+      `  sync edits the package in place and relies on git to recover a bad run.\n` +
+      `  Run 'git init' there (or point at an existing checkout), or re-run with --force to proceed anyway.`,
+    );
+  }
+
   const db  = getDb();
   const log = makeLogger({ dryRun });
   const ctx = {
@@ -166,7 +182,7 @@ try {
     BASE: resolveBase(),   // needed by exportJob for script-path resolution
   };
 
-  const { results, counts, manifest } = await runSync(ctx, {
+  const { results, counts, manifest, installLog } = await runSync(ctx, {
     packageDir,
     additions,
     mode: mirror ? 'mirror' : 'sync',
@@ -176,8 +192,31 @@ try {
   });
   const ok = counts.failed === 0;
 
+  // --mirror reconciles the global install log (${PACKAGES_DIR}/install.json) so it reflects the live
+  // satellite for the components THIS mirror now carries — installed slots upserted, removed ones
+  // dropped (D-48). Bookkeeping only: a write failure warns, it never fails the mirror. Dry-run skips.
+  let installLogUpdated = null;
+  if (mirror) {
+    const nIn = installLog?.installed?.length ?? 0;
+    const nOut = installLog?.removed?.length ?? 0;
+    if (dryRun) {
+      if (nIn || nOut) log.dry(`update install log: ${nIn} installed, ${nOut} removed`);
+    } else if (nIn || nOut) {
+      try {
+        installLogUpdated = updateInstallLogForMirror(ctx, {
+          installed: installLog.installed,
+          removed: installLog.removed,
+          pkg: { name: manifest?.name, version: manifest?.version },
+        });
+        if (installLogUpdated && !json) log.ok(`install log updated: ${installLogUpdated}`);
+      } catch (e) {
+        log.warn(`install log not updated: ${e.message}`);
+      }
+    }
+  }
+
   if (json) {
-    console.log(JSON.stringify({ ok, mode: mirror ? 'mirror' : 'sync', package: manifest?.name, version: manifest?.version, counts, results }, null, 2));
+    console.log(JSON.stringify({ ok, mode: mirror ? 'mirror' : 'sync', package: manifest?.name, version: manifest?.version, counts, results, ...(mirror ? { installLog: installLogUpdated } : {}) }, null, 2));
   } else {
     const parts = [
       counts.added     && `${counts.added} added`,
