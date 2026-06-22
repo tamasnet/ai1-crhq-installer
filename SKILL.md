@@ -1,14 +1,14 @@
 ---
 name: ai1-satellite-tools
 version: 1
-description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, or status-check packaged skills, recipes, agents, background jobs, nginx/PM2 services, and git-managed projects from ai1-package.yaml; sync live satellite edits back into a package; create a restorable satellite backup with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's GitHub Client Repository with polaris.
+description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, or status-check packaged skills, recipes, agents, background jobs, services, or projects from ai1-package.yaml; sync live satellite edits back into a package; create a restorable satellite backup with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's Polaris customer repository.
 ---
 
 # Ai1 Satellite Tools
 
 Use this skill to manage a satellite from declarative **Ai1 Packages**. An Ai1 Package is a directory with `ai1-package.yaml` plus component files for skills, recipes, agents, jobs, services, and projects.
 
-The toolkit is DB-direct for satellite resources, nginx/PM2-direct for services/projects, and idempotent. Do not install this skill onto a satellite unless the operator explicitly asks.
+The toolkit is DB-direct for satellite resources, nginx/PM2-direct for services/projects, and idempotent.
 
 ## Command map
 
@@ -19,8 +19,8 @@ Run commands from the skill/project root unless using an installed absolute path
 | Install package | `node scripts/install.mjs <package>` |
 | Check package status | `node scripts/install.mjs <package> --status` |
 | Uninstall package | `node scripts/install.mjs <package> --uninstall` |
-| List install log | `node scripts/install.mjs --list-installed` |
-| List local package store availability | `node scripts/install.mjs --list-available` |
+| List intalled components | `node scripts/install.mjs --list-installed` |
+| List locally available components | `node scripts/install.mjs --list-available` |
 | Sync manifest-listed live edits into package | `node scripts/sync.mjs <package-dir>` |
 | Add a live component to a package | `node scripts/sync.mjs <package-dir> --add-skill=<name>` |
 | Back up satellite into restorable package | `node scripts/sync.mjs <package-dir> --mirror` |
@@ -28,7 +28,7 @@ Run commands from the skill/project root unless using an installed absolute path
 | Pull hub config | `node scripts/remote.mjs get-config` |
 | Send heartbeat | `node scripts/remote.mjs heartbeat` |
 | Download registered package | `node scripts/remote.mjs get-package --name=<name> --version=<n>` |
-| Clone Client Repository | `node scripts/polaris.mjs init` |
+| Clone Polaris customer repository | `node scripts/polaris.mjs init` |
 
 `<package>` may be a directory containing `ai1-package.yaml` or the manifest file path. If omitted for install/status/uninstall, it defaults to `.`.
 
@@ -128,7 +128,7 @@ Never print or persist hub tokens, bootstrap tokens, signed URLs, or GitHub toke
 
 ## Polaris client
 
-`polaris.mjs` clones the satellite's GitHub Client Repository into `${REPOS_BASE_DIR:-~/repos}/<repo>` using the GitHub token resolved from the hub identity.
+`polaris.mjs` clones the satellite's GitHub customer repository into `${REPOS_BASE_DIR:-~/repos}/<repo>` using the GitHub token resolved from the hub identity.
 
 ```bash
 node scripts/polaris.mjs init
@@ -196,7 +196,7 @@ Full package spec: `docs/package-manifest-spec.md`.
 | `INSTALL_SCHEMA` | Optional Postgres schema/search path for DB writes. Sandbox sets this. |
 | `PACKAGES_DIR` / `PACKAGE_BASE_DIR` | Package store and install log base. Defaults to `~/packages`. |
 | `SERVICES_BASE_DIR` | Parent dir for deployed service copies. Defaults to `~/services`. |
-| `REPOS_BASE_DIR` | Client Repository clone base. Defaults to `~/repos`. |
+| `REPOS_BASE_DIR` | Clone base for Git repos, including the Polaris customer repository. Defaults to `~/repos`. |
 | `REMOTE_BASE_DIR` | Hub client identity/config/state base. Defaults to `~/remote`. |
 | `AGENT_BRAIN_EXCLUDE` | Comma-separated top-level brain dirs excluded from sync/mirror. Default `activity,_backup,.scratch,memory`. |
 
