@@ -2,7 +2,7 @@
 // install_entry scripts, and standalone installers. Canonical absolute import (OQ-U1):
 //   import { createContext, upsertSkill, … } from
 //     '/opt/projects/crhq-satellite/user-skills/ai1-satellite-tools/scripts/lib/index.mjs';
-export { createContext, parseFlags, resolveBase, resolveSchema } from './context.mjs';
+export { createContext, parseFlags, resolveSkillsBase, resolveSchema } from './context.mjs';
 export { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
 export { resolveSatelliteId, satellitePackageName } from './identity.mjs';
 export { getDb, getAdminDb, closeDb } from './db.mjs';

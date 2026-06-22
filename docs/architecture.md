@@ -19,7 +19,7 @@ The library barrel is `scripts/lib/index.mjs`. Package hooks can import reusable
 
 | Type | Package source | Live target | Version source |
 |------|----------------|-------------|----------------|
-| Skill | `skills/<key>/SKILL.md` + directory assets | `skills` row + `INSTALL_BASE_DIR/<key>` | `skill_versions.version_num` |
+| Skill | `skills/<key>/SKILL.md` + directory assets | `skills` row + `SKILLS_BASE_DIR/<key>` | `skill_versions.version_num` |
 | Recipe | `recipes/<name>.md` | `recipes` row | `recipe_versions.version_num` when declared |
 | Agent | `agents/<key>/AGENTS.md` + brain files | `agents`, joins, `AGENT_BRAINS_DIR/<key>` | `agent_versions.version_num` when declared |
 | Job | `jobs/<name>.yaml` | `background_jobs` row | unversioned |
@@ -127,7 +127,7 @@ scripts/
 
 | Variable | Default | Used for |
 |----------|---------|----------|
-| `INSTALL_BASE_DIR` | `<satellite-root>/user-skills` | Installed skill directories. |
+| `SKILLS_BASE_DIR` | `<satellite-root>/user-skills` | Installed skill directories. |
 | `AGENT_BRAINS_DIR` | `<satellite-root>/documents/agent-brains` | Installed agent brain directories. |
 | `INSTALL_SCHEMA` | unset | Optional DB schema/search path; sandbox sets it. |
 | `PACKAGES_DIR` | `~/packages` | Install log and package store default. |

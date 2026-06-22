@@ -62,7 +62,7 @@ try {
     assert.match(row.id, /^job-\d+-[a-z0-9]+$/);
     assert.equal(row.job_type, 'script');
     assert.equal(row.script_path, 'node');
-    assert.equal(row.script_args, expectedScript, 'script resolved under INSTALL_BASE_DIR');
+    assert.equal(row.script_args, expectedScript, 'script resolved under SKILLS_BASE_DIR');
     assert.equal(row.schedule, '0 * * * *', 'hourly alias expanded');
     assert.equal(row.timezone, 'UTC');
     assert.equal(row.timeout_minutes, 5);

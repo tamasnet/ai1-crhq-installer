@@ -22,12 +22,12 @@ export async function requireSkills(ctx, names = []) {
   if (missing.length) throw new PrereqError(missing, 'skills');
 }
 
-// Each path must exist on disk. Relative paths resolve against ctx.BASE (the skill-parent dir),
+// Each path must exist on disk. Relative paths resolve against ctx.SKILLS_BASE (the skill-parent dir),
 // so a job can require `<skill-key>` and we check that the skill's install dir is present.
 export function requireFiles(ctx, paths = []) {
   const missing = [];
   for (const p of paths) {
-    const abs = isAbsolute(p) ? p : join(ctx.BASE, p);
+    const abs = isAbsolute(p) ? p : join(ctx.SKILLS_BASE, p);
     if (!existsSync(abs)) missing.push(p);
   }
   if (missing.length) throw new PrereqError(missing, 'files');

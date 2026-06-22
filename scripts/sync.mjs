@@ -2,7 +2,7 @@
 // sync.mjs — satellite → package repo sync.
 // The author's "get my changes back" command, and (with --mirror) the satellite backup command.
 // Reads the package's ai1-package.yaml and exports each listed component from the live satellite
-// (DB + INSTALL_BASE_DIR) to the package repo directory. Git-safe — unchanged files are never
+// (DB + SKILLS_BASE_DIR) to the package repo directory. Git-safe — unchanged files are never
 // written, so only genuine diffs appear.
 //
 // Two modes:
@@ -17,7 +17,7 @@
 
 import { resolve } from 'node:path';
 import {
-  getDb, closeDb, makeLogger, resolveBase, wantsHelp, UsageError, updateInstallLogForMirror,
+  getDb, closeDb, makeLogger, resolveSkillsBase, wantsHelp, UsageError, updateInstallLogForMirror,
 } from './lib/index.mjs';
 import { runSync, SyncError, SYNC_TYPES, isInsideGitRepo } from './lib/sync.mjs';
 
@@ -26,7 +26,7 @@ Usage: sync.mjs [<package-dir>] [options]
 
 Export the live satellite state back to a package repo directory.
 Reads <package-dir>/ai1-package.yaml and exports each listed component from the
-satellite (DB + INSTALL_BASE_DIR) to the package directory. Unchanged files are
+satellite (DB + SKILLS_BASE_DIR) to the package directory. Unchanged files are
 never touched — run before git diff/add/commit.
 
   --add-skill=<name>    Register a skill in the manifest and export it (repeatable)
@@ -186,7 +186,7 @@ try {
     db,
     log,
     DRY_RUN: dryRun,
-    BASE: resolveBase(),   // needed by exportJob for script-path resolution
+    SKILLS_BASE: resolveSkillsBase(),   // needed by exportJob for script-path resolution
   };
 
   const { results, counts, manifest, installLog } = await runSync(ctx, {

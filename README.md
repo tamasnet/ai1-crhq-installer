@@ -5,7 +5,7 @@
 It manages:
 
 - Satellite **skills**, **recipes**, **agents**, and **background jobs** directly through the satellite database.
-- Standalone **services** as nginx + PM2 web apps under `${SERVICES_BASE_DIR:-~/services}/<service>`.
+- Standalone **services** as nginx + PM2 web apps under `$SERVICES_BASE_DIR/<service>`.
 - Git-managed **projects** as nginx + PM2 web apps under `/opt/projects/user/<project>` symlinked to their package source by default.
 - Satellite backups by syncing live DB/filesystem state back into an installable package.
 - Ai1 Platform Hub registration/config/package download workflows.
@@ -74,4 +74,4 @@ npm test
 node scripts/install.mjs examples/bundle --sandbox --lifecycle
 ```
 
-Services and projects are skipped in sandbox mode because nginx and PM2 are live host resources. Use `--dry-run` first for any web-app package; a real service install mutates nginx, PM2, and `${SERVICES_BASE_DIR:-~/services}/<service>`, while a real project install mutates nginx, PM2, and `/opt/projects/user/<project>`.
+Services and projects are skipped in sandbox mode because nginx and PM2 are live host resources. Use `--dry-run` first for any web-app package; a real service install mutates nginx, PM2, and `$SERVICES_BASE_DIR/<service>`, while a real project install mutates nginx, PM2, and `/opt/projects/user/<project>`.

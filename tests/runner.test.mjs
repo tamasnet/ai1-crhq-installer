@@ -18,11 +18,11 @@ const cli = (args) => spawnSync(process.execPath, ['scripts/install.mjs', 'tests
 console.log('preflight:');
 const sb = await provisionSandbox({ ts: `${Date.now()}${Math.floor(Math.random() * 1000)}`, seed: false });
 try {
-  await test('passes on reachable DB + writable BASE', async () => {
+  await test('passes on reachable DB + writable SKILLS_BASE', async () => {
     await preflight(makeCtx());   // must not throw
   });
-  await test('fails on unwritable BASE → PreflightError', async () => {
-    await assert.rejects(() => preflight(makeCtx({ BASE: '/ai1-preflight-nope/x' })), (e) => e instanceof PreflightError);
+  await test('fails on unwritable SKILLS_BASE → PreflightError', async () => {
+    await assert.rejects(() => preflight(makeCtx({ SKILLS_BASE: '/ai1-preflight-nope/x' })), (e) => e instanceof PreflightError);
   });
 } finally {
   await sb.teardown(false);

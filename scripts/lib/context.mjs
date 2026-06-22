@@ -7,17 +7,17 @@ import { makeLogger, SEVERITY } from './log.mjs';
 import { resolvePackagesDir } from './install-log.mjs';
 import { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
 
-// INSTALL_BASE_DIR = the parent dir under which each skill's <key> folder is created (C2/D-19).
-export function resolveBase() {
-  return process.env.INSTALL_BASE_DIR
+// SKILLS_BASE_DIR = the parent dir under which each skill's <key> folder is created (C2/D-19).
+export function resolveSkillsBase() {
+  return process.env.SKILLS_BASE_DIR
     || (process.env.CRHQ_BASE_DIR && join(process.env.CRHQ_BASE_DIR, 'user-skills'))
     || '/opt/projects/crhq-satellite/user-skills';
 }
 
 // AGENT_BRAINS_DIR = the parent dir under which each agent's <key> brain folder is created (D-50) —
-// the agent-side analog of INSTALL_BASE_DIR. An agent component is now a directory (agents/<key>/
+// the agent-side analog of SKILLS_BASE_DIR. An agent component is now a directory (agents/<key>/
 // with AGENTS.md, like a skill's SKILL.md); install copies that whole tree to join(AGENT_BRAINS_DIR,
-// key). Same vendor-neutral / CRHQ_BASE_DIR-relative / default shape as resolveBase() so the sandbox
+// key). Same vendor-neutral / CRHQ_BASE_DIR-relative / default shape as resolveSkillsBase() so the sandbox
 // can redirect it to a temp dir. The `documents/agent-brains` literal lives ONLY in the fallback +
 // default, never in core logic.
 export function resolveBrains() {
@@ -66,7 +66,7 @@ export async function createContext(argv, opts = {}) {
   const log = makeLogger({ dryRun: flags.DRY_RUN });
   const ctx = {
     ...flags,
-    BASE: resolveBase(),
+    SKILLS_BASE: resolveSkillsBase(),
     BRAINS: resolveBrains(),
     SERVICES_BASE: resolveServicesBase(),
     USER_PROJECTS_BASE: resolveUserProjectsBase(),

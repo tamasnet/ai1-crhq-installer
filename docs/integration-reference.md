@@ -35,7 +35,7 @@ Install behavior:
 - Parse frontmatter `name`, `version`, `description`; body becomes `skills.content`.
 - Upsert `skills` by `name`.
 - Set `skill_path` to `db://skills/<name>`.
-- Set `skill_dir` to `INSTALL_BASE_DIR/<name>`.
+- Set `skill_dir` to `SKILLS_BASE_DIR/<name>`.
 - Default to `skill_type='org'` and `locked=true`.
 - Use `skill_type='user'` and `locked=false` for `install_type: user` or `--install-skills-as-user`.
 - Copy the entire skill directory to `skill_dir`.
@@ -84,7 +84,7 @@ Install behavior:
 - Schedule aliases expand to cron before storage.
 - Insert/update `background_jobs` by `name`.
 - New rows get an id shaped like `job-<timestamp>-<random>`.
-- Store `job_type='script'`, `script_path='node'`, and `script_args=<INSTALL_BASE_DIR>/<script> [args]`.
+- Store `job_type='script'`, `script_path='node'`, and `script_args=<SKILLS_BASE_DIR>/<script> [args]`.
 - Set timeout/concurrency/enabled fields from YAML or defaults.
 - Validate `requires` by checking required installed skill directories before writes.
 
@@ -140,7 +140,7 @@ On install, the declared component version is upserted. On sync/mirror, the curr
 - Skills: regenerate `SKILL.md` from the DB row and copy installed skill files except the old `SKILL.md`.
 - Recipes: regenerate the Markdown file from the DB row.
 - Agents: regenerate `AGENTS.md` from the DB row/joins and copy brain files except excluded runtime dirs.
-- Jobs: export only script/node jobs whose script path is under `INSTALL_BASE_DIR`.
+- Jobs: export only script/node jobs whose script path is under `SKILLS_BASE_DIR`.
 - Services: not exported.
 - Projects: added only with `--add-project`, then left to git.
 

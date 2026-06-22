@@ -7,7 +7,7 @@ description: "Sample skill used by the ai1-satellite-tools test bundle. Does not
 # Ai1 Sample Skill
 
 A no-op skill for installer testing. Its body becomes `skills.content`; its `scripts/` tree is
-copied to `${INSTALL_BASE_DIR}/ai1-sample-skill/`.
+copied to `${SKILLS_BASE_DIR}/ai1-sample-skill/`.
 
 ## Usage
 

@@ -1,5 +1,5 @@
 // sync.mjs — core sync logic: reconcile a package repo's ai1-package.yaml against the live
-// satellite (DB + INSTALL_BASE_DIR) by exporting components back into the package directory.
+// satellite (DB + SKILLS_BASE_DIR) by exporting components back into the package directory.
 //
 // Direction: satellite (DB + filesystem) → package repo (Git working copy)
 // Git-safe: writeIfChanged is used throughout — byte-identical files are never touched.
@@ -198,7 +198,7 @@ const sourceOf = (type, path) => (
 
 // ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-// ctx must have: db, log, DRY_RUN, BASE (needed by exportJob for script-path resolution).
+// ctx must have: db, log, DRY_RUN, SKILLS_BASE (needed by exportJob for script-path resolution).
 // opts:
 //   packageDir  — the package repo dir holding ai1-package.yaml
 //   additions   — { skills, recipes, agents, jobs: string[] } explicit --add-* names (sync mode)
@@ -416,7 +416,7 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
         continue;
       }
 
-      // Unrepresentable now (e.g. a job whose script moved outside INSTALL_BASE_DIR) — keep the
+      // Unrepresentable now (e.g. a job whose script moved outside SKILLS_BASE_DIR) — keep the
       // manifest entry as-is, surface a skip, don't claim a clean sync.
       if (result?.verdict === VERDICT.BACKUP_SKIP) {
         log.warn(`${label(type, name)}: ${result.detail || 'not representable in a package'} — skipped`);

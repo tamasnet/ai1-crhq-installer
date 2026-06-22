@@ -114,7 +114,7 @@ Required frontmatter:
 | `version` | Positive integer matching `components.skills[].version`. |
 | `description` | Discovery text stored in `skills.description`. |
 
-The Markdown body becomes `skills.content`. The whole skill directory is copied to `INSTALL_BASE_DIR/<name>`. `install_type: org` registers a locked org skill. `install_type: user` registers an unlocked user skill. `--install-skills-as-user` overrides every skill entry to `user`.
+The Markdown body becomes `skills.content`. The whole skill directory is copied to `SKILLS_BASE_DIR/<name>`. `install_type: org` registers a locked org skill. `install_type: user` registers an unlocked user skill. `--install-skills-as-user` overrides every skill entry to `user`.
 
 ### Recipe: `recipes/<name>.md`
 
@@ -174,7 +174,7 @@ requires:
   - my-skill
 ```
 
-Required fields: `name`, `schedule`, `script`. Schedule aliases: `hourly`, `daily`, `every-15-min`, `every-30-min`. `script` resolves under `INSTALL_BASE_DIR`. `requires` names installed skill directories that must exist before the job is registered; bundle-mate skills count as present during dry-run previews.
+Required fields: `name`, `schedule`, `script`. Schedule aliases: `hourly`, `daily`, `every-15-min`, `every-30-min`. `script` resolves under `SKILLS_BASE_DIR`. `requires` names installed skill directories that must exist before the job is registered; bundle-mate skills count as present during dry-run previews.
 
 ### Service: `services/<name>/service.yaml`
 
@@ -216,6 +216,6 @@ Projects use the same nginx/PM2 schema as services. A real install creates or up
 
 ## Install entry hook
 
-`install_entry` is for package-specific operations the declarative installer cannot infer. It is run after the declarative pass for install, status, and uninstall. The runner forwards standard flags and declared `install_flags`, and it inherits the same environment (`INSTALL_SCHEMA`, `INSTALL_BASE_DIR`, etc.).
+`install_entry` is for package-specific operations the declarative installer cannot infer. It is run after the declarative pass for install, status, and uninstall. The runner forwards standard flags and declared `install_flags`, and it inherits the same environment (`INSTALL_SCHEMA`, `SKILLS_BASE_DIR`, etc.).
 
 Keep hooks idempotent and make them honor `--dry-run`, `--status`, and `--uninstall`.

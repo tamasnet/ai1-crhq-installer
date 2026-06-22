@@ -1,6 +1,6 @@
 // sandbox.mjs — built-in --sandbox (D-17/D-18). Provisions an isolated schema cloned from live
 // (CREATE TABLE … LIKE … INCLUDING ALL), seeds live skills so agent-attach + dep checks mirror
-// reality (OQ-14), redirects INSTALL_SCHEMA/INSTALL_BASE_DIR, then tears down. --lifecycle runs the
+// reality (OQ-14), redirects INSTALL_SCHEMA/SKILLS_BASE_DIR, then tears down. --lifecycle runs the
 // full install → status → idempotency → uninstall → reinstall assertion suite.
 import { mkdirSync, rmSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -35,7 +35,7 @@ export async function provisionSandbox({ ts, seed = true } = {}) {
   }
 
   process.env.INSTALL_SCHEMA = schema;       // redirect BEFORE createContext/getDb (§2/§8)
-  process.env.INSTALL_BASE_DIR = baseDir;
+  process.env.SKILLS_BASE_DIR = baseDir;
   process.env.AGENT_BRAINS_DIR = brainsDir;
   process.env.PACKAGES_DIR = packagesDir;
   mkdirSync(baseDir, { recursive: true });
@@ -90,7 +90,7 @@ const okVerdict = (v) => v === VERDICT.OK || v === VERDICT.ALREADY || v === VERD
 // Full lifecycle assertion suite. Assertions are RELATIVE to the post-seed baseline so seeded
 // skills don't register as drift.
 export async function runLifecycle(ctx, plan) {
-  const { SCHEMA: schema, BASE, log } = ctx;
+  const { SCHEMA: schema, SKILLS_BASE, log } = ctx;
   const phases = [];
   const add = (name, passed, detail = '') => {
     phases.push({ name, passed, detail });
@@ -99,10 +99,10 @@ export async function runLifecycle(ctx, plan) {
   const run = async (mode) => { ctx.mode = mode; ctx.results = []; await runPlan(ctx, plan); return ctx.results; };
   const failures = (results) => results.filter((r) => !okVerdict(r.verdict));
 
-  const baseline = await snapshotState(schema, BASE);
+  const baseline = await snapshotState(schema, SKILLS_BASE);
 
   const r1 = await run('install');
-  const s1 = await snapshotState(schema, BASE);
+  const s1 = await snapshotState(schema, SKILLS_BASE);
   const f1 = failures(r1);
   add('fresh-install', f1.length === 0, f1.length ? f1.map((r) => `${r.name}:${r.verdict}`).join(', ') : `${s1.skills.length - baseline.skills.length} skill(s), ${s1.recipes.length} recipe(s), ${s1.agents.length} agent(s), ${s1.jobs.length} job(s) added`);
 
@@ -110,17 +110,17 @@ export async function runLifecycle(ctx, plan) {
   add('status', failures(rs).length === 0, `${rs.filter((r) => r.verdict === VERDICT.ALREADY).length} present`);
 
   await run('install');
-  const s2 = await snapshotState(schema, BASE);
+  const s2 = await snapshotState(schema, SKILLS_BASE);
   const drift = diffState(s1, s2);
   add('idempotency', drift.length === 0, drift.join('; ') || 'zero drift');
 
   const r3 = await run('uninstall');
-  const s3 = await snapshotState(schema, BASE);
+  const s3 = await snapshotState(schema, SKILLS_BASE);
   const back = diffState(baseline, s3);
   add('uninstall-clean', failures(r3).length === 0 && back.length === 0, back.join('; ') || 'returned to baseline');
 
   await run('install');
-  const s4 = await snapshotState(schema, BASE);
+  const s4 = await snapshotState(schema, SKILLS_BASE);
   const redrift = diffState(s1, s4);
   add('reinstall', redrift.length === 0, redrift.join('; ') || 'reproduced original');
 

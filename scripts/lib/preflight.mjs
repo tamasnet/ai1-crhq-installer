@@ -1,5 +1,5 @@
 // preflight.mjs — fail fast before any component work: confirm the DB is reachable and that the
-// install target dir (INSTALL_BASE_DIR) is writable. A failure is a transport-class error → exit 2.
+// install target dir (SKILLS_BASE_DIR) is writable. A failure is a transport-class error → exit 2.
 // (The sync/--mirror backup path does its own writability handling in lib/sync.mjs and does not go
 // through this install preflight.)
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
@@ -18,7 +18,7 @@ export async function preflight(ctx) {
 
   if (ctx.mode === 'status') return;           // status is read-only — no write probe needed
 
-  const [dir, label] = [ctx.BASE, 'INSTALL_BASE_DIR'];
+  const [dir, label] = [ctx.SKILLS_BASE, 'SKILLS_BASE_DIR'];
   try {
     mkdirSync(dir, { recursive: true });
     const probe = join(dir, `.ai1-write-probe-${process.pid}`);

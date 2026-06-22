@@ -39,14 +39,14 @@ try {
   validateFlags(argv, { mode: 'install', declared: declaredFlagNames(meta) });
 
   if (has(argv, '--sandbox')) {
-    sb = await sandbox.provisionSandbox({ ts: stamp() });   // sets INSTALL_SCHEMA / INSTALL_BASE_DIR
+    sb = await sandbox.provisionSandbox({ ts: stamp() });   // sets INSTALL_SCHEMA / SKILLS_BASE_DIR
   }
 
   const ctx = await createContext(argv);
   ctx.PACKAGE = { name: meta.name, version: meta.version };   // provenance for version-history change summaries (D-34)
   if (sb) ctx.log.info(`sandbox: schema=${sb.schema} baseDir=${sb.baseDir}`);
 
-  await preflight(ctx);   // DB reachable + (write modes) BASE writable — else transport exit 2
+  await preflight(ctx);   // DB reachable + (write modes) SKILLS_BASE writable — else transport exit 2
 
   ctx.log.info(`package ${meta.name} v${meta.version} — mode=${ctx.mode}${ctx.DRY_RUN ? ' (dry-run)' : ''}`);
 
@@ -71,7 +71,7 @@ try {
 
 // Invoke the package's install_entry (if declared) as an isolated `node` subprocess, forwarding the
 // mode + standard + package-specific flags so it can honor them (e.g. skip side effects on
-// --dry-run). The subprocess inherits INSTALL_SCHEMA / INSTALL_BASE_DIR via env, so it targets the
+// --dry-run). The subprocess inherits INSTALL_SCHEMA / SKILLS_BASE_DIR via env, so it targets the
 // same (sandbox) schema + dir. The sandbox-internal flags and the package path are not forwarded.
 function runInstallEntry(ctx, meta, packageRoot, rawArgv) {
   if (!meta.install_entry) return;

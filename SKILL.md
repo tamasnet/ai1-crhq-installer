@@ -1,14 +1,14 @@
 ---
 name: ai1-satellite-tools
 version: 1
-description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, status-check, dry-run, or sandbox-test packaged skills, recipes, agents, background jobs, nginx/PM2 services, and git-managed projects from ai1-package.yaml; sync live satellite edits back into a package; create a restorable satellite backup with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's GitHub Client Repository with polaris.
+description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, or status-check packaged skills, recipes, agents, background jobs, nginx/PM2 services, and git-managed projects from ai1-package.yaml; sync live satellite edits back into a package; create a restorable satellite backup with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's GitHub Client Repository with polaris.
 ---
 
 # Ai1 Satellite Tools
 
 Use this skill to manage a satellite from declarative **Ai1 Packages**. An Ai1 Package is a directory with `ai1-package.yaml` plus component files for skills, recipes, agents, jobs, services, and projects.
 
-The toolkit is DB-direct for satellite resources, nginx/PM2-direct for services/projects, idempotent, and sandbox-testable. Do not install this skill onto a satellite unless the operator explicitly asks.
+The toolkit is DB-direct for satellite resources, nginx/PM2-direct for services/projects, and idempotent. Do not install this skill onto a satellite unless the operator explicitly asks.
 
 ## Command map
 
@@ -16,8 +16,6 @@ Run commands from the skill/project root unless using an installed absolute path
 
 | Need | Command |
 |------|---------|
-| Preview package install | `node scripts/install.mjs <package> --dry-run` |
-| Full isolated lifecycle test | `node scripts/install.mjs <package> --sandbox --lifecycle` |
 | Install package | `node scripts/install.mjs <package>` |
 | Check package status | `node scripts/install.mjs <package> --status` |
 | Uninstall package | `node scripts/install.mjs <package> --uninstall` |
@@ -36,32 +34,38 @@ Run commands from the skill/project root unless using an installed absolute path
 
 ## Package install workflow
 
-Prefer this sequence:
+For normal satellite operation, install the package directly:
 
 ```bash
-node scripts/install.mjs <package> --dry-run
-node scripts/install.mjs <package> --sandbox --lifecycle
 node scripts/install.mjs <package>
 ```
 
+Packages are expected to be built and tested before they are distributed to satellites. Use `--status`
+to inspect what is installed, and `--uninstall` only when removing a package's components.
+
 Install order is `skills → recipes → agents → jobs → services → projects`. Uninstall runs in reverse order.
 
-Useful install flags:
+Common install flags:
 
 | Flag | Meaning |
 |------|---------|
-| `--dry-run` | Preview with zero DB/filesystem writes. Service build commands run; nginx/PM2 apply is skipped. |
-| `--sandbox` | Provision an isolated DB schema and temp install dirs, then tear them down. |
-| `--lifecycle` | With `--sandbox`, assert install/status/idempotency/uninstall/reinstall. |
-| `--keep` | With `--sandbox`, leave the sandbox schema and dirs for inspection. |
 | `--status` | Report per-component live state. |
 | `--uninstall` | Remove package components. Agent brain folders are preserved. |
 | `--copy-projects` | For project components, copy source into `/opt/projects/user/<name>` instead of symlinking to the package directory. |
-| `--type=skills,recipes` | Restrict to component types. Repeatable/comma-separated. |
+| `--json` | Emit machine-readable output. |
+
+Development/testing flags:
+
+| Flag | Meaning |
+|------|---------|
+| `--dry-run` | Preview with zero DB/filesystem writes. Service/project build commands run; nginx/PM2 apply is skipped. |
+| `--sandbox` | Provision an isolated DB schema and temp install dirs, then tear them down. For package/installer testing, not normal satellite installs. |
+| `--lifecycle` | With `--sandbox`, assert install/status/idempotency/uninstall/reinstall. |
+| `--keep` | With `--sandbox`, leave the schema and dirs for inspection. |
+| `--type=skills,recipes` | Restrict to component types. Useful for targeted development or repair. |
 | `--include=<pattern>` / `--exclude=<pattern>` | Restrict components by name. Plain values are exact matches; regex metacharacters are treated as regex. |
 | `--respect-locks` | Skip locked skills instead of unlocking/updating them. |
 | `--install-skills-as-user` | Register all skills as unlocked `user` skills. |
-| `--json` | Emit machine-readable output. |
 
 The installer accepts only standard flags plus package-specific flags declared in `install_flags`. Unknown flags fail before side effects.
 
@@ -172,11 +176,11 @@ install_flags:
 
 Component files:
 
-- Skill: `skills/<key>/SKILL.md` with frontmatter `name`, `version`, `description`; body becomes `skills.content`; directory assets are copied to `INSTALL_BASE_DIR/<key>`.
+- Skill: `skills/<key>/SKILL.md` with frontmatter `name`, `version`, `description`; body becomes `skills.content`; directory assets are copied to `SKILLS_BASE_DIR/<key>`.
 - Recipe: `recipes/<name>.md` with frontmatter `name`, `description`, optional `version`; body becomes `recipes.content`.
 - Agent: `agents/<key>/AGENTS.md` with frontmatter `name`, `display_name`, optional config/links/version; body becomes `agents.instructions`; the whole directory copies to `AGENT_BRAINS_DIR/<key>`.
-- Job: `jobs/<name>.yaml` with `name`, `schedule`, `script`; scripts resolve under `INSTALL_BASE_DIR`.
-- Service: `services/<name>/service.yaml` with `name`, `version`, `start`; source copies to `${SERVICES_BASE_DIR:-~/services}/<name>`, with `.env`, PM2, and nginx generated by the installer.
+- Job: `jobs/<name>.yaml` with `name`, `schedule`, `script`; scripts resolve under `SKILLS_BASE_DIR`.
+- Service: `services/<name>/service.yaml` with `name`, `version`, `start`; source copies to `$SERVICES_BASE_DIR/<name>`, with `.env`, PM2, and nginx generated by the installer.
 - Project: `projects/<name>/project.yaml` with the same fields as a service; source symlinks to `/opt/projects/user/<name>` by default (or copies with `--copy-projects`), with `.env`, PM2, and nginx generated by the installer.
 
 Component versions are positive integers. Skills, services, and projects require them. Recipes and agents can carry them. Jobs are unversioned.
@@ -187,7 +191,7 @@ Full package spec: `docs/package-manifest-spec.md`.
 
 | Variable | Meaning |
 |----------|---------|
-| `INSTALL_BASE_DIR` | Parent dir for installed skill folders. Default `<satellite-root>/user-skills`. |
+| `SKILLS_BASE_DIR` | Parent dir for installed skill folders. Default `<satellite-root>/user-skills`. |
 | `AGENT_BRAINS_DIR` | Parent dir for installed agent brain folders. Default `<satellite-root>/documents/agent-brains`. |
 | `INSTALL_SCHEMA` | Optional Postgres schema/search path for DB writes. Sandbox sets this. |
 | `PACKAGES_DIR` / `PACKAGE_BASE_DIR` | Package store and install log base. Defaults to `~/packages`. |
@@ -199,7 +203,7 @@ Full package spec: `docs/package-manifest-spec.md`.
 ## Safety rules
 
 - Do not read, edit, copy, or restart satellite core application files. The tool imports the satellite knex module at runtime; that does not make the core files editable.
-- Always run `--dry-run` or `--sandbox --lifecycle` before a live install.
-- Treat service/project installs as live host mutations. Services write `${SERVICES_BASE_DIR:-~/services}/<service>`; projects write `/opt/projects/user/<project>`; both write `/etc/nginx/projects.d/<name>.conf` and PM2 state.
+- For normal package installs, use `node scripts/install.mjs <package>`. Use `--dry-run` or `--sandbox --lifecycle` when developing packages, testing the installer, or diagnosing a risky install.
+- Treat service/project installs as live host mutations. Services write `$SERVICES_BASE_DIR/<service>`; projects write `/opt/projects/user/<project>`; both write `/etc/nginx/projects.d/<name>.conf` and PM2 state.
 - Never deploy or remove a service/project named the satellite core service name.
 - Never echo credentials. Service secrets belong only in the generated `.env`; hub/GitHub tokens are credentials.

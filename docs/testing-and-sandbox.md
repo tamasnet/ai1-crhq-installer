@@ -15,7 +15,7 @@ Sandbox mode:
 1. Creates an isolated Postgres schema named `sandbox_<timestamp>`.
 2. Clones the managed satellite table structures from live into that schema.
 3. Seeds prerequisite skill rows needed for realistic agent/job checks.
-4. Redirects `INSTALL_SCHEMA`, `INSTALL_BASE_DIR`, `AGENT_BRAINS_DIR`, and `PACKAGES_DIR` to isolated locations.
+4. Redirects `INSTALL_SCHEMA`, `SKILLS_BASE_DIR`, `AGENT_BRAINS_DIR`, and `PACKAGES_DIR` to isolated locations.
 5. Runs the requested install/status/uninstall workflow.
 6. Drops the schema and removes temp dirs unless `--keep` is set.
 

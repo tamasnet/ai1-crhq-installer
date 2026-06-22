@@ -74,7 +74,7 @@ export async function upsertAgent(ctx, def) {
   const ver = { fkValue: key, version: def.version, name: def.display_name, description: def.description, body: def.instructions };
 
   // Brain (D-50): the agent component is a directory whose whole tree copies to AGENT_BRAINS_DIR/<key>
-  // (the agent-side analog of a skill's INSTALL_BASE_DIR/<key>). Present only when the def came from a
+  // (the agent-side analog of a skill's SKILLS_BASE_DIR/<key>). Present only when the def came from a
   // package on disk (a hand-built library def may carry no srcDir → DB-only, no brain write).
   const brainDir = ctx.BRAINS ? join(ctx.BRAINS, key) : null;
   const hasBrain = !!(def.srcDir && brainDir && existsSync(def.srcDir));

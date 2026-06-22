@@ -42,7 +42,7 @@ try {
     assert.equal(row.skill_type, 'org', 'default registration is org (D-22)');
     assert.equal(row.locked, true, 'org skills install locked');
     assert.equal(row.skill_path, `db://skills/${skillDef.name}`);
-    assert.equal(row.skill_dir, skillDir, 'still under INSTALL_BASE_DIR');
+    assert.equal(row.skill_dir, skillDir, 'still under SKILLS_BASE_DIR');
     assert.equal(row.is_active, true);
     assert.equal(row.is_global, false);
     assert.ok(row.content.includes('# Ai1 Sample Skill'), 'content = SKILL.md body');

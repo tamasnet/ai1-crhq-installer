@@ -1,4 +1,4 @@
-// core/skill.mjs — skills table (PK name) + assets under INSTALL_BASE_DIR/<key> (C3/C5/C6).
+// core/skill.mjs — skills table (PK name) + assets under SKILLS_BASE_DIR/<key> (C3/C5/C6).
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { copyTree, removeTree, writeIfChanged } from '../fs.mjs';
@@ -7,14 +7,14 @@ import { VERDICT } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
 
 export async function upsertSkill(ctx, def) {
-  const { db, log, DRY_RUN, RESPECT_LOCKS, BASE } = ctx;
+  const { db, log, DRY_RUN, RESPECT_LOCKS, SKILLS_BASE } = ctx;
   const name = def.name;
-  const skillDir = join(BASE, def.key);
+  const skillDir = join(SKILLS_BASE, def.key);
   const skillPath = `db://skills/${name}`;
 
   // Registration type (D-22). DEFAULT = an org skill, locked. The package-manifest entry's
   // `install_type: user` — or the global --install-skills-as-user flag (which wins) — installs it
-  // unlocked as a user skill instead. Assets land in INSTALL_BASE_DIR either way; only the row's
+  // unlocked as a user skill instead. Assets land in SKILLS_BASE_DIR either way; only the row's
   // skill_type/locked differ.
   const asUser = !!ctx.INSTALL_SKILLS_AS_USER || def.installType === 'user';
   const skillType = asUser ? 'user' : 'org';
@@ -68,10 +68,10 @@ export async function upsertSkill(ctx, def) {
 }
 
 export async function removeSkill(ctx, nameOrDef) {
-  const { db, log, DRY_RUN, RESPECT_LOCKS, BASE } = ctx;
+  const { db, log, DRY_RUN, RESPECT_LOCKS, SKILLS_BASE } = ctx;
   const name = typeof nameOrDef === 'string' ? nameOrDef : nameOrDef.name;
   const row = await db('skills').where({ name }).first();
-  const dir = row?.skill_dir || (typeof nameOrDef === 'object' && nameOrDef.key ? join(BASE, nameOrDef.key) : null);
+  const dir = row?.skill_dir || (typeof nameOrDef === 'object' && nameOrDef.key ? join(SKILLS_BASE, nameOrDef.key) : null);
 
   if (!row) {
     removeTree(dir, { dryRun: DRY_RUN });

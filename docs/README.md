@@ -17,7 +17,7 @@ Current v1.0 reference for `ai1-satellite-tools`, a satellite management skill t
 
 | Resource | Store | Managed by | Sandbox behavior |
 |----------|-------|------------|------------------|
-| Skill | `skills` + skill files under `INSTALL_BASE_DIR/<key>` | `install.mjs`, `sync.mjs` | Full DB/filesystem coverage |
+| Skill | `skills` + skill files under `SKILLS_BASE_DIR/<key>` | `install.mjs`, `sync.mjs` | Full DB/filesystem coverage |
 | Recipe | `recipes` | `install.mjs`, `sync.mjs` | Full DB coverage |
 | Agent | `agents`, joins, brain files under `AGENT_BRAINS_DIR/<key>` | `install.mjs`, `sync.mjs` | Full DB/filesystem coverage |
 | Job | `background_jobs` | `install.mjs`, `sync.mjs` | Full DB coverage |

@@ -34,7 +34,7 @@ console.log(`sandbox ${sb.schema} @ ${sb.baseDir}\n`);
 
 const DB_TYPES = ['skills', 'recipes', 'agents', 'jobs'];   // never touch the service path in tests
 const pkgDir = (name) => { const d = join(workBase, name); mkdirSync(d, { recursive: true }); return d; };
-// sctx — a context for runSync: db + BASE + log + DRY_RUN (runSync returns its own results).
+// sctx — a context for runSync: db + SKILLS_BASE + log + DRY_RUN (runSync returns its own results).
 const sctx = (over = {}) => makeCtx(over);
 const mirror = (dir, over = {}, opts = {}) => runSync(sctx(over), { packageDir: dir, mode: 'mirror', ...opts });
 const readManifest = (dir) => loadYaml(readFileSync(join(dir, 'ai1-package.yaml'), 'utf8'));
@@ -131,7 +131,7 @@ try {
     assert.deepEqual(agent.skills, ['ai1-sample-skill']);
 
     const job = loadYaml(readFileSync(join(dirA, 'jobs', 'ai1-sample-job.yaml'), 'utf8'));
-    assert.equal(job.script, 'ai1-sample-skill/scripts/hello.js', 'script reverse-resolved relative to BASE');
+    assert.equal(job.script, 'ai1-sample-skill/scripts/hello.js', 'script reverse-resolved relative to SKILLS_BASE');
     assert.deepEqual(job.requires, ['ai1-sample-skill'], 'requires re-derived from the script skill segment');
   });
 
