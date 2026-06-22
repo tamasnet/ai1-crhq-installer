@@ -164,6 +164,12 @@ function addProjectToPackage(ctx, name, { packageDir, relPath }) {
 
   if (!pathExistsOrLink(liveDir)) throw new SyncError(`cannot add project '${name}': ${liveDir} does not exist`);
   if (pathExistsOrLink(destDir)) throw new SyncError(`cannot add project '${name}': package path already exists: ${relPath}`);
+  if (existsSync(join(liveDir, '.git'))) {
+    throw new SyncError(
+      `cannot add project '${name}': ${liveDir} is a git repository\n` +
+      `  Remove .git to convert it to a plain directory first; the package repo owns version control after --add-project.`,
+    );
+  }
 
   const { config, version } = readWebAppConfig(liveDir, { kind: 'project', pathLabel: liveDir });
   if (config.name !== name) throw new SyncError(`cannot add project '${name}': project config name is '${config.name}'`);

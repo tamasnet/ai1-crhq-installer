@@ -298,6 +298,25 @@ try {
     assert.deepEqual(again.counts, { added: 0, synced: 0, unchanged: 0, removed: 0, skipped: 0, failed: 0 }, 'plain sync does not process projects once added');
   });
 
+  await test('--add-project rejects a live project that is its own git repository', async () => {
+    const liveBase = pkgDir('live-git-project');
+    const liveDir = join(liveBase, 'git-project');
+    mkdirSync(join(liveDir, '.git'), { recursive: true });
+    writeFileSync(join(liveDir, 'project.yaml'),
+      'name: git-project\nversion: 1\nport: 4555\nstart: node server.js\n');
+
+    const dirP = pkgDir('pkg-git-project');
+    await assert.rejects(
+      () => runSync(sctx({ USER_PROJECTS_BASE: liveBase }), {
+        packageDir: dirP,
+        additions: { projects: ['git-project'] },
+      }),
+      /Remove \.git/,
+    );
+    assert.ok(!existsSync(join(dirP, 'projects', 'git-project')), 'nothing moved into the package');
+    assert.ok(existsSync(join(liveDir, '.git')), 'live project left untouched');
+  });
+
   // ── mirror diff: version bump, removal, no-op ──────────────────────────────────────────────────
   console.log('\nmirror diff:');
   const dirG = pkgDir('pkg-diff');

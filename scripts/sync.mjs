@@ -35,6 +35,7 @@ never touched — run before git diff/add/commit.
   --add-job=<name>      Register a job in the manifest and export it (repeatable)
   --add-project=<name>  Move /opt/projects/user/<name> into projects/<name>, add it to the manifest,
                         and replace the live directory with a symlink to the package (repeatable).
+                        The live project must not be its own git repo (remove .git first).
                         Projects are then managed by git; later sync/mirror runs do not export them.
 
   --mirror              Backup mode: make the package mirror the live satellite. Auto-adds new
