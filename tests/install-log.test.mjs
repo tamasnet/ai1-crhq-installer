@@ -20,6 +20,7 @@ const freshDir = () => { const d = mkdtempSync(join(tmpdir(), 'ai1-install-log-'
 
 const packagesDir = freshDir();
 const { meta, plan, packageRoot } = loadManifest('examples/bundle');
+const { meta: projectMeta, plan: projectPlan, packageRoot: projectRoot } = loadManifest('tests/fixtures/project-pkg');
 
 const makeCtx = (dir, over = {}) => ({
   mode: 'install', DRY_RUN: false, PACKAGES_DIR: dir,
@@ -60,6 +61,15 @@ try {
     assert.equal(service.source, `services/${plan.services[0].name}/service.yaml`);
     assert.equal(service.version, plan.services[0].version);
     assert.equal(service.package_version, String(meta.version));
+  });
+
+  await test('install: project entries record project.yaml source', () => {
+    const dir = freshDir();
+    updateInstallLog(makeCtx(dir, { results: [ok('project', projectPlan.projects[0].name)] }), projectMeta, projectPlan, projectRoot);
+    const project = find(dir, 'project');
+    assert.equal(project.name, projectPlan.projects[0].name);
+    assert.equal(project.source, 'projects/demo/project.yaml');
+    assert.equal(project.version, 1);
   });
 
   await test('idempotent re-run (ALREADY): component date preserved', () => {

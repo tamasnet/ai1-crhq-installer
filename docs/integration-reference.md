@@ -98,12 +98,28 @@ Install behavior:
 
 - Required fields: `name`, `version`, `start`.
 - Optional `build` runs before apply, including during dry-run.
-- Copy source to `/opt/projects/user/<name>`.
+- Copy source to `${SERVICES_BASE_DIR:-~/services}/<name>`.
 - Write `.env`, `ecosystem.config.cjs`, and nginx vhost.
 - Bind nginx upstream to `127.0.0.1:<port>`.
 - Start/save PM2 and reload nginx.
 
 Services are not DB-resident and are not exported by `sync.mjs`.
+
+### Project
+
+Source: `projects/<name>/project.yaml` and project source tree.
+
+Install behavior:
+
+- Required fields: `name`, `version`, `start`.
+- Optional `build` runs before apply, including during dry-run.
+- By default, create/update `/opt/projects/user/<name>` as a symlink to the package project directory.
+- With `--copy-projects`, copy source to `/opt/projects/user/<name>` instead.
+- Write `.env`, `ecosystem.config.cjs`, and nginx vhost.
+- Bind nginx upstream to `127.0.0.1:<port>`.
+- Start/save PM2 and reload nginx.
+
+Projects are not DB-resident. `sync.mjs --add-project=<name>` moves the live `/opt/projects/user/<name>` directory into the package and replaces it with a symlink; mirror mode never auto-adds projects, and later sync/mirror runs do not export project content.
 
 ## Version history
 
@@ -126,5 +142,6 @@ On install, the declared component version is upserted. On sync/mirror, the curr
 - Agents: regenerate `AGENTS.md` from the DB row/joins and copy brain files except excluded runtime dirs.
 - Jobs: export only script/node jobs whose script path is under `INSTALL_BASE_DIR`.
 - Services: not exported.
+- Projects: added only with `--add-project`, then left to git.
 
 Unrepresentable components are reported as skipped rather than exported incorrectly.

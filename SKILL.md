@@ -1,13 +1,14 @@
 ---
 name: ai1-satellite-tools
-description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, status-check, dry-run, or sandbox-test packaged skills, recipes, agents, background jobs, and nginx/PM2 services from ai1-package.yaml; sync live satellite edits back into a package; create a restorable satellite backup with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's GitHub Client Repository with polaris.
+version: 1
+description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, status-check, dry-run, or sandbox-test packaged skills, recipes, agents, background jobs, nginx/PM2 services, and git-managed projects from ai1-package.yaml; sync live satellite edits back into a package; create a restorable satellite backup with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's GitHub Client Repository with polaris.
 ---
 
 # Ai1 Satellite Tools
 
-Use this skill to manage a satellite from declarative **Ai1 Packages**. An Ai1 Package is a directory with `ai1-package.yaml` plus component files for skills, recipes, agents, jobs, and services.
+Use this skill to manage a satellite from declarative **Ai1 Packages**. An Ai1 Package is a directory with `ai1-package.yaml` plus component files for skills, recipes, agents, jobs, services, and projects.
 
-The toolkit is DB-direct for satellite resources, nginx/PM2-direct for services, idempotent, and sandbox-testable. Do not install this skill onto a satellite unless the operator explicitly asks.
+The toolkit is DB-direct for satellite resources, nginx/PM2-direct for services/projects, idempotent, and sandbox-testable. Do not install this skill onto a satellite unless the operator explicitly asks.
 
 ## Command map
 
@@ -43,7 +44,7 @@ node scripts/install.mjs <package> --sandbox --lifecycle
 node scripts/install.mjs <package>
 ```
 
-Install order is `skills → recipes → agents → jobs → services`. Uninstall runs in reverse order.
+Install order is `skills → recipes → agents → jobs → services → projects`. Uninstall runs in reverse order.
 
 Useful install flags:
 
@@ -55,6 +56,7 @@ Useful install flags:
 | `--keep` | With `--sandbox`, leave the sandbox schema and dirs for inspection. |
 | `--status` | Report per-component live state. |
 | `--uninstall` | Remove package components. Agent brain folders are preserved. |
+| `--copy-projects` | For project components, copy source into `/opt/projects/user/<name>` instead of symlinking to the package directory. |
 | `--type=skills,recipes` | Restrict to component types. Repeatable/comma-separated. |
 | `--include=<pattern>` / `--exclude=<pattern>` | Restrict components by name. Plain values are exact matches; regex metacharacters are treated as regex. |
 | `--respect-locks` | Skip locked skills instead of unlocking/updating them. |
@@ -77,10 +79,12 @@ node scripts/sync.mjs <package-dir> --add-skill=<name>
 node scripts/sync.mjs <package-dir> --add-recipe=<name>
 node scripts/sync.mjs <package-dir> --add-agent=<name>
 node scripts/sync.mjs <package-dir> --add-job=<name>
+node scripts/sync.mjs <package-dir> --add-project=<name>
 node scripts/sync.mjs <package-dir> --dry-run
 ```
 
 Plain sync never removes manifest entries and never changes the package-level `version`.
+`--add-project=<name>` is special: it moves `/opt/projects/user/<name>` into `projects/<name>` inside the package, adds a project manifest entry, and replaces the live directory with a symlink. After that, sync/mirror do not export project content; git owns it.
 
 ### Mirror backup
 
@@ -102,7 +106,7 @@ Mirror mode:
 - Bumps the package-level integer `version` only when package content changes.
 - Reconciles `${PACKAGES_DIR:-~/packages}/install.json` for exactly the components the mirror carries.
 
-Services are not mirrored because they are not DB-resident.
+Services and projects are not mirrored because they are not DB-resident; projects are added only through `--add-project` and then managed by git.
 
 ## Hub client
 
@@ -157,6 +161,9 @@ components:
   services:
     - path: services/my-service
       version: 1
+  projects:
+    - path: projects/my-project
+      version: 1
 install_entry: scripts/install.mjs
 install_flags:
   - name: --skip-extra
@@ -169,9 +176,10 @@ Component files:
 - Recipe: `recipes/<name>.md` with frontmatter `name`, `description`, optional `version`; body becomes `recipes.content`.
 - Agent: `agents/<key>/AGENTS.md` with frontmatter `name`, `display_name`, optional config/links/version; body becomes `agents.instructions`; the whole directory copies to `AGENT_BRAINS_DIR/<key>`.
 - Job: `jobs/<name>.yaml` with `name`, `schedule`, `script`; scripts resolve under `INSTALL_BASE_DIR`.
-- Service: `services/<name>/service.yaml` with `name`, `version`, `start`; source copies to `/opt/projects/user/<name>`, with `.env`, PM2, and nginx generated by the installer.
+- Service: `services/<name>/service.yaml` with `name`, `version`, `start`; source copies to `${SERVICES_BASE_DIR:-~/services}/<name>`, with `.env`, PM2, and nginx generated by the installer.
+- Project: `projects/<name>/project.yaml` with the same fields as a service; source symlinks to `/opt/projects/user/<name>` by default (or copies with `--copy-projects`), with `.env`, PM2, and nginx generated by the installer.
 
-Component versions are positive integers. Skills and services require them. Recipes and agents can carry them. Jobs are unversioned.
+Component versions are positive integers. Skills, services, and projects require them. Recipes and agents can carry them. Jobs are unversioned.
 
 Full package spec: `docs/package-manifest-spec.md`.
 
@@ -183,6 +191,7 @@ Full package spec: `docs/package-manifest-spec.md`.
 | `AGENT_BRAINS_DIR` | Parent dir for installed agent brain folders. Default `<satellite-root>/documents/agent-brains`. |
 | `INSTALL_SCHEMA` | Optional Postgres schema/search path for DB writes. Sandbox sets this. |
 | `PACKAGES_DIR` / `PACKAGE_BASE_DIR` | Package store and install log base. Defaults to `~/packages`. |
+| `SERVICES_BASE_DIR` | Parent dir for deployed service copies. Defaults to `~/services`. |
 | `REPOS_BASE_DIR` | Client Repository clone base. Defaults to `~/repos`. |
 | `REMOTE_BASE_DIR` | Hub client identity/config/state base. Defaults to `~/remote`. |
 | `AGENT_BRAIN_EXCLUDE` | Comma-separated top-level brain dirs excluded from sync/mirror. Default `activity,_backup,.scratch,memory`. |
@@ -191,6 +200,6 @@ Full package spec: `docs/package-manifest-spec.md`.
 
 - Do not read, edit, copy, or restart satellite core application files. The tool imports the satellite knex module at runtime; that does not make the core files editable.
 - Always run `--dry-run` or `--sandbox --lifecycle` before a live install.
-- Treat service installs as live host mutations. They write `/opt/projects/user/<service>`, `/etc/nginx/projects.d/<service>.conf`, and PM2 state.
-- Never deploy or remove a service named the satellite core service name.
+- Treat service/project installs as live host mutations. Services write `${SERVICES_BASE_DIR:-~/services}/<service>`; projects write `/opt/projects/user/<project>`; both write `/etc/nginx/projects.d/<name>.conf` and PM2 state.
+- Never deploy or remove a service/project named the satellite core service name.
 - Never echo credentials. Service secrets belong only in the generated `.env`; hub/GitHub tokens are credentials.

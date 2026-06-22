@@ -1,7 +1,7 @@
 {
   "name": "ai1-satellite-tools",
   "version": "1.0.0",
-  "description": "Manage a satellite's resources: install versioned packages (skills, recipes, agents, jobs, services), sync/mirror live components back into a package (backup), run the satellite's Ai1 Platform Hub client (register, config, heartbeat, packages), and manage the satellite from its GitHub Client Repository (polaris)",
+  "description": "Manage a satellite's resources: install versioned packages (skills, recipes, agents, jobs, services, projects), sync/mirror live components back into a package (backup), run the satellite's Ai1 Platform Hub client (register, config, heartbeat, packages), and manage the satellite from its GitHub Client Repository (polaris)",
   "private": true,
   "bin": {
     "ai1-install": "./scripts/install.mjs",

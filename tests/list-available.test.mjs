@@ -60,6 +60,7 @@ try {
     assert.equal(byName['skill:entry-skill'].status, 'installed');
     assert.ok(byName['skill:entry-skill'].providers.length >= 1, 'installed row keeps its provider(s)');
     assert.equal(byName['service:ai1-demo-svc'].status, 'available', 'declared, not in log → available');
+    assert.equal(byName['project:ai1-demo-project'].status, 'available', 'declared project, not in log → available');
     assert.equal(byName['recipe:ghost-recipe'].status, 'missing', 'in log, no package → missing');
     assert.equal(byName['recipe:ghost-recipe'].providers.length, 0);
 
@@ -210,6 +211,7 @@ try {
     assert.match(r.stdout, /Available components \(/);
     assert.match(r.stdout, /installed\s+skill\s+entry-skill/);
     assert.match(r.stdout, /available\s+service\s+ai1-demo-svc/);
+    assert.match(r.stdout, /available\s+project\s+ai1-demo-project/);
   });
 
   await test('--list-available --json emits the rows array', () => {

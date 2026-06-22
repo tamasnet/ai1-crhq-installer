@@ -21,6 +21,9 @@ The manifest is the source of truth. Files that exist in the package but are not
 ├── services/<service-name>/
 │   ├── service.yaml
 │   └── ...                      # service source
+├── projects/<project-name>/
+│   ├── project.yaml
+│   └── ...                      # git-managed project source
 └── scripts/install.mjs          # optional install_entry hook
 ```
 
@@ -50,6 +53,9 @@ components:
   services:
     - path: services/my-service
       version: 1                 # required positive integer; must match service.yaml version
+  projects:
+    - path: projects/my-project
+      version: 1                 # required positive integer; must match project.yaml version
 
 install_entry: scripts/install.mjs
 install_flags:
@@ -82,6 +88,7 @@ Component versions are positive integers.
 | Agent | Optional in manifest/`AGENTS.md`; if both are present, values must match. Recorded in `agent_versions` when present. |
 | Job | Not versioned. |
 | Service | Required in manifest and `service.yaml`; values must match. |
+| Project | Required in manifest and `project.yaml`; values must match. |
 
 The package-level `version` is separate. `sync.mjs --mirror` increments it only when package content changes.
 
@@ -186,7 +193,26 @@ nginx:
 
 Required fields: `name`, `version`, `start`. Optional fields: `port`, `build`, `env`, `nginx.subdomain`, `nginx.ssl`.
 
-A real install copies the service source to `/opt/projects/user/<name>`, writes `.env` at mode `0640`, writes `ecosystem.config.cjs`, writes nginx config under `/etc/nginx/projects.d`, starts/saves PM2, and reloads nginx. Sandbox mode skips services. Dry-run runs the build command and renders the plan but skips nginx/PM2 apply.
+A real install copies the service source to `${SERVICES_BASE_DIR:-~/services}/<name>`, writes `.env` at mode `0640`, writes `ecosystem.config.cjs`, writes nginx config under `/etc/nginx/projects.d`, starts/saves PM2, and reloads nginx. Sandbox mode skips services. Dry-run runs the build command and renders the plan but skips nginx/PM2 apply.
+
+### Project: `projects/<name>/project.yaml`
+
+```yaml
+name: my-project
+version: 1
+start: node server.js
+port: 4311
+build: npm run build
+env:
+  NODE_ENV: production
+nginx:
+  subdomain: my-project
+  ssl: true
+```
+
+Projects use the same nginx/PM2 schema as services. A real install creates or updates `/opt/projects/user/<name>` as a symlink to the project directory inside the package, then writes `.env`, `ecosystem.config.cjs`, nginx config, and PM2 state the same way services do. Pass `--copy-projects` to copy the project source into `/opt/projects/user/<name>` instead of symlinking. Sandbox mode skips projects. Dry-run runs the build command and renders the plan but skips nginx/PM2 apply.
+
+`sync.mjs --add-project=<name>` moves `/opt/projects/user/<name>` into `projects/<name>` inside the package, adds the manifest entry, and replaces the live directory with a symlink. Mirror mode never auto-adds projects, and later sync/mirror runs do not export project content; git is the source of truth after the initial add.
 
 ## Install entry hook
 

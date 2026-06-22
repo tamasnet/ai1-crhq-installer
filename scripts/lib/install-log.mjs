@@ -17,7 +17,7 @@ import { VERDICT } from './log.mjs';
 
 // Canonical component types in install order (singular form, as stored in the log). Exported so the
 // availability view (list-available.mjs) shares one source of truth for type ranking.
-export const COMPONENT_TYPES = ['skill', 'recipe', 'agent', 'job', 'service'];
+export const COMPONENT_TYPES = ['skill', 'recipe', 'agent', 'job', 'service', 'project'];
 
 export function resolvePackagesDir() {
   return process.env.PACKAGES_DIR || join(homedir(), 'packages');
@@ -39,7 +39,7 @@ export function readInstallLog(packagesDir = resolvePackagesDir()) {
 // The component's own manifest file, relative to the package root (the log's `source` field).
 function sourceOf(type, def, packageRoot) {
   if (type === 'skill') return relative(packageRoot, join(def.srcDir, 'SKILL.md'));
-  if (type === 'service') return relative(packageRoot, join(def.srcDir, 'service.yaml'));
+  if (type === 'service' || type === 'project') return relative(packageRoot, def.srcFile || join(def.srcDir, `${type}.yaml`));
   return relative(packageRoot, def.srcFile);
 }
 

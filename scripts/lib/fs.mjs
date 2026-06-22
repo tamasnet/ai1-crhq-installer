@@ -1,7 +1,10 @@
 // fs.mjs — filesystem helpers. Callers pass absolute paths rooted at ctx.BASE (C2). Every helper
 // honors dry-run (zero writes) and is idempotent (skips byte-identical content, GAP 5).
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'fs';
-import { join, dirname } from 'path';
+import {
+  existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync,
+  lstatSync, readlinkSync, symlinkSync, unlinkSync, renameSync,
+} from 'fs';
+import { join, dirname, resolve } from 'path';
 
 export function writeIfChanged(path, content, { dryRun = false } = {}) {
   if (existsSync(path) && readFileSync(path, 'utf8') === content) return false;
@@ -55,8 +58,54 @@ export function safeName(name) {
 }
 
 export function removeTree(path, { dryRun = false } = {}) {
-  if (!path || !existsSync(path)) return false;
+  if (!path || !pathExistsOrLink(path)) return false;
   if (dryRun) return true;
   rmSync(path, { recursive: true, force: true });
+  return true;
+}
+
+function lstatMaybe(path) {
+  try { return lstatSync(path); } catch { return null; }
+}
+
+export function pathExistsOrLink(path) {
+  return !!lstatMaybe(path);
+}
+
+export function ensureSymlink(linkPath, targetPath, { dryRun = false, replaceNonSymlink = false } = {}) {
+  const st = lstatMaybe(linkPath);
+  const absTarget = resolve(targetPath);
+  if (st?.isSymbolicLink()) {
+    const cur = readlinkSync(linkPath);
+    const curAbs = resolve(dirname(linkPath), cur);
+    if (curAbs === absTarget) return false;
+    if (dryRun) return true;
+    unlinkSync(linkPath);
+    symlinkSync(absTarget, linkPath, 'dir');
+    return true;
+  }
+  if (st) {
+    if (!replaceNonSymlink) throw new Error(`${linkPath} exists and is not a symlink`);
+    if (dryRun) return true;
+    rmSync(linkPath, { recursive: true, force: true });
+  }
+  if (dryRun) return true;
+  mkdirSync(dirname(linkPath), { recursive: true });
+  symlinkSync(absTarget, linkPath, 'dir');
+  return true;
+}
+
+export function moveTree(srcDir, destDir, { dryRun = false } = {}) {
+  if (!pathExistsOrLink(srcDir)) throw new Error(`source does not exist: ${srcDir}`);
+  if (pathExistsOrLink(destDir)) throw new Error(`destination already exists: ${destDir}`);
+  if (dryRun) return true;
+  mkdirSync(dirname(destDir), { recursive: true });
+  try {
+    renameSync(srcDir, destDir);
+  } catch (e) {
+    if (e.code !== 'EXDEV') throw e;
+    copyTree(srcDir, destDir, { dryRun: false });
+    removeTree(srcDir, { dryRun: false });
+  }
   return true;
 }

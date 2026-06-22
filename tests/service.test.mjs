@@ -4,13 +4,16 @@
 // plan's explicit live smoke test). No DB needed. Run from the project root:
 //   node tests/service.test.mjs
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, lstatSync, readlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
 import { makeLogger } from '../scripts/lib/log.mjs';
 import {
-  installService, renderEnv, renderEcosystem, renderNginx, nextFreePort,
+  installService, installProject, renderEnv, renderEcosystem, renderNginx, nextFreePort,
 } from '../scripts/lib/core/service.mjs';
+import { ensureSymlink } from '../scripts/lib/fs.mjs';
+import { resolveServicesBase } from '../scripts/lib/paths.mjs';
 import { harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -23,8 +26,11 @@ const svcCtx = (over = {}) => ({
 
 const { plan } = loadManifest('tests/fixtures/service-pkg');
 const def = plan.services[0];   // ai1-demo-svc, port 4399, secret env, nginx demo+ssl
-const projectDir = '/opt/projects/user/ai1-demo-svc';
+const projectDir = join(resolveServicesBase(), 'ai1-demo-svc');
 const vhost = '/etc/nginx/projects.d/ai1-demo-svc.conf';
+const { plan: projectPlan } = loadManifest('tests/fixtures/project-pkg');
+const projectDef = projectPlan.projects[0];
+const cleanups = [];
 
 console.log('render:');
 
@@ -96,5 +102,35 @@ await test('secret hygiene: env secret never logged (GAP 9)', () => {
   try { installService(svcCtx({ DRY_RUN: true }), def); } finally { console.log = orig; }
   assert.doesNotMatch(buf, /super-secret-value/, 'secret must not appear in logs');
 });
+
+console.log('\nprojects (no live apply):');
+
+await test('project dry-run: deploys under /opt/projects/user and defaults to symlink mode', () => {
+  const base = mkdtempSync(join(tmpdir(), 'ai1-project-base-'));
+  cleanups.push(base);
+  const r = installProject(svcCtx({ DRY_RUN: true, USER_PROJECTS_BASE: base }), projectDef);
+  assert.equal(r.type, 'project');
+  assert.equal(r.verdict, 'INSTALL-OK');
+  assert.equal(existsSync(join(base, projectDef.name)), false, 'dry-run creates no project symlink');
+});
+
+await test('ensureSymlink: creates and updates the live project link', () => {
+  const base = mkdtempSync(join(tmpdir(), 'ai1-project-link-'));
+  cleanups.push(base);
+  const a = join(base, 'a');
+  const b = join(base, 'b');
+  const link = join(base, 'live');
+  mkdirSync(a); mkdirSync(b);
+
+  assert.equal(ensureSymlink(link, a), true);
+  assert.equal(lstatSync(link).isSymbolicLink(), true);
+  assert.equal(readlinkSync(link), a);
+
+  assert.equal(ensureSymlink(link, a), false, 'same target is unchanged');
+  assert.equal(ensureSymlink(link, b), true, 'different target updates the symlink');
+  assert.equal(readlinkSync(link), b);
+});
+
+for (const d of cleanups) rmSync(d, { recursive: true, force: true });
 
 done();

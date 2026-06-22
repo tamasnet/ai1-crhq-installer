@@ -5,6 +5,7 @@ import { join } from 'path';
 import { getDb, closeDb } from './db.mjs';
 import { makeLogger, SEVERITY } from './log.mjs';
 import { resolvePackagesDir } from './install-log.mjs';
+import { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
 
 // INSTALL_BASE_DIR = the parent dir under which each skill's <key> folder is created (C2/D-19).
 export function resolveBase() {
@@ -33,7 +34,7 @@ export function parseFlags(argv) {
   const flags = {
     mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false, INSTALL_SKILLS_AS_USER: false,
     TYPE: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
-    JSON: false, packageArg: '.',
+    JSON: false, COPY_PROJECTS: false, packageArg: '.',
   };
   for (const a of argv) {
     if (a === '--uninstall') flags.mode = 'uninstall';
@@ -45,6 +46,7 @@ export function parseFlags(argv) {
     else if (a === '--keep') flags.KEEP = true;
     else if (a === '--lifecycle') flags.LIFECYCLE = true;
     else if (a === '--json') flags.JSON = true;
+    else if (a === '--copy-projects') flags.COPY_PROJECTS = true;
     // --type=<type>[,<type>...] selects which component types run (repeatable; comma-separated).
     else if (a.startsWith('--type=')) {
       const vals = a.slice('--type='.length).split(',').map((s) => s.trim()).filter(Boolean);
@@ -66,6 +68,8 @@ export async function createContext(argv, opts = {}) {
     ...flags,
     BASE: resolveBase(),
     BRAINS: resolveBrains(),
+    SERVICES_BASE: resolveServicesBase(),
+    USER_PROJECTS_BASE: resolveUserProjectsBase(),
     SCHEMA: resolveSchema(),
     PACKAGES_DIR: resolvePackagesDir(),
     db: getDb(),

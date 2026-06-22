@@ -13,7 +13,7 @@
 //     only on real content change (a no-op run does not bump)
 // Run from the project root:  node tests/sync.test.mjs
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, lstatSync, readlinkSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { provisionSandbox } from '../scripts/lib/sandbox.mjs';
@@ -268,6 +268,34 @@ try {
     assert.equal(manifest.version, 5, 'plain sync never touches the package version');
     assert.ok(manifest.components.recipes.some((e) => e.path === 'recipes/ghost.md'), 'ghost entry retained');
     assert.ok(existsSync(join(dirE, 'recipes', 'ghost.md')), 'ghost file retained');
+  });
+
+  console.log('\nproject add:');
+
+  await test('--add-project moves /opt/projects/user content into the package and leaves a symlink', async () => {
+    const liveBase = pkgDir('live-projects');
+    const liveDir = join(liveBase, 'my-project');
+    mkdirSync(liveDir, { recursive: true });
+    writeFileSync(join(liveDir, 'project.yaml'),
+      'name: my-project\nversion: 1\nport: 4555\nstart: node server.js\nnginx:\n  subdomain: my-project\n  ssl: false\n');
+    writeFileSync(join(liveDir, 'server.js'), "console.log('project');\n");
+
+    const dirP = pkgDir('pkg-project');
+    const { counts, manifest } = await runSync(sctx({ USER_PROJECTS_BASE: liveBase }), {
+      packageDir: dirP,
+      additions: { projects: ['my-project'] },
+    });
+    assert.equal(counts.added, 1);
+    assert.deepEqual(manifest.components.projects, [{ path: 'projects/my-project', version: 1 }]);
+    assert.ok(existsSync(join(dirP, 'projects', 'my-project', 'server.js')), 'project moved into package');
+    assert.equal(lstatSync(liveDir).isSymbolicLink(), true, 'live dir replaced by symlink');
+    assert.equal(readlinkSync(liveDir), join(dirP, 'projects', 'my-project'));
+
+    const { plan: pplan } = loadManifest(dirP);
+    assert.equal(pplan.projects[0].name, 'my-project', 'package remains installable');
+
+    const again = await runSync(sctx({ USER_PROJECTS_BASE: liveBase }), { packageDir: dirP });
+    assert.deepEqual(again.counts, { added: 0, synced: 0, unchanged: 0, removed: 0, skipped: 0, failed: 0 }, 'plain sync does not process projects once added');
   });
 
   // ── mirror diff: version bump, removal, no-op ──────────────────────────────────────────────────

@@ -9,7 +9,7 @@
 //   backup   → currentVersion(): read MAX(version_num) as the live version to pin in the package.
 //
 // Only DB-resident, versioned types participate (skills/recipes/agents). Jobs have no version table;
-// services aren't DB-resident (their version lives in service.yaml + the install log).
+// services/projects aren't DB-resident (their version lives in service.yaml/project.yaml + the install log).
 
 // type → its version table, FK column to the main row, and the column that holds the body.
 const SPEC = {

@@ -15,7 +15,7 @@ Both directories are installable packages with their own `ai1-package.yaml`.
 | Area | Owner | Purpose |
 |------|-------|---------|
 | `platform/` | Shared platform process | Common skills, recipes, agents, jobs, and services distributed to many satellites. |
-| `user/` | Satellite/customer process | Local customer content and live edits mirrored back from the satellite. |
+| `user/` | Satellite/customer process | Local customer content, git-managed projects, and live edits mirrored back from the satellite. |
 
 The satellite typically installs both packages:
 
@@ -29,6 +29,11 @@ Live customer edits are synced back to `user/`:
 ```bash
 node scripts/sync.mjs ~/repos/<repo>/user --mirror
 ```
+
+Projects under `/opt/projects/user/<name>` are a special user-package lifecycle: add one with
+`node scripts/sync.mjs ~/repos/<repo>/user --add-project=<name>`, which moves it into the package
+and leaves the live path symlinked back to git. Mirror does not auto-add or refresh projects after
+that initial move.
 
 ## `polaris init`
 

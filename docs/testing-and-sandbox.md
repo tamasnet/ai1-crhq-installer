@@ -60,7 +60,7 @@ Coverage summary:
 | `skill-recipe.test.mjs` | Skill/recipe install, uninstall, lock handling, versions, dry-run, validation failures. |
 | `agent.test.mjs` | Agent rows, config fields, skill/recipe joins, brain directory handling, removal. |
 | `job.test.mjs` | Job schedule aliases, script args, prereqs, idempotency, removal. |
-| `service.test.mjs` | Service artifact rendering, port selection, dry-run, sandbox skip, secret placement. |
+| `service.test.mjs` | Service/project artifact rendering, port selection, dry-run, sandbox skip, symlink handling, secret placement. |
 | `runner.test.mjs` | Preflight, install entry forwarding, component type selection. |
 | `filter.test.mjs` | Include/exclude matching and invalid regex handling. |
 | `options.test.mjs` | Strict option validation and installed/available list modes. |
@@ -71,11 +71,11 @@ Coverage summary:
 | `polaris.test.mjs` | GitHub Client Repository clone helper and token handling. |
 | `identity.test.mjs` | Satellite id and package name resolution. |
 
-## Service validation boundary
+## Service/project validation boundary
 
-Sandbox tests do not apply nginx or PM2 changes. Before a real service install:
+Sandbox tests do not apply nginx or PM2 changes. Before a real service/project install:
 
 1. Run `node scripts/install.mjs <package> --dry-run`.
-2. Inspect the service's `service.yaml`, build command, and environment values.
-3. Confirm the intended service name is not the satellite core service name.
-4. Install only on the satellite where the service should become live.
+2. Inspect the service's `service.yaml` or project's `project.yaml`, build command, and environment values.
+3. Confirm the intended service/project name is not the satellite core service name.
+4. Install only on the satellite where the web app should become live.

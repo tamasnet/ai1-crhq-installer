@@ -21,7 +21,8 @@ Current v1.0 reference for `ai1-satellite-tools`, a satellite management skill t
 | Recipe | `recipes` | `install.mjs`, `sync.mjs` | Full DB coverage |
 | Agent | `agents`, joins, brain files under `AGENT_BRAINS_DIR/<key>` | `install.mjs`, `sync.mjs` | Full DB/filesystem coverage |
 | Job | `background_jobs` | `install.mjs`, `sync.mjs` | Full DB coverage |
-| Service | `/opt/projects/user/<name>`, nginx, PM2 | `install.mjs` only | Skipped in sandbox; dry-run builds but does not apply |
+| Service | `${SERVICES_BASE_DIR:-~/services}/<name>`, nginx, PM2 | `install.mjs` only | Skipped in sandbox; dry-run builds but does not apply |
+| Project | `/opt/projects/user/<name>` symlink/copy, nginx, PM2 | `install.mjs`; initial `sync.mjs --add-project` | Skipped in sandbox; sync does not export after add |
 
 ## Validation commands
 

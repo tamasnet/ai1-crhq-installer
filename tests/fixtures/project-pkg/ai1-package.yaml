@@ -1,0 +1,7 @@
+name: project-pkg
+version: 1
+description: Fixture package exercising the project (symlinked nginx + PM2) component.
+components:
+  projects:
+    - path: projects/demo
+      version: 1

@@ -9,7 +9,7 @@ export class ManifestError extends Error {
   constructor(message) { super(message); this.name = 'ManifestError'; }
 }
 
-const TYPE_ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services'];
+const TYPE_ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services', 'projects'];
 
 // The installer's own integer version (D-35). A package's optional `installer` field is the minimum
 // version it requires — a plain positive integer with an implicit ">=" — and a package that needs a
@@ -20,7 +20,7 @@ export const INSTALLER_VERSION = 1;
 // value fails fast with a clear message instead of a Postgres error mid-install.
 const LIMITS = {
   skillName: 100, recipeName: 200, agentName: 50, agentMode: 10, agentModel: 20,
-  jobName: 255, jobSchedule: 100, jobTimezone: 50, serviceName: 255,
+  jobName: 255, jobSchedule: 100, jobTimezone: 50, serviceName: 255, projectName: 255,
 };
 
 export function loadManifest(pathOrDir) {
@@ -53,7 +53,7 @@ export function validateManifest(meta) {
     if (!Array.isArray(list)) throw new ManifestError(`components.${type} must be a list`);
     for (const entry of list) {
       if (!entry || !entry.path) throw new ManifestError(`components.${type}[] entry missing 'path'`);
-      if ((type === 'skills' || type === 'services') && !entry.version) {
+      if ((type === 'skills' || type === 'services' || type === 'projects') && !entry.version) {
         throw new ManifestError(`components.${type}[${entry.path}] requires a version pin`);
       }
     }
@@ -89,6 +89,7 @@ function buildPlan(meta, root) {
     agents: (c.agents || []).map((e) => loadAgentDef(e, root)),
     jobs: (c.jobs || []).map((e) => loadJobDef(e, root)),
     services: (c.services || []).map((e) => loadServiceDef(e, root)),
+    projects: (c.projects || []).map((e) => loadProjectDef(e, root)),
   };
 }
 
@@ -180,22 +181,41 @@ function loadJobDef(entry, root) {
 }
 
 function loadServiceDef(entry, root) {
-  const srcDir = join(root, entry.path);
-  const yPath = join(srcDir, 'service.yaml');
-  if (!existsSync(yPath)) throw new ManifestError(`Service missing service.yaml: ${entry.path}`);
-  const s = loadYaml(readFileSync(yPath, 'utf8'));
-  if (!s.name) throw new ManifestError(`service.yaml missing 'name': ${entry.path}`);
-  if (s.version == null) throw new ManifestError(`service.yaml missing 'version': ${entry.path}`);
-  const version = intVersion(`Service ${s.name} version`, s.version);
-  const pin = intVersion(`Service ${entry.path} manifest version`, entry.version);
-  if (version !== pin) {
-    throw new ManifestError(`Service ${s.name}: service.yaml version ${version} != manifest pin ${pin}`);
+  return loadWebAppDef(entry, root, 'service');
+}
+
+function loadProjectDef(entry, root) {
+  return loadWebAppDef(entry, root, 'project');
+}
+
+export function readWebAppConfig(srcDir, { kind = 'service', pathLabel = srcDir } = {}) {
+  const cap = kind === 'project' ? 'Project' : 'Service';
+  const names = kind === 'project' ? ['project.yaml', 'service.yaml'] : ['service.yaml'];
+  const yPath = names.map((n) => join(srcDir, n)).find((p) => existsSync(p));
+  if (!yPath) {
+    const want = kind === 'project' ? 'project.yaml (or legacy service.yaml)' : 'service.yaml';
+    throw new ManifestError(`${cap} missing ${want}: ${pathLabel}`);
   }
-  if (!s.start) throw new ManifestError(`service.yaml missing 'start': ${entry.path}`);
-  checkLen('service name', s.name, LIMITS.serviceName);
+  const s = loadYaml(readFileSync(yPath, 'utf8'));
+  if (!s.name) throw new ManifestError(`${yPath.endsWith('project.yaml') ? 'project.yaml' : 'service.yaml'} missing 'name': ${pathLabel}`);
+  if (s.version == null) throw new ManifestError(`${yPath.endsWith('project.yaml') ? 'project.yaml' : 'service.yaml'} missing 'version': ${pathLabel}`);
+  const version = intVersion(`${cap} ${s.name} version`, s.version);
+  if (!s.start) throw new ManifestError(`${yPath.endsWith('project.yaml') ? 'project.yaml' : 'service.yaml'} missing 'start': ${pathLabel}`);
+  checkLen(`${kind} name`, s.name, kind === 'project' ? LIMITS.projectName : LIMITS.serviceName);
+  return { config: s, version, srcFile: yPath };
+}
+
+function loadWebAppDef(entry, root, kind) {
+  const srcDir = join(root, entry.path);
+  const { config: s, version, srcFile } = readWebAppConfig(srcDir, { kind, pathLabel: entry.path });
+  const cap = kind === 'project' ? 'Project' : 'Service';
+  const pin = intVersion(`${cap} ${entry.path} manifest version`, entry.version);
+  if (version !== pin) {
+    throw new ManifestError(`${cap} ${s.name}: ${srcFile.endsWith('project.yaml') ? 'project.yaml' : 'service.yaml'} version ${version} != manifest pin ${pin}`);
+  }
   return {
     name: s.name, version, start: s.start, port: s.port, cwd: s.cwd || './',
-    build: s.build, env: s.env || {}, nginx: s.nginx || {}, srcDir,
+    build: s.build, env: s.env || {}, nginx: s.nginx || {}, srcDir, srcFile,
   };
 }
 

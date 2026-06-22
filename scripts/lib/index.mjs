@@ -3,10 +3,11 @@
 //   import { createContext, upsertSkill, … } from
 //     '/opt/projects/crhq-satellite/user-skills/ai1-satellite-tools/scripts/lib/index.mjs';
 export { createContext, parseFlags, resolveBase, resolveSchema } from './context.mjs';
+export { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
 export { resolveSatelliteId, satellitePackageName } from './identity.mjs';
 export { getDb, getAdminDb, closeDb } from './db.mjs';
 export { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
-export { copyTree, writeIfChanged, removeTree, safeName } from './fs.mjs';
+export { copyTree, writeIfChanged, removeTree, moveTree, ensureSymlink, pathExistsOrLink, safeName } from './fs.mjs';
 export { makeLogger, VERDICT, SEVERITY } from './log.mjs';
 export { requireSkills, requireFiles, PrereqError } from './prereq.mjs';
 export { preflight, PreflightError } from './preflight.mjs';
@@ -23,4 +24,4 @@ export { upsertSkill, removeSkill, statusSkill, exportSkill } from './core/skill
 export { upsertRecipe, removeRecipe, statusRecipe, exportRecipe } from './core/recipe.mjs';
 export { upsertAgent, removeAgent, statusAgent, exportAgent } from './core/agent.mjs';
 export { upsertJob, removeJob, statusJob, exportJob } from './core/job.mjs';
-export { installService, removeService, statusService } from './core/service.mjs';
+export { installService, removeService, statusService, installProject, removeProject, statusProject } from './core/service.mjs';

@@ -8,7 +8,7 @@ Four CLIs sit on a shared library in `scripts/lib/`:
 
 | CLI | Role | Live dependencies |
 |-----|------|-------------------|
-| `scripts/install.mjs` | Install/status/uninstall packages; dry-run; sandbox lifecycle; package availability reports. | satellite DB for skills/recipes/agents/jobs; filesystem/nginx/PM2 for services. |
+| `scripts/install.mjs` | Install/status/uninstall packages; dry-run; sandbox lifecycle; package availability reports. | satellite DB for skills/recipes/agents/jobs; filesystem/nginx/PM2 for services/projects. |
 | `scripts/sync.mjs` | Export live satellite state back into a package; `--mirror` creates restorable backups. | satellite DB and installed skill/agent files. |
 | `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, GitHub token, package download. | Network only. |
 | `scripts/polaris.mjs` | GitHub Client Repository clone helper. | Network + local `git`; uses hub-provided GitHub token. |
@@ -23,9 +23,10 @@ The library barrel is `scripts/lib/index.mjs`. Package hooks can import reusable
 | Recipe | `recipes/<name>.md` | `recipes` row | `recipe_versions.version_num` when declared |
 | Agent | `agents/<key>/AGENTS.md` + brain files | `agents`, joins, `AGENT_BRAINS_DIR/<key>` | `agent_versions.version_num` when declared |
 | Job | `jobs/<name>.yaml` | `background_jobs` row | unversioned |
-| Service | `services/<name>/service.yaml` + source | `/opt/projects/user/<name>`, nginx, PM2 | `service.yaml`/manifest only |
+| Service | `services/<name>/service.yaml` + source | `${SERVICES_BASE_DIR:-~/services}/<name>`, nginx, PM2 | `service.yaml`/manifest only |
+| Project | `projects/<name>/project.yaml` + source | `/opt/projects/user/<name>` symlink/copy, nginx, PM2 | `project.yaml`/manifest only |
 
-DB-managed resources are written through knex, not REST, so sandbox mode can redirect all writes to an isolated schema. Services are host resources and are skipped in sandbox mode.
+DB-managed resources are written through knex, not REST, so sandbox mode can redirect all writes to an isolated schema. Services and projects are host resources and are skipped in sandbox mode.
 
 ## Install flow
 
@@ -37,13 +38,13 @@ install.mjs <package> [flags]
   -> provision sandbox if requested
   -> create context: flags, env, DB, logger, paths
   -> preflight DB and writable install base
-  -> run ordered plan: skills -> recipes -> agents -> jobs -> services
+  -> run ordered plan: skills -> recipes -> agents -> jobs -> services -> projects
   -> run optional install_entry hook
   -> update install log when appropriate
   -> report and close DB
 ```
 
-Uninstall uses the reverse component order. Status is read-only. Dry-run records intended changes without DB/filesystem writes, except that service build commands are executed to surface build failures while nginx/PM2 apply is skipped.
+Uninstall uses the reverse component order. Status is read-only. Dry-run records intended changes without DB/filesystem writes, except that service/project build commands are executed to surface build failures while nginx/PM2 apply is skipped.
 
 ## Sync flow
 
@@ -53,7 +54,8 @@ Uninstall uses the reverse component order. Status is read-only. Dry-run records
 
 - The existing manifest is the authority.
 - Components listed in `ai1-package.yaml` are exported from the live satellite into their package paths.
-- `--add-skill`, `--add-recipe`, `--add-agent`, and `--add-job` register additional live components in the manifest and export them.
+- `--add-skill`, `--add-recipe`, `--add-agent`, and `--add-job` register additional live DB components in the manifest and export them.
+- `--add-project` moves `/opt/projects/user/<name>` into the package, adds a project entry, and leaves `/opt/projects/user/<name>` as a symlink to the package.
 - No manifest entries are removed.
 - Package-level `version` is not changed.
 
@@ -67,6 +69,7 @@ Uninstall uses the reverse component order. Status is read-only. Dry-run records
 - Preserves live skill `install_type` unless `--normalize` is passed.
 - Increments the package-level integer `version` only if package content changed.
 - Returns an install-log delta that the CLI applies to `${PACKAGES_DIR}/install.json`.
+- Services and projects are never auto-added by mirror. Existing project entries are left for git to manage.
 
 Both sync modes edit the package in place and require the destination to be inside a git work tree unless `--force` is used.
 
@@ -129,28 +132,29 @@ scripts/
 | `INSTALL_SCHEMA` | unset | Optional DB schema/search path; sandbox sets it. |
 | `PACKAGES_DIR` | `~/packages` | Install log and package store default. |
 | `PACKAGE_BASE_DIR` | `~/packages` | `remote.mjs get-package` extraction base and availability scan. |
+| `SERVICES_BASE_DIR` | `~/services` | Deployed service copies. |
 | `REMOTE_BASE_DIR` | `~/remote` | Hub identity/config/state/action files. |
 | `REPOS_BASE_DIR` | `~/repos` | Client Repository checkout base. |
 | `AGENT_BRAIN_EXCLUDE` | `activity,_backup,.scratch,memory` | Top-level brain dirs omitted from sync/mirror. |
 
 Legacy `legacy base-dir and schema fallbacks remain for existing harnesses.
 
-## Services
+## Services and projects
 
-Services are deployed inline by `core/service.mjs`:
+Services and projects are deployed inline by `core/service.mjs`:
 
 1. Run optional `build` command.
-2. Copy source to `/opt/projects/user/<name>`.
-3. Write `.env` with `PORT`, `NODE_ENV`, and `service.yaml` env values; set mode `0640`.
+2. For services, copy source to `${SERVICES_BASE_DIR:-~/services}/<name>`. For projects, symlink `/opt/projects/user/<name>` to the package project directory by default, or copy there with `--copy-projects`.
+3. Write `.env` with `PORT`, `NODE_ENV`, and declared env values; set mode `0640`.
 4. Write `ecosystem.config.cjs` for PM2.
 5. Write nginx vhost under `/etc/nginx/projects.d/<name>.conf` using a localhost upstream.
 6. Start/save PM2 and reload nginx.
 
 Safety constraints:
 
-- Services are never modeled in sandbox mode.
+- Services/projects are never modeled in sandbox mode.
 - Dry-run never applies nginx/PM2 changes.
-- A service named the satellite core service name is refused.
+- A service/project named the satellite core service name is refused.
 - Secrets are written only to `.env` and never into PM2 config or logs.
 
 ## Safety boundaries
@@ -159,4 +163,4 @@ Safety constraints:
 - Keep package source edits inside the package repo and use git for recovery.
 - Run `--dry-run` or `--sandbox --lifecycle` before live installs.
 - Treat `sync --mirror` as an in-place package edit; use `--dry-run` first on important repos.
-- Treat service installs as live host mutations.
+- Treat service/project installs as live host mutations.

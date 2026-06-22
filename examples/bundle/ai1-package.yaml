@@ -1,9 +1,9 @@
-# Complete sample package for ai1-satellite-tools — exercises every component type.
+# Complete sample package for ai1-satellite-tools — exercises DB component types plus a service.
 # Run it isolated:   node scripts/install.mjs examples/bundle --sandbox --lifecycle
 name: ai1-sample-bundle
 version: 1
 description: >
-  Reference package demonstrating every ai1-satellite-tools component type: a skill, a recipe, an
+  Reference package demonstrating core ai1-satellite-tools component types: a skill, a recipe, an
   agent that wires them together, an hourly background job, and a service (nginx + PM2). Built to be
   run under --sandbox --lifecycle; a real (non-sandbox) install also deploys the service live.
 installer: 1                   # min installer version (plain integer, implicit ">=")

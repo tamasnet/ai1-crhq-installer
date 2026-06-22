@@ -1,6 +1,6 @@
 // run.mjs — the shared plan dispatcher used by both the CLI runner (install.mjs) and the sandbox
 // lifecycle suite, so they exercise identical code paths. Order = skills → recipes → agents →
-// jobs → services (D-4); uninstall reverses (C13). Continue-and-report: one failing component is
+// jobs → services → projects (D-4); uninstall reverses (C13). Continue-and-report: one failing component is
 // recorded but doesn't abort the rest.
 import * as skill from './core/skill.mjs';
 import * as recipe from './core/recipe.mjs';
@@ -10,7 +10,7 @@ import * as service from './core/service.mjs';
 import { VERDICT } from './log.mjs';
 import { makeFilter, hasFilter } from './filter.mjs';
 
-export const ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services'];
+export const ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services', 'projects'];
 
 // The canonical identifier a --include/--exclude filter is tested against — the same value the run
 // summary prints. Every component type carries `name` (for agents it maps to agents.key — D-23).
@@ -22,6 +22,7 @@ const DISPATCH = {
   agents: { upsert: agent.upsertAgent, remove: agent.removeAgent, status: agent.statusAgent },
   jobs: { upsert: job.upsertJob, remove: job.removeJob, status: job.statusJob },
   services: { upsert: service.installService, remove: service.removeService, status: service.statusService },
+  projects: { upsert: service.installProject, remove: service.removeProject, status: service.statusProject },
 };
 
 export async function runPlan(ctx, plan) {

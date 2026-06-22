@@ -2,7 +2,7 @@
 // as a regular expression, with one special case: if it contains NO regex metacharacters it is an
 // exact, anchored match (as if written `^value$`). Matching is case-sensitive. The name a filter is
 // tested against is the component's canonical identifier — the same value shown in the run summary
-// (skill/recipe/job/service → `name`; agent → `key`).
+// (skill/recipe/job/service/project → `name`; agent → `key`).
 
 // The metacharacters whose presence flips a pattern from "literal exact match" to "regex". A literal
 // like `my-skill` (hyphens are NOT metacharacters) stays an exact match; to substring/partial-match

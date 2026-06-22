@@ -12,7 +12,7 @@
 //              whose component is gone, and bump the integer package version when content changed.
 //
 // Usage: sync.mjs [<package-dir>] [--add-skill=<n>] [--add-recipe=<n>] [--add-agent=<n>]
-//                 [--add-job=<n>] [--mirror [--normalize] [--type=<t>] [--include=<p>]
+//                 [--add-job=<n>] [--add-project=<n>] [--mirror [--normalize] [--type=<t>] [--include=<p>]
 //                 [--exclude=<p>]] [--dry-run] [--json] [--help]
 
 import { resolve } from 'node:path';
@@ -33,6 +33,9 @@ never touched — run before git diff/add/commit.
   --add-recipe=<name>   Register a recipe in the manifest and export it (repeatable)
   --add-agent=<name>    Register an agent in the manifest and export it (repeatable)
   --add-job=<name>      Register a job in the manifest and export it (repeatable)
+  --add-project=<name>  Move /opt/projects/user/<name> into projects/<name>, add it to the manifest,
+                        and replace the live directory with a symlink to the package (repeatable).
+                        Projects are then managed by git; later sync/mirror runs do not export them.
 
   --mirror              Backup mode: make the package mirror the live satellite. Auto-adds new
                         components, syncs existing ones, and REMOVES manifest entries (plus their
@@ -40,8 +43,9 @@ never touched — run before git diff/add/commit.
                         package version by 1 when the run changed package content.
   --normalize           With --mirror: ship the distributable default for added skills (org/locked)
                         instead of preserving the live user/org install_type. (Default: preserve.)
-  --type=<types>        With --mirror: restrict to component types (skills,recipes,agents,jobs;
+  --type=<types>        With --mirror: restrict to DB component types (skills,recipes,agents,jobs;
                         comma-separated and/or repeated). Scopes additions, syncs AND removals.
+                        services/projects are accepted for convenience but ignored.
   --include=<pat>       With --mirror: only components whose name matches <pat>
                         (regex; a value with no regex metacharacter is an exact ^pat$ match)
   --exclude=<pat>       With --mirror: skip components whose name matches <pat> (after --include)
@@ -69,11 +73,11 @@ Exit codes: 0 = clean  1 = error or export failure  2 = usage error
 // sync's own flag set — a spec the satellite-tools mode-based validator doesn't cover.
 const FLAG_SPEC = {
   bool:  ['--mirror', '--normalize', '--dry-run', '--force', '--json', '--help'],
-  value: ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--type', '--include', '--exclude'],
+  value: ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--add-project', '--type', '--include', '--exclude'],
 };
 // Flags that only make sense inside --mirror.
 const MIRROR_ONLY = ['--normalize', '--type', '--include', '--exclude'];
-const ADD_FLAGS = ['--add-skill', '--add-recipe', '--add-agent', '--add-job'];
+const ADD_FLAGS = ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--add-project'];
 
 const nameOf = (token) => {
   const i = token.indexOf('=');
@@ -137,6 +141,7 @@ try {
     recipes: flags['add-recipe'] ?? [],
     agents:  flags['add-agent']  ?? [],
     jobs:    flags['add-job']    ?? [],
+    projects: flags['add-project'] ?? [],
   };
 
   // Mode-consistency checks (before touching the DB).
@@ -153,9 +158,11 @@ try {
   if (flags['type']) {
     typeScope = flags['type'].flatMap((v) => v.split(',')).map((s) => s.trim()).filter(Boolean);
     const log0 = makeLogger({ dryRun });
-    if (typeScope.includes('services')) log0.warn('services are not DB-resident — mirror does not cover them; ignoring');
-    const unknown = typeScope.filter((t) => t !== 'services' && !SYNC_TYPES.includes(t));
-    if (unknown.length) throw new UsageError(`--type: unknown component type(s): ${unknown.join(', ')} (valid: ${SYNC_TYPES.join(', ')})`);
+    for (const nonDb of ['services', 'projects']) {
+      if (typeScope.includes(nonDb)) log0.warn(`${nonDb} are package/git-managed — mirror does not cover them; ignoring`);
+    }
+    const unknown = typeScope.filter((t) => !['services', 'projects'].includes(t) && !SYNC_TYPES.includes(t));
+    if (unknown.length) throw new UsageError(`--type: unknown component type(s): ${unknown.join(', ')} (valid: ${[...SYNC_TYPES, 'services', 'projects'].join(', ')})`);
     typeScope = typeScope.filter((t) => SYNC_TYPES.includes(t));
   }
   // --include/--exclude: a single pattern each (last wins if repeated).

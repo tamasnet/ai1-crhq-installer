@@ -19,7 +19,8 @@ export class UsageError extends Error {
 export const FLAG_SPEC = {
   install: {
     bool: ['--dry-run', '--status', '--uninstall', '--respect-locks', '--install-skills-as-user',
-      '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available'],
+      '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available',
+      '--copy-projects'],
     value: ['--type', '--include', '--exclude'],
   },
 };
@@ -84,7 +85,7 @@ Usage: node scripts/install.mjs [<package>] [options]
   <package>  directory containing ai1-package.yaml (or the file itself); default '.'
 
 Options:
-  --dry-run                  preview only; zero DB/fs writes (services: build only)
+  --dry-run                  preview only; zero DB/fs writes (services/projects: build only)
   --status                   report per-component install state
   --uninstall                remove the package's components (reverse order)
   --list-installed           print the install log (sorted by type, then name) and exit; standalone
@@ -95,7 +96,9 @@ Options:
                              standalone — needs no package or DB; combine with --json for the rows array
   --respect-locks            skip locked skills instead of auto-unlocking them
   --install-skills-as-user   register all skills as unlocked user skills (default: org, locked)
-  --type=<types>             restrict to component types: skills,recipes,agents,jobs,services
+  --copy-projects            for project components, copy source into /opt/projects/user/<name>
+                             instead of symlinking to the package directory
+  --type=<types>             restrict to component types: skills,recipes,agents,jobs,services,projects
                              (comma-separated and/or the flag repeated)
   --include=<pat>            process only components whose name matches <pat>
                              (regex; a value with no regex metacharacter is an exact ^pat$ match)

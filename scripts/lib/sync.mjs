@@ -4,12 +4,14 @@
 // Direction: satellite (DB + filesystem) → package repo (Git working copy)
 // Git-safe: writeIfChanged is used throughout — byte-identical files are never touched.
 // Services are out of scope (not DB-resident; their source of truth is the original package).
+// Projects are added only with --add-project, then left to git; mirror never auto-adds them.
 //
 // Two modes (both share every primitive — export*, manifest read/write, version logic):
 //
 //   mode 'sync' (default): the MANIFEST is the authority. Export each component the manifest lists,
-//     plus any --add-<type>=<name> the author asked for. Nothing is removed; package-level version
-//     is left untouched; additions are normalized to the distributable default (org/locked skills).
+//     plus any --add-<type>=<name> the author asked for. --add-project moves the live project into
+//     the package and leaves a symlink. Nothing is removed; package-level version is left untouched;
+//     DB additions are normalized to the distributable default (org/locked skills).
 //
 //   mode 'mirror' (`--mirror`, the former `backup`): the LIVE SATELLITE is the authority. Make the
 //     package mirror it — within the --type/--include/--exclude scope:
@@ -38,8 +40,8 @@ import { spawnSync } from 'node:child_process';
 // Import siblings directly (not the index barrel) so sync.mjs can itself be re-exported from index
 // without an import cycle — the same convention the former backup.mjs followed.
 import { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
-import { safeName, writeIfChanged, removeTree } from './fs.mjs';
-import { validateManifest } from './manifest.mjs';
+import { safeName, writeIfChanged, removeTree, moveTree, ensureSymlink, pathExistsOrLink } from './fs.mjs';
+import { validateManifest, readWebAppConfig } from './manifest.mjs';
 import { makeFilter } from './filter.mjs';
 import { VERDICT } from './log.mjs';
 import { exportSkill } from './core/skill.mjs';
@@ -47,6 +49,7 @@ import { exportRecipe } from './core/recipe.mjs';
 import { exportAgent } from './core/agent.mjs';
 import { exportJob } from './core/job.mjs';
 import { satellitePackageName } from './identity.mjs';
+import { resolveUserProjectsBase } from './paths.mjs';
 
 export class SyncError extends Error {
   constructor(msg) { super(msg); this.name = 'SyncError'; }
@@ -70,24 +73,25 @@ export function isInsideGitRepo(dir) {
   return r.status === 0 && r.stdout.trim() === 'true';
 }
 
-// Component types covered by sync (services are not DB-resident).
+// Component types covered by sync/mirror DB export (services/projects are not DB-resident).
 export const SYNC_TYPES = ['skills', 'recipes', 'agents', 'jobs'];
 
-// Default relative path within the package for a newly added component. Skills and agents are
-// directories (SKILL.md / AGENTS.md inside); recipes and jobs are single files.
+// Default relative path within the package for a newly added component. Skills, agents, and projects
+// are directories (SKILL.md / AGENTS.md / project.yaml inside); recipes and jobs are single files.
 const DEFAULT_PATH = {
   skills:  (name) => `skills/${safeName(name)}`,
   recipes: (name) => `recipes/${safeName(name)}.md`,
   agents:  (name) => `agents/${safeName(name)}`,
   jobs:    (name) => `jobs/${safeName(name)}.yaml`,
+  projects:(name) => `projects/${safeName(name)}`,
 };
 
 // Canonical DB identifier for a discovered row, per type.
 const ROW_NAME = { skills: (r) => r.name, recipes: (r) => r.name, agents: (r) => r.key, jobs: (r) => r.name };
 
 // Derive the component's canonical DB name from a manifest entry path.
-// For skills + agents (directory components): try the SKILL.md / AGENTS.md frontmatter 'name' field;
-// fall back to the directory basename. For recipes/jobs: basename of path minus the extension.
+// For directory components: try their metadata file's canonical name; fall back to the directory
+// basename. For recipes/jobs: basename of path minus the extension.
 // If the component file already exists in the package dir, the frontmatter is authoritative.
 function deriveName(packageDir, type, entryPath) {
   if (type === 'skills' || type === 'agents') {
@@ -99,6 +103,13 @@ function deriveName(packageDir, type, entryPath) {
         if (meta.name) return meta.name;
       } catch { /* fall through to basename */ }
     }
+    return basename(entryPath);
+  }
+  if (type === 'projects') {
+    const srcDir = join(packageDir, entryPath);
+    try {
+      if (existsSync(srcDir)) return readWebAppConfig(srcDir, { kind: 'project', pathLabel: entryPath }).config.name;
+    } catch { /* fall through to basename */ }
     return basename(entryPath);
   }
   return basename(entryPath, extname(entryPath));
@@ -145,6 +156,32 @@ async function exportComponent(ctx, type, row, { packageDir, relPath, skillNames
   }
 }
 
+function addProjectToPackage(ctx, name, { packageDir, relPath }) {
+  const dry = !!ctx.DRY_RUN;
+  const liveBase = ctx.USER_PROJECTS_BASE || resolveUserProjectsBase();
+  const liveDir = join(liveBase, name);
+  const destDir = join(packageDir, relPath);
+
+  if (!pathExistsOrLink(liveDir)) throw new SyncError(`cannot add project '${name}': ${liveDir} does not exist`);
+  if (pathExistsOrLink(destDir)) throw new SyncError(`cannot add project '${name}': package path already exists: ${relPath}`);
+
+  const { config, version } = readWebAppConfig(liveDir, { kind: 'project', pathLabel: liveDir });
+  if (config.name !== name) throw new SyncError(`cannot add project '${name}': project config name is '${config.name}'`);
+
+  if (!dry) {
+    moveTree(liveDir, destDir, { dryRun: false });
+    try {
+      ensureSymlink(liveDir, destDir, { dryRun: false });
+    } catch (e) {
+      // Best-effort rollback: keep the live project usable if replacing it with a symlink failed.
+      try { moveTree(destDir, liveDir, { dryRun: false }); } catch { /* ignore rollback failure */ }
+      throw e;
+    }
+  }
+
+  return { entry: { path: relPath, version }, changed: true };
+}
+
 // Short label for log output.
 const label = (type, name) => `${type.replace(/s$/, '')}:${name}`;
 const singular = (type) => type.replace(/s$/, '');
@@ -152,7 +189,12 @@ const singular = (type) => type.replace(/s$/, '');
 // The component's manifest file relative to the package root — the install log's `source` field
 // (mirrors install-log.mjs's sourceOf). Skills/agents carry a SKILL.md/AGENTS.md under their dir;
 // the rest are a single file.
-const sourceOf = (type, path) => (type === 'skills' ? `${path}/SKILL.md` : type === 'agents' ? `${path}/AGENTS.md` : path);
+const sourceOf = (type, path) => (
+  type === 'skills' ? `${path}/SKILL.md`
+    : type === 'agents' ? `${path}/AGENTS.md`
+      : type === 'projects' ? `${path}/project.yaml`
+        : path
+);
 
 // ──────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -161,7 +203,7 @@ const sourceOf = (type, path) => (type === 'skills' ? `${path}/SKILL.md` : type 
 //   packageDir  — the package repo dir holding ai1-package.yaml
 //   additions   — { skills, recipes, agents, jobs: string[] } explicit --add-* names (sync mode)
 //   mode        — 'sync' (default) | 'mirror'
-//   typeScope   — (mirror) array of component types to restrict to; null/empty = all
+//   typeScope   — (mirror) array of DB component types to restrict to; null = all, [] = none
 //   filterSpec  — (mirror) { include, exclude } name filters; also bounds what removal may touch
 //   normalize   — (mirror) strip live fidelity (skills → org/locked) like a sync addition
 export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', typeScope = null, filterSpec = {}, normalize = false } = {}) {
@@ -171,7 +213,7 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
   const preserveFidelity = isMirror && !normalize;
 
   // Scope (mirror only). In plain sync everything is in scope.
-  const typeSet = (isMirror && Array.isArray(typeScope) && typeScope.length) ? new Set(typeScope) : null;
+  const typeSet = (isMirror && Array.isArray(typeScope)) ? new Set(typeScope) : null;
   const nameMatch = isMirror ? makeFilter(filterSpec) : () => true;
   const typeInScope = (t) => !typeSet || typeSet.has(t);
   const inScope = (t, name) => typeInScope(t) && nameMatch(name);
@@ -179,12 +221,12 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
   const manifestPath = join(packageDir, 'ai1-package.yaml');
   const manifestExists = existsSync(manifestPath);
 
-  const explicitAdds = SYNC_TYPES.some((t) => (additions[t]?.length ?? 0) > 0);
+  const explicitAdds = [...SYNC_TYPES, 'projects'].some((t) => (additions[t]?.length ?? 0) > 0);
 
   if (!manifestExists && !isMirror && !explicitAdds) {
     throw new SyncError(
       `No ai1-package.yaml found in ${packageDir}.\n` +
-      `  Use --add-skill=<name> (or --add-recipe, --add-agent, --add-job) to create one,\n` +
+      `  Use --add-skill=<name> (or --add-recipe, --add-agent, --add-job, --add-project) to create one,\n` +
       `  or --mirror to snapshot the whole satellite into this directory.`,
     );
   }
@@ -228,6 +270,7 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
   // scope that the manifest doesn't already list.
   const addQueue = {};
   for (const t of SYNC_TYPES) addQueue[t] = [...(additions[t] ?? [])];
+  addQueue.projects = [...(additions.projects ?? [])];
 
   if (isMirror) {
     const live = await discover(db);
@@ -246,6 +289,34 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
   const handled = new Set();
 
   // ── Phase 1: additions ────────────────────────────────────────────────────────────────────────
+  for (const name of addQueue.projects) {
+    const type = 'projects';
+    const existing = manifest.components.projects ?? [];
+    if (existing.some((e) => deriveName(packageDir, type, e.path) === name)) {
+      log.warn(`${label(type, name)} already in manifest — skipping addition`);
+      continue;
+    }
+
+    const relPath = DEFAULT_PATH.projects(name);
+    let result;
+    try {
+      result = addProjectToPackage(ctx, name, { packageDir, relPath });
+    } catch (e) {
+      throw e instanceof SyncError ? e : new SyncError(`failed to add ${label(type, name)}: ${e.message}`);
+    }
+
+    if (!dry) {
+      manifest.components.projects ??= [];
+      manifest.components.projects.push(result.entry);
+      manifestDirty = true;
+    }
+
+    contentChanged = true;
+    results.push({ type: 'project', name, verdict: 'SYNC-ADDED', action: dry ? 'added (dry-run)' : 'added' });
+    if (dry) log.dry(`move ${label(type, name)} from live project dir into package at ${relPath} and replace with symlink`);
+    else      log.ok(`${label(type, name)} → moved into package and symlinked`);
+  }
+
   for (const type of SYNC_TYPES) {
     for (const name of addQueue[type]) {
       const existing = manifest.components[type] ?? [];

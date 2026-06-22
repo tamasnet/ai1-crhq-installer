@@ -30,7 +30,7 @@ function abbrev(p) {
 
 // Walk `baseDir` (up to `maxDepth` levels deep) collecting every directory that holds an
 // `ai1-package.yaml`. Descent STOPS at the first manifest found on a branch, so a package's own
-// component subtrees (skills/, services/, …) are never themselves mistaken for packages — and the
+// component subtrees (skills/, services/, projects/, …) are never themselves mistaken for packages — and the
 // conventional layouts both resolve naturally: `~/packages/<name>@<version>/` (depth 1) and a Client
 // Repo's `~/repos/<repo>/{platform,user}/` (depth 2). Hidden dirs (`.git`, the `.<slug>.stage-*`
 // temp dirs get-package writes) and `node_modules` are skipped; symlinked dirs are not followed (so

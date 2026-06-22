@@ -1,6 +1,6 @@
 # ai1-sample-bundle
 
-Complete reference Ai1 Package for `ai1-satellite-tools`. It includes one of every component type.
+Reference Ai1 Package for `ai1-satellite-tools`. It includes each DB component type plus a service.
 
 | Component | Path | Notes |
 |-----------|------|-------|

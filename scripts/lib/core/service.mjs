@@ -1,24 +1,24 @@
-// core/service.mjs — services are nginx + PM2 web apps (NOT DB-resident). D-2b RESOLVED: inline
+// core/service.mjs — services/projects are nginx + PM2 web apps (NOT DB-resident). D-2b RESOLVED: inline
 // templates (deploy-project ships no callable scripts — it's a runbook), so we emit the artifacts
 // here and drive pm2/nginx directly, honoring its security rules (127.0.0.1 binding, chmod 640 .env,
 // never touch crhq-satellite).
 //
 // Safety model:
 //   • dry-run (D-2a)     → run the build step + render artifacts, SKIP the apply (no nginx/PM2/port).
-//   • --sandbox          → services aren't modelled by the sandbox → SKIP entirely (build + apply).
-//   • real install       → applyService(): copy source, write .env/ecosystem/vhost, alloc port,
-//                          pm2 start+save, nginx reload. This MUTATES THE LIVE VPS.
+//   • --sandbox          → web apps aren't modelled by the sandbox → SKIP entirely (build + apply).
+//   • real install       → applyWebApp(): copy/symlink source, write .env/ecosystem/vhost,
+//                          alloc port, pm2 start+save, nginx reload. This MUTATES THE LIVE VPS.
 //
 // ⚠️ The live apply/remove paths are implemented per deploy-project conventions but are NOT yet
 // exercised — the plan's "one explicit live service smoke test" (Phase 6) validates them. Render +
-// build + dry-run + the sandbox skip ARE covered by tests/service.test.mjs.
-import { existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync, readFileSync } from 'fs';
+// build + dry-run + symlink helpers + the sandbox skip ARE covered by tests/service.test.mjs.
+import { existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync, readFileSync, lstatSync } from 'fs';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
-import { copyTree, removeTree } from '../fs.mjs';
+import { copyTree, removeTree, ensureSymlink } from '../fs.mjs';
 import { VERDICT } from '../log.mjs';
+import { resolveServicesBase, resolveUserProjectsBase } from '../paths.mjs';
 
-const USER_PROJECTS = '/opt/projects/user';
 const NGINX_DIR = '/etc/nginx/projects.d';
 const PORT_BASE = 4300;
 
@@ -26,7 +26,7 @@ const PORT_BASE = 4300;
 
 export function renderEnv(def, port) {
   // PORT + NODE_ENV defaults, overridden by the service's declared env. Secrets live ONLY here
-  // (chmod 640 by applyService) — never echoed to logs, never duplicated into the PM2 config.
+  // (chmod 640 by applyWebApp) — never echoed to logs, never duplicated into the PM2 config.
   const merged = { PORT: port, NODE_ENV: 'production', ...(def.env || {}) };
   return `${Object.entries(merged).map(([k, v]) => `${k}=${v}`).join('\n')}\n`;
 }
@@ -125,38 +125,62 @@ function renderArtifacts(def, port, projectDir, env) {
 // ── Lifecycle ────────────────────────────────────────────────────────────────────────────────
 
 export function installService(ctx, def) {
+  return installWebApp(ctx, def, {
+    type: 'service',
+    baseDir: ctx.SERVICES_BASE || resolveServicesBase(),
+    contentMode: 'copy',
+  });
+}
+
+export function installProject(ctx, def) {
+  return installWebApp(ctx, def, {
+    type: 'project',
+    baseDir: ctx.USER_PROJECTS_BASE || resolveUserProjectsBase(),
+    contentMode: ctx.COPY_PROJECTS ? 'copy' : 'symlink',
+  });
+}
+
+function installWebApp(ctx, def, { type, baseDir, contentMode }) {
   const { log, DRY_RUN, SANDBOX } = ctx;
 
-  if (SANDBOX) {                                  // services aren't sandbox-modelled (skip cleanly)
-    log.warn(`service ${def.name}: skipped under --sandbox (nginx/PM2 not modelled)`);
-    return out(def.name, VERDICT.ALREADY, 'sandbox-skipped');
+  if (SANDBOX) {                                  // nginx/PM2 aren't sandbox-modelled (skip cleanly)
+    log.warn(`${type} ${def.name}: skipped under --sandbox (nginx/PM2 not modelled)`);
+    return out(type, def.name, VERDICT.ALREADY, 'sandbox-skipped');
   }
 
   if (def.build) {                                // D-2a: build runs in dry-run too
-    log.info(`service ${def.name}: build (${def.build})`);
+    log.info(`${type} ${def.name}: build (${def.build})`);
     const r = spawnSync(def.build, { cwd: def.srcDir, shell: true, stdio: 'inherit' });
-    if (r.status !== 0) return out(def.name, VERDICT.FAIL, 'build-failed');
+    if (r.status !== 0) return out(type, def.name, VERDICT.FAIL, 'build-failed');
   }
 
-  const projectDir = join(USER_PROJECTS, def.name);
+  const projectDir = join(baseDir, def.name);
   const port = def.port || nextFreePort(DRY_RUN ? [] : scanUsedPorts());
   const artifacts = renderArtifacts(def, port, projectDir, process.env);
 
   if (DRY_RUN) {
-    log.dry(`deploy service ${def.name} → ${projectDir} on port ${port} (nginx vhost + PM2 — apply skipped, D-2a)`);
-    return out(def.name, VERDICT.OK, `built (port ${port})`);
+    const content = type === 'project'
+      ? (contentMode === 'copy' ? 'copy project files' : `symlink to ${def.srcDir}`)
+      : 'copy service files';
+    log.dry(`deploy ${type} ${def.name} → ${projectDir} on port ${port} (${content}; nginx vhost + PM2 — apply skipped, D-2a)`);
+    return out(type, def.name, VERDICT.OK, `built (port ${port})`);
   }
 
-  applyService(ctx, def, projectDir, port, artifacts);   // ⚠️ live VPS mutation
-  return out(def.name, VERDICT.OK, `deployed (port ${port})`);
+  applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode });   // ⚠️ live VPS mutation
+  return out(type, def.name, VERDICT.OK, `deployed (port ${port})`);
 }
 
 // Live apply — gated to real (non-dry-run, non-sandbox) installs. Faithful to deploy-project;
 // pending the explicit live smoke test for verification.
-function applyService(ctx, def, projectDir, port, artifacts) {
-  if (def.name === 'crhq-satellite') throw new Error('refusing to deploy a service named crhq-satellite');
-  mkdirSync(projectDir, { recursive: true });
-  copyTree(def.srcDir, projectDir, { dryRun: false });
+function applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode }) {
+  if (def.name === 'crhq-satellite') throw new Error(`refusing to deploy a ${type} named crhq-satellite`);
+  if (contentMode === 'symlink') {
+    ensureSymlink(projectDir, def.srcDir);
+  } else {
+    if (isSymlink(projectDir)) removeTree(projectDir, { dryRun: false });
+    mkdirSync(projectDir, { recursive: true });
+    copyTree(def.srcDir, projectDir, { dryRun: false });
+  }
 
   const envPath = join(projectDir, '.env');
   writeFileSync(envPath, artifacts.env);
@@ -168,30 +192,58 @@ function applyService(ctx, def, projectDir, port, artifacts) {
   sh(ctx, 'pm2', ['save'], {});                                // reboot persistence
   sh(ctx, 'sudo', ['nginx', '-t']);
   sh(ctx, 'sudo', ['nginx', '-s', 'reload']);
-  ctx.log.ok(`service ${def.name} deployed on 127.0.0.1:${port}`);
+  ctx.log.ok(`${type} ${def.name} deployed on 127.0.0.1:${port}`);
 }
 
 export function removeService(ctx, nameOrDef) {
+  return removeWebApp(ctx, nameOrDef, {
+    type: 'service',
+    baseDir: ctx.SERVICES_BASE || resolveServicesBase(),
+  });
+}
+
+export function removeProject(ctx, nameOrDef) {
+  return removeWebApp(ctx, nameOrDef, {
+    type: 'project',
+    baseDir: ctx.USER_PROJECTS_BASE || resolveUserProjectsBase(),
+  });
+}
+
+function removeWebApp(ctx, nameOrDef, { type, baseDir }) {
   const name = typeof nameOrDef === 'string' ? nameOrDef : nameOrDef.name;
   const { DRY_RUN, SANDBOX, log } = ctx;
   if (name === 'crhq-satellite') throw new Error('refusing to touch crhq-satellite');
-  if (SANDBOX) { log.warn(`service ${name}: skipped under --sandbox`); return out(name, VERDICT.ALREADY, 'sandbox-skipped'); }
-  if (DRY_RUN) { log.dry(`remove service ${name} (pm2 delete + rm vhost + nginx reload)`); return out(name, VERDICT.OK, 'removed'); }
+  if (SANDBOX) { log.warn(`${type} ${name}: skipped under --sandbox`); return out(type, name, VERDICT.ALREADY, 'sandbox-skipped'); }
+  if (DRY_RUN) { log.dry(`remove ${type} ${name} (pm2 delete + rm vhost + nginx reload)`); return out(type, name, VERDICT.OK, 'removed'); }
 
   sh(ctx, 'pm2', ['delete', name], { allowFail: true });
   sh(ctx, 'pm2', ['save'], { allowFail: true });
   removeTree(join(NGINX_DIR, `${name}.conf`), { dryRun: false });
   sh(ctx, 'sudo', ['nginx', '-s', 'reload'], { allowFail: true });
-  removeTree(join(USER_PROJECTS, name), { dryRun: false });   // remove project dir (incl. .env)
-  return out(name, VERDICT.OK, 'removed');
+  removeTree(join(baseDir, name), { dryRun: false });   // remove deployed dir/symlink (incl. .env)
+  return out(type, name, VERDICT.OK, 'removed');
 }
 
 export function statusService(ctx, nameOrDef) {
+  return statusWebApp(ctx, nameOrDef, {
+    type: 'service',
+    baseDir: ctx.SERVICES_BASE || resolveServicesBase(),
+  });
+}
+
+export function statusProject(ctx, nameOrDef) {
+  return statusWebApp(ctx, nameOrDef, {
+    type: 'project',
+    baseDir: ctx.USER_PROJECTS_BASE || resolveUserProjectsBase(),
+  });
+}
+
+function statusWebApp(ctx, nameOrDef, { type, baseDir }) {
   const name = typeof nameOrDef === 'string' ? nameOrDef : nameOrDef.name;
-  const dirPresent = existsSync(join(USER_PROJECTS, name));
+  const dirPresent = existsSync(join(baseDir, name));
   const vhostPresent = existsSync(join(NGINX_DIR, `${name}.conf`));
   const pm2Present = spawnSync('pm2', ['describe', name], { stdio: 'ignore' }).status === 0;
-  return { type: 'service', name, verdict: dirPresent ? VERDICT.ALREADY : VERDICT.ABSENT, dirPresent, vhostPresent, pm2Present };
+  return { type, name, verdict: dirPresent ? VERDICT.ALREADY : VERDICT.ABSENT, dirPresent, vhostPresent, pm2Present };
 }
 
 function sh(ctx, cmd, args, { cwd, allowFail = false } = {}) {
@@ -200,4 +252,8 @@ function sh(ctx, cmd, args, { cwd, allowFail = false } = {}) {
   return r;
 }
 
-function out(name, verdict, action) { return { type: 'service', name, verdict, action }; }
+function isSymlink(path) {
+  try { return lstatSync(path).isSymbolicLink(); } catch { return false; }
+}
+
+function out(type, name, verdict, action) { return { type, name, verdict, action }; }
