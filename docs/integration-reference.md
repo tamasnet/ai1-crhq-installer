@@ -97,7 +97,7 @@ Source: `services/<name>/service.yaml` and service source tree.
 Install behavior:
 
 - Required fields: `name`, `version`, `start`.
-- Optional `build` runs before apply, including during dry-run.
+- Optional `build` runs before apply, including during dry-run. It is a single shell command string or a YAML list of commands run sequentially (fail-fast on the first non-zero exit).
 - Copy source to `${SERVICES_BASE_DIR:-~/services}/<name>`.
 - Write `.env`, `ecosystem.config.cjs`, and nginx vhost.
 - Bind nginx upstream to `127.0.0.1:<port>`.
@@ -112,7 +112,7 @@ Source: `projects/<name>/project.yaml` and project source tree.
 Install behavior:
 
 - Required fields: `name`, `version`, `start`.
-- Optional `build` runs before apply, including during dry-run.
+- Optional `build` runs before apply, including during dry-run. It is a single shell command string or a YAML list of commands run sequentially (fail-fast on the first non-zero exit).
 - By default, create/update `/opt/projects/user/<name>` as a symlink to the package project directory.
 - With `--copy-projects`, copy source to `/opt/projects/user/<name>` instead.
 - Write `.env`, `ecosystem.config.cjs`, and nginx vhost.

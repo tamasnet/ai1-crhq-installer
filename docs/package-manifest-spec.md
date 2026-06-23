@@ -193,6 +193,14 @@ nginx:
 
 Required fields: `name`, `version`, `start`. Optional fields: `port`, `build`, `env`, `nginx.subdomain`, `nginx.ssl`.
 
+`build` accepts a single shell command string or a YAML list of command strings. A list is run sequentially, in order, and fails fast on the first non-zero exit; empty/whitespace entries are ignored. Each command runs through a shell, so a single string can also chain commands with `&&`/`;`.
+
+```yaml
+build:
+  - npm ci
+  - npm run build
+```
+
 A real install copies the service source to `${SERVICES_BASE_DIR:-~/services}/<name>`, writes `.env` at mode `0640`, writes `ecosystem.config.cjs`, writes nginx config under `/etc/nginx/projects.d`, starts/saves PM2, and reloads nginx. Sandbox mode skips services. Dry-run runs the build command and renders the plan but skips nginx/PM2 apply.
 
 ### Project: `projects/<name>/project.yaml`
@@ -210,7 +218,7 @@ nginx:
   ssl: true
 ```
 
-Projects use the same nginx/PM2 schema as services. A real install creates or updates `/opt/projects/user/<name>` as a symlink to the project directory inside the package, then writes `.env`, `ecosystem.config.cjs`, nginx config, and PM2 state the same way services do. Pass `--copy-projects` to copy the project source into `/opt/projects/user/<name>` instead of symlinking. Sandbox mode skips projects. Dry-run runs the build command and renders the plan but skips nginx/PM2 apply.
+Projects use the same nginx/PM2 schema as services, including the `build` field (a single shell command string or a YAML list run sequentially). A real install creates or updates `/opt/projects/user/<name>` as a symlink to the project directory inside the package, then writes `.env`, `ecosystem.config.cjs`, nginx config, and PM2 state the same way services do. Pass `--copy-projects` to copy the project source into `/opt/projects/user/<name>` instead of symlinking. Sandbox mode skips projects. Dry-run runs the build command and renders the plan but skips nginx/PM2 apply.
 
 `sync.mjs --add-project=<name>` moves `/opt/projects/user/<name>` into `projects/<name>` inside the package, adds the manifest entry, and replaces the live directory with a symlink. If the live project has no `project.yaml`, a minimal valid default (`name`, `version: 1`, `start: node server.js`) is generated inside the package for the author to edit. Mirror mode never auto-adds projects, and later sync/mirror runs do not export project content; git is the source of truth after the initial add.
 

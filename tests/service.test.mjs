@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, lstatSync, readlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { loadManifest } from '../scripts/lib/manifest.mjs';
+import { loadManifest, normalizeBuild, ManifestError } from '../scripts/lib/manifest.mjs';
 import { makeLogger } from '../scripts/lib/log.mjs';
 import {
   installService, installProject, renderEnv, renderEcosystem, renderNginx, nextFreePort,
@@ -129,6 +129,32 @@ await test('ensureSymlink: creates and updates the live project link', () => {
   assert.equal(ensureSymlink(link, a), false, 'same target is unchanged');
   assert.equal(ensureSymlink(link, b), true, 'different target updates the symlink');
   assert.equal(readlinkSync(link), b);
+});
+
+console.log('\nbuild field normalization:');
+
+await test('normalizeBuild: a single string becomes a one-element list', () => {
+  assert.deepEqual(normalizeBuild('svc build', 'npm run build'), ['npm run build']);
+});
+
+await test('normalizeBuild: a list is kept in order', () => {
+  assert.deepEqual(
+    normalizeBuild('svc build', ['npm ci', 'npm run build', 'npm run bundle']),
+    ['npm ci', 'npm run build', 'npm run bundle'],
+  );
+});
+
+await test('normalizeBuild: empty/whitespace entries are dropped; nothing left → undefined', () => {
+  assert.deepEqual(normalizeBuild('svc build', ['npm ci', '   ', '']), ['npm ci']);
+  assert.equal(normalizeBuild('svc build', '   '), undefined);
+  assert.equal(normalizeBuild('svc build', []), undefined);
+  assert.equal(normalizeBuild('svc build', undefined), undefined);
+  assert.equal(normalizeBuild('svc build', null), undefined);
+});
+
+await test('normalizeBuild: a non-string entry is a manifest error', () => {
+  assert.throws(() => normalizeBuild('svc build', ['npm ci', 42]), (e) => e instanceof ManifestError && /string or a list/.test(e.message));
+  assert.throws(() => normalizeBuild('svc build', { cmd: 'x' }), (e) => e instanceof ManifestError);
 });
 
 for (const d of cleanups) rmSync(d, { recursive: true, force: true });

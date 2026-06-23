@@ -213,8 +213,22 @@ function loadWebAppDef(entry, root, kind) {
   }
   return {
     name: s.name, version, start: s.start, port: s.port, cwd: s.cwd || './',
-    build: s.build, env: s.env || {}, nginx: s.nginx || {}, srcDir, srcFile,
+    build: normalizeBuild(`${cap} ${s.name} build`, s.build), env: s.env || {}, nginx: s.nginx || {}, srcDir, srcFile,
   };
+}
+
+// Normalize the optional `build` field to a list of shell commands run sequentially at install time.
+// Accepts a single string or a YAML list of strings; trims and drops empty/whitespace-only entries.
+// Returns undefined when nothing remains (no build step). Non-string entries are a manifest error.
+export function normalizeBuild(label, build) {
+  if (build == null) return undefined;
+  const list = Array.isArray(build) ? build : [build];
+  const cmds = [];
+  for (const c of list) {
+    if (typeof c !== 'string') throw new ManifestError(`${label} must be a string or a list of strings`);
+    if (c.trim() !== '') cmds.push(c);
+  }
+  return cmds.length ? cmds : undefined;
 }
 
 function checkLen(label, val, max) {

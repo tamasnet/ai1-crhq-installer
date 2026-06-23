@@ -148,9 +148,18 @@ function installWebApp(ctx, def, { type, baseDir, contentMode }) {
     return out(type, def.name, VERDICT.ALREADY, 'sandbox-skipped');
   }
 
-  if (def.build) {                                // D-2a: build runs in dry-run too
-    log.info(`${type} ${def.name}: build (${def.build})`);
-    const r = spawnSync(def.build, { cwd: def.srcDir, shell: true, stdio: 'inherit' });
+  // def.build is a normalized list of shell commands (manifest.normalizeBuild); run them in order,
+  // fail fast on the first non-zero exit. D-2a: the build runs in dry-run too.
+  //
+  // Build commands must NOT inherit NODE_ENV=production: npm's `omit` config defaults to ['dev']
+  // when NODE_ENV=production, so `npm install`/`npm ci` would silently skip devDependencies and the
+  // build's own tooling (vite, webpack, tsc, babel…) goes missing. Strip it for the build env only —
+  // the deployed app still gets NODE_ENV=production via renderEnv()/renderEcosystem().
+  const buildEnv = { ...process.env };
+  delete buildEnv.NODE_ENV;
+  for (const cmd of def.build || []) {
+    log.info(`${type} ${def.name}: build (${cmd})`);
+    const r = spawnSync(cmd, { cwd: def.srcDir, shell: true, stdio: 'inherit', env: buildEnv });
     if (r.status !== 0) return out(type, def.name, VERDICT.FAIL, 'build-failed');
   }
 
