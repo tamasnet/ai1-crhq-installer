@@ -116,8 +116,8 @@ await test('invalid regex → usage exit 2', () => {
 // ── CLI --type type selection (multiple values) ──────────────────────────────────────────────
 console.log('\nCLI --type (type selection):');
 
-await test('--type with multiple types selects exactly those types', () => {
-  const r = cli(['--type=skills,jobs']);
+await test('--type with multiple singular types selects exactly those types', () => {
+  const r = cli(['--type=skill,job']);
   assert.equal(r.status, 0, r.stderr);
   assert.ok(picked(r.stdout, 'ai1-sample-skill'));
   assert.ok(picked(r.stdout, 'ai1-sample-job'));
@@ -127,14 +127,14 @@ await test('--type with multiple types selects exactly those types', () => {
 });
 
 await test('--type preserves canonical install order regardless of input order', () => {
-  const out = summary(cli(['--type=jobs,skills']).stdout);
+  const out = summary(cli(['--type=job,skill']).stdout);
   assert.ok(out.indexOf('ai1-sample-skill') < out.indexOf('ai1-sample-job'), 'skill processed before job');
 });
 
-await test('--type with an unknown type selects nothing (exit 0)', () => {
+await test('--type with an unknown type is a usage error', () => {
   const r = cli(['--type=bogus']);
-  assert.equal(r.status, 0, r.stderr);
-  assert.ok(!picked(r.stdout, 'ai1-sample-skill'));
+  assert.equal(r.status, 2);
+  assert.match(`${r.stderr}${r.stdout}`, /unknown component type/);
 });
 
 done();

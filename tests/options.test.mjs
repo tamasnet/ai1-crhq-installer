@@ -30,6 +30,7 @@ await test('--help prints usage and exits 0', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /Usage: node scripts\/install\.mjs/);
   assert.match(r.stdout, /--type=<types>/);
+  assert.match(r.stdout, /skill,recipe,agent,job,service,project/);
   assert.match(r.stdout, /--copy-projects/);
   assert.match(r.stdout, /--help/);
 });
@@ -62,6 +63,12 @@ await test('value flag with empty value → message + exit 2', () => {
   const r = install(['--include=']);
   assert.equal(r.status, 2);
   assert.match(out(r), /option --include requires a value/);
+});
+
+await test('--type requires singular component type values', () => {
+  const r = install(['--type=skills']);
+  assert.equal(r.status, 2);
+  assert.match(out(r), /expects singular component type values/);
 });
 
 await test('boolean flag given a value → message + exit 2', () => {
@@ -147,7 +154,7 @@ await test('boolean flag given a value → message + exit 2', () => {
 });
 
 await test('mirror-only flag without --mirror → message + exit 2', () => {
-  for (const f of ['--normalize', '--type=skills', '--include=foo', '--exclude=bar']) {
+  for (const f of ['--normalize', '--type=skill', '--include=foo', '--exclude=bar']) {
     const r = sync([f]);
     assert.equal(r.status, 2, f);
     assert.match(out(r), /requires? --mirror/, f);
@@ -164,6 +171,12 @@ await test('--mirror with an unknown --type → message + exit 2', () => {
   const r = sync(['--mirror', '--type=bogus']);
   assert.equal(r.status, 2);
   assert.match(out(r), /unknown component type/);
+});
+
+await test('--mirror rejects plural --type values', () => {
+  const r = sync(['--mirror', '--type=skills']);
+  assert.equal(r.status, 2);
+  assert.match(out(r), /expects singular component type values/);
 });
 
 await test('--add-project is listed in sync help', () => {

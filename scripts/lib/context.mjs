@@ -6,6 +6,8 @@ import { getDb, closeDb } from './db.mjs';
 import { makeLogger, SEVERITY } from './log.mjs';
 import { resolvePackagesDir } from './install-log.mjs';
 import { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
+import { UsageError } from './flags.mjs';
+import { formatCliTypeError, normalizeCliTypeScope } from './component-types.mjs';
 
 // SKILLS_BASE_DIR = the parent dir under which each skill's <key> folder is created (C2/D-19).
 export function resolveSkillsBase() {
@@ -47,10 +49,11 @@ export function parseFlags(argv) {
     else if (a === '--lifecycle') flags.LIFECYCLE = true;
     else if (a === '--json') flags.JSON = true;
     else if (a === '--copy-projects') flags.COPY_PROJECTS = true;
-    // --type=<type>[,<type>...] selects which component types run (repeatable; comma-separated).
+    // --type=<type>[,<type>...] accepts singular CLI values and stores internal collection keys.
     else if (a.startsWith('--type=')) {
-      const vals = a.slice('--type='.length).split(',').map((s) => s.trim()).filter(Boolean);
-      if (vals.length) flags.TYPE = [...(flags.TYPE || []), ...vals];
+      const { types, invalid } = normalizeCliTypeScope(a.slice('--type='.length));
+      if (invalid.length) throw new UsageError(formatCliTypeError(invalid));
+      if (types.length) flags.TYPE = [...(flags.TYPE || []), ...types];
     }
     else if (a.startsWith('--include=')) flags.INCLUDE = a.slice('--include='.length);
     else if (a.startsWith('--exclude=')) flags.EXCLUDE = a.slice('--exclude='.length);

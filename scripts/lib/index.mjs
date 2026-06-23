@@ -16,6 +16,7 @@ export { discoverPackages, collectAvailable, sortAvailable, formatAvailableList,
 export { currentVersion, recordVersion, removeVersions, versionTable } from './version-history.mjs';
 export { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION } from './manifest.mjs';
 export { makeFilter, compileMatcher, hasFilter, FilterError } from './filter.mjs';
+export { CLI_TYPE_TO_COLLECTION, COLLECTION_TO_CLI_TYPE, CLI_TYPE_VALUES, COLLECTION_TYPE_VALUES, splitCliTypeValues, normalizeCliTypeScope, formatCliTypeError } from './component-types.mjs';
 export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC } from './flags.mjs';
 export { runPlan, ORDER } from './run.mjs';
 export { runSync, SyncError, SYNC_TYPES } from './sync.mjs';

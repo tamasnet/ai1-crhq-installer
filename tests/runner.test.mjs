@@ -59,16 +59,16 @@ await test('status mode forwarded', () => {
   assert.match(r.stdout, /ENTRY-ARGV:.*--status/);
 });
 
-await test('--type=skills forwarded', () => {
-  const r = cli(['--type=skills']);
+await test('--type=skill forwarded', () => {
+  const r = cli(['--type=skill']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /ENTRY-ARGV:.*--type=skills/);
+  assert.match(r.stdout, /ENTRY-ARGV:.*--type=skill/);
 });
 
-await test('--type with multiple (comma-separated) types forwarded', () => {
-  const r = cli(['--type=skills,recipes']);
+await test('--type with multiple (comma-separated) singular types forwarded', () => {
+  const r = cli(['--type=skill,recipe']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /ENTRY-ARGV:.*--type=skills,recipes/);
+  assert.match(r.stdout, /ENTRY-ARGV:.*--type=skill,recipe/);
 });
 
 done();

@@ -62,7 +62,7 @@ Development/testing flags:
 | `--sandbox` | Provision an isolated DB schema and temp install dirs, then tear them down. For package/installer testing, not normal satellite installs. |
 | `--lifecycle` | With `--sandbox`, assert install/status/idempotency/uninstall/reinstall. |
 | `--keep` | With `--sandbox`, leave the schema and dirs for inspection. |
-| `--type=skills,recipes` | Restrict to component types. Useful for targeted development or repair. |
+| `--type=skill,recipe` | Restrict to component types. Useful for targeted development or repair. |
 | `--include=<pattern>` / `--exclude=<pattern>` | Restrict components by name. Plain values are exact matches; regex metacharacters are treated as regex. |
 | `--respect-locks` | Skip locked skills instead of unlocking/updating them. |
 | `--install-skills-as-user` | Register all skills as unlocked `user` skills. |
@@ -97,7 +97,7 @@ Use `--mirror` when the live satellite is the authority and the package should b
 ```bash
 node scripts/sync.mjs <package-dir> --mirror
 node scripts/sync.mjs <package-dir> --mirror --dry-run
-node scripts/sync.mjs <package-dir> --mirror --type=skills,recipes --include='^acme-' --json
+node scripts/sync.mjs <package-dir> --mirror --type=skill,recipe --include='^acme-' --json
 node scripts/install.mjs <package-dir>   # restore
 ```
 

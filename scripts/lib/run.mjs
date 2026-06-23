@@ -27,9 +27,9 @@ const DISPATCH = {
 
 export async function runPlan(ctx, plan) {
   const verb = ctx.mode === 'uninstall' ? 'remove' : ctx.mode === 'status' ? 'status' : 'upsert';
-  // --type restricts which component TYPES run. Accepts an array (multiple/comma-separated values)
-  // or a single string (library callers). Intersect with ORDER so install order is preserved no
-  // matter how the values were listed; unknown type names simply select nothing.
+  // --type restricts which component TYPES run. The CLI normalizes singular values (`skill`, `job`)
+  // into these internal plural collection keys; library callers may pass collection keys directly.
+  // Intersect with ORDER so install order is preserved no matter how values were listed.
   const only = Array.isArray(ctx.TYPE) ? ctx.TYPE : (ctx.TYPE ? [ctx.TYPE] : []);
   const onlySet = only.length ? new Set(only) : null;
   const types = onlySet ? ORDER.filter((t) => onlySet.has(t)) : ORDER;

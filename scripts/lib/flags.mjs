@@ -10,6 +10,7 @@
 // A package may declare extra package-specific flags via `install_flags` in its manifest; those are
 // accepted in `install` mode (and forwarded to the package's install_entry). Anything else is
 // rejected with a UsageError → usage exit (2), so a typo never silently does the wrong thing.
+import { CLI_TYPE_VALUES, formatCliTypeError, normalizeCliTypeScope } from './component-types.mjs';
 
 export class UsageError extends Error {
   constructor(message) { super(message); this.name = 'UsageError'; }
@@ -66,6 +67,10 @@ export function validateFlags(argv, { mode = 'install', declared = [] } = {}) {
     if (value.has(name)) {
       const val = hasEq ? token.slice(token.indexOf('=') + 1).trim() : '';
       if (!hasEq || val === '') throw new UsageError(`option ${name} requires a value (use ${name}=<value>)`);
+      if (name === '--type') {
+        const { invalid } = normalizeCliTypeScope(val);
+        if (invalid.length) throw new UsageError(formatCliTypeError(invalid, name));
+      }
     } else if (bool.has(name)) {
       if (hasEq) throw new UsageError(`option ${name} does not take a value`);
     } else if (pkg.has(name)) {
@@ -98,7 +103,7 @@ Options:
   --install-skills-as-user   register all skills as unlocked user skills (default: org, locked)
   --copy-projects            for project components, copy source into /opt/projects/user/<name>
                              instead of symlinking to the package directory
-  --type=<types>             restrict to component types: skills,recipes,agents,jobs,services,projects
+  --type=<types>             restrict to component types: ${CLI_TYPE_VALUES.join(',')}
                              (comma-separated and/or the flag repeated)
   --include=<pat>            process only components whose name matches <pat>
                              (regex; a value with no regex metacharacter is an exact ^pat$ match)

@@ -20,6 +20,11 @@ import {
   getDb, closeDb, makeLogger, resolveSkillsBase, wantsHelp, UsageError, updateInstallLogForMirror,
 } from './lib/index.mjs';
 import { runSync, SyncError, SYNC_TYPES, isInsideGitRepo } from './lib/sync.mjs';
+import {
+  COLLECTION_TO_CLI_TYPE, formatCliTypeError, normalizeCliTypeScope,
+} from './lib/component-types.mjs';
+
+const SYNC_CLI_TYPE_VALUES = SYNC_TYPES.map((type) => COLLECTION_TO_CLI_TYPE[type]);
 
 const USAGE = `\
 Usage: sync.mjs [<package-dir>] [options]
@@ -45,9 +50,9 @@ never touched — run before git diff/add/commit.
                         package version by 1 when the run changed package content.
   --normalize           With --mirror: ship the distributable default for added skills (org/locked)
                         instead of preserving the live user/org install_type. (Default: preserve.)
-  --type=<types>        With --mirror: restrict to DB component types (skills,recipes,agents,jobs;
+  --type=<types>        With --mirror: restrict to DB component types (${SYNC_CLI_TYPE_VALUES.join(',')};
                         comma-separated and/or repeated). Scopes additions, syncs AND removals.
-                        services/projects are accepted for convenience but ignored.
+                        service/project are accepted for convenience but ignored.
   --include=<pat>       With --mirror: only components whose name matches <pat>
                         (regex; a value with no regex metacharacter is an exact ^pat$ match)
   --exclude=<pat>       With --mirror: skip components whose name matches <pat> (after --include)
@@ -155,16 +160,16 @@ try {
     if (usedAdds.length) throw new UsageError(`${usedAdds.join(', ')} cannot be combined with --mirror (mirror auto-discovers all live components)`);
   }
 
-  // --type: comma-separated and/or repeated; validate against the known types.
+  // --type: comma-separated and/or repeated; singular CLI values normalized to collection keys.
   let typeScope = null;
   if (flags['type']) {
-    typeScope = flags['type'].flatMap((v) => v.split(',')).map((s) => s.trim()).filter(Boolean);
+    const normalized = normalizeCliTypeScope(flags['type']);
+    if (normalized.invalid.length) throw new UsageError(formatCliTypeError(normalized.invalid));
+    typeScope = normalized.types;
     const log0 = makeLogger({ dryRun });
     for (const nonDb of ['services', 'projects']) {
-      if (typeScope.includes(nonDb)) log0.warn(`${nonDb} are package/git-managed — mirror does not cover them; ignoring`);
+      if (typeScope.includes(nonDb)) log0.warn(`${COLLECTION_TO_CLI_TYPE[nonDb]} components are package/git-managed — mirror does not cover them; ignoring`);
     }
-    const unknown = typeScope.filter((t) => !['services', 'projects'].includes(t) && !SYNC_TYPES.includes(t));
-    if (unknown.length) throw new UsageError(`--type: unknown component type(s): ${unknown.join(', ')} (valid: ${[...SYNC_TYPES, 'services', 'projects'].join(', ')})`);
     typeScope = typeScope.filter((t) => SYNC_TYPES.includes(t));
   }
   // --include/--exclude: a single pattern each (last wins if repeated).
