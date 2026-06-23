@@ -28,6 +28,8 @@ The manifest is the source of truth. Files that exist in the package but are not
 ```
 
 A package may contain any subset of component types, but `components` must be present in the manifest.
+Manifest component keys are plural (`skills`, `recipes`, etc.). CLI `--type` filters use singular
+values (`skill`, `recipe`, etc.).
 
 ## Manifest schema
 

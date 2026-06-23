@@ -19,7 +19,7 @@ Run commands from the skill/project root unless using an installed absolute path
 | Install package | `node scripts/install.mjs <package>` |
 | Check package status | `node scripts/install.mjs <package> --status` |
 | Uninstall package | `node scripts/install.mjs <package> --uninstall` |
-| List intalled components | `node scripts/install.mjs --list-installed` |
+| List installed components | `node scripts/install.mjs --list-installed` |
 | List locally available components | `node scripts/install.mjs --list-available` |
 | Sync manifest-listed live edits into package | `node scripts/sync.mjs <package-dir>` |
 | Add a live component to a package | `node scripts/sync.mjs <package-dir> --add-skill=<name>` |

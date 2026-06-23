@@ -30,10 +30,10 @@ Live customer edits are synced back to `user/`:
 node scripts/sync.mjs ~/repos/<repo>/user --mirror
 ```
 
-Projects under `/opt/projects/user/<name>` are a special user-package lifecycle: add one with
+Projects under `/opt/projects/user/<name>` have a special user-package lifecycle: add one with
 `node scripts/sync.mjs ~/repos/<repo>/user --add-project=<name>`, which moves it into the package
-and leaves the live path symlinked back to git. Mirror does not auto-add or refresh projects after
-that initial move.
+and leaves the live path symlinked back to git. Sync/mirror do not auto-refresh project content
+after that initial move; git is the source of truth.
 
 ## `polaris init`
 

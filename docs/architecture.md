@@ -137,7 +137,7 @@ scripts/
 | `REPOS_BASE_DIR` | `~/repos` | Client Repository checkout base. |
 | `AGENT_BRAIN_EXCLUDE` | `activity,_backup,.scratch,memory` | Top-level brain dirs omitted from sync/mirror. |
 
-Legacy `legacy base-dir and schema fallbacks remain for existing harnesses.
+Legacy `CRHQ_BASE_DIR` and `SANDBOX_SCHEMA` fallbacks remain for existing harnesses.
 
 ## Services and projects
 

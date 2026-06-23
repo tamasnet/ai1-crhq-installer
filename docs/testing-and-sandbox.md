@@ -19,7 +19,7 @@ Sandbox mode:
 5. Runs the requested install/status/uninstall workflow.
 6. Drops the schema and removes temp dirs unless `--keep` is set.
 
-Services are skipped in sandbox mode because nginx and PM2 are live host resources.
+Services and projects are skipped in sandbox mode because nginx and PM2 are live host resources.
 
 ## Lifecycle assertions
 
@@ -43,7 +43,7 @@ node scripts/sync.mjs <package-dir> --dry-run
 node scripts/sync.mjs <package-dir> --mirror --dry-run
 ```
 
-Dry-run performs validation and planning with zero DB or package filesystem writes. Service build commands still run during install dry-run so build failures surface before a live deploy.
+Dry-run performs validation and planning with zero DB or package filesystem writes. Service/project build commands still run during install dry-run so build failures surface before a live deploy.
 
 ## Test suite
 
