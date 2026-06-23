@@ -221,12 +221,11 @@ port: 4310
 build: npm run build
 env:
   NODE_ENV: production
-nginx:
-  subdomain: my-service
-  ssl: true
+app_name: my-service
+ssl: true
 ```
 
-Required fields: `name`, `version`, `start`. Optional fields: `port`, `build`, `env`, `nginx.subdomain`, `nginx.ssl`.
+Required fields: `name`, `version`, `start`. Optional fields: `port`, `build`, `env`, `app_name`, `ssl`.
 
 `build` accepts a single shell command string or a YAML list of command strings. A list is run sequentially, in order, and fails fast on the first non-zero exit; empty/whitespace entries are ignored. Each command runs through a shell, so a single string can also chain commands with `&&`/`;`.
 
@@ -248,9 +247,8 @@ port: 4311
 build: npm run build
 env:
   NODE_ENV: production
-nginx:
-  subdomain: my-project
-  ssl: true
+app_name: my-project
+ssl: true
 ```
 
 Projects use the same nginx/PM2 schema as services, including the `build` field (a single shell command string or a YAML list run sequentially). A real install creates or updates `/opt/projects/user/<name>` as a symlink to the project directory inside the package, then writes `.env`, `ecosystem.config.cjs`, nginx config, and PM2 state the same way services do. Pass `--copy-projects` to copy the project source into `/opt/projects/user/<name>` instead of symlinking. Sandbox mode skips projects. Dry-run runs the build command and renders the plan but skips nginx/PM2 apply.

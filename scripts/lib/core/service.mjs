@@ -67,8 +67,8 @@ const PROXY = (port, indent = '    ') => [
 // conventions. Standard satellite → 80→443 redirect + crhq.ai TLS block; white-label → org domain
 // (primary) + crhq.ai (fallback) blocks. ssl:false → plain :80 proxy.
 export function renderNginx(def, port, env = process.env) {
-  const sub = def.nginx?.subdomain || def.name;
-  const ssl = def.nginx?.ssl !== false;
+  const sub = def.app_name || def.name;
+  const ssl = def.ssl !== false;
   const satId = env.SATELLITE_ID || 'satellite';
   const crhqHost = `${satId}-${sub}.crhq.ai`;
   const header = `# ${def.name} — managed by ai1-satellite-tools`;

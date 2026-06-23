@@ -277,7 +277,7 @@ try {
     const liveDir = join(liveBase, 'my-project');
     mkdirSync(liveDir, { recursive: true });
     writeFileSync(join(liveDir, 'project.yaml'),
-      'name: my-project\nversion: 1\nport: 4555\nstart: node server.js\nnginx:\n  subdomain: my-project\n  ssl: false\n');
+      'name: my-project\nversion: 1\nport: 4555\nstart: node server.js\napp_name: my-project\nssl: false\n');
     writeFileSync(join(liveDir, 'server.js'), "console.log('project');\n");
 
     const dirP = pkgDir('pkg-project');

@@ -2,6 +2,5 @@ name: ai1-demo-project
 version: 1
 port: 4499
 start: node server.js
-nginx:
-  subdomain: demo-project
-  ssl: false
+app_name: demo-project
+ssl: false

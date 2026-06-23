@@ -25,7 +25,7 @@ const svcCtx = (over = {}) => ({
 });
 
 const { plan } = loadManifest('tests/fixtures/service-pkg');
-const def = plan.services[0];   // ai1-demo-svc, port 4399, secret env, nginx demo+ssl
+const def = plan.services[0];   // ai1-demo-svc, port 4399, secret env, app_name demo + ssl
 const projectDir = join(resolveServicesBase(), 'ai1-demo-svc');
 const vhost = '/etc/nginx/projects.d/ai1-demo-svc.conf';
 const { plan: projectPlan } = loadManifest('tests/fixtures/project-pkg');
@@ -61,7 +61,7 @@ await test('renderNginx: 127.0.0.1 proxy, crhq host, TLS, no 0.0.0.0', () => {
 });
 
 await test('renderNginx: ssl:false → plain :80 proxy only', () => {
-  const conf = renderNginx({ ...def, nginx: { subdomain: 'demo', ssl: false } }, 4399, { SATELLITE_ID: 's' });
+  const conf = renderNginx({ ...def, app_name: 'demo', ssl: false }, 4399, { SATELLITE_ID: 's' });
   assert.match(conf, /listen 80;/);
   assert.doesNotMatch(conf, /listen 443/);
 });

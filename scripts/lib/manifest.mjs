@@ -261,7 +261,7 @@ function loadWebAppDef(entry, root, kind) {
   }
   return {
     name: s.name, version, start: s.start, port: s.port, cwd: s.cwd || './',
-    build: normalizeBuild(`${cap} ${s.name} build`, s.build), env: s.env || {}, nginx: s.nginx || {}, srcDir, srcFile,
+    build: normalizeBuild(`${cap} ${s.name} build`, s.build), env: s.env || {}, app_name: s.app_name, ssl: s.ssl, srcDir, srcFile,
   };
 }
 

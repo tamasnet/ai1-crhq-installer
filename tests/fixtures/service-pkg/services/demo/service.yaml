@@ -5,6 +5,5 @@ start: node server.js
 env:
   NODE_ENV: production
   API_SECRET: super-secret-value
-nginx:
-  subdomain: demo
-  ssl: true
+app_name: demo
+ssl: true
