@@ -11,6 +11,7 @@ export const VERDICT = {
   LOCKED: 'LOCKED-ROW',
   STATUS: 'STATUS',          // informational (status mode); never affects exit code
   ABSENT: 'NOT-INSTALLED',   // status: component not present
+  SKIPPED: 'SKIPPED',        // handling: removed/optional entry not acted on this run (exit-neutral)
   // Export verdicts — returned by the core export* fns and consumed by sync (incl. --mirror).
   BACKUP_OK: 'BACKUP-OK',    // export: component written to the package
   BACKUP_SKIP: 'BACKUP-SKIP',// export: component not representable in the manifest — skipped (D-28)
@@ -23,6 +24,7 @@ export const SEVERITY = {
   [VERDICT.ALREADY]: 0,
   [VERDICT.STATUS]: 0,
   [VERDICT.ABSENT]: 0,
+  [VERDICT.SKIPPED]: 0,       // a deliberately-skipped optional/tombstone entry is not a failure
   [VERDICT.LOCKED]: 1,
   [VERDICT.PREREQ]: 1,
   [VERDICT.PARTIAL]: 1,

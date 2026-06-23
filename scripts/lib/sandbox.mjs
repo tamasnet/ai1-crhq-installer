@@ -85,7 +85,7 @@ export function diffState(a, b) {
   return diffs;
 }
 
-const okVerdict = (v) => v === VERDICT.OK || v === VERDICT.ALREADY || v === VERDICT.STATUS || v === VERDICT.ABSENT;
+const okVerdict = (v) => v === VERDICT.OK || v === VERDICT.ALREADY || v === VERDICT.STATUS || v === VERDICT.ABSENT || v === VERDICT.SKIPPED;
 
 // Full lifecycle assertion suite. Assertions are RELATIVE to the post-seed baseline so seeded
 // skills don't register as drift.

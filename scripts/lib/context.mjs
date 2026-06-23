@@ -36,7 +36,7 @@ export function parseFlags(argv) {
   const flags = {
     mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false, INSTALL_SKILLS_AS_USER: false,
     TYPE: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
-    JSON: false, COPY_PROJECTS: false, packageArg: '.',
+    JSON: false, COPY_PROJECTS: false, REMOVED: false, OPTIONAL: false, packageArg: '.',
   };
   for (const a of argv) {
     if (a === '--uninstall') flags.mode = 'uninstall';
@@ -49,6 +49,8 @@ export function parseFlags(argv) {
     else if (a === '--lifecycle') flags.LIFECYCLE = true;
     else if (a === '--json') flags.JSON = true;
     else if (a === '--copy-projects') flags.COPY_PROJECTS = true;
+    else if (a === '--removed') flags.REMOVED = true;
+    else if (a === '--optional') flags.OPTIONAL = true;
     // --type=<type>[,<type>...] accepts singular CLI values and stores internal collection keys.
     else if (a.startsWith('--type=')) {
       const { types, invalid } = normalizeCliTypeScope(a.slice('--type='.length));

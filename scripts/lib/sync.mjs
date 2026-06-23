@@ -403,6 +403,10 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
     const list = manifest.components[type] ?? [];
     const kept = [];
     for (const entry of list) {
+      // A 'removed' tombstone is a distribution marker (its component is intentionally absent live),
+      // not exportable state — preserve it untouched so a mirror/sync never silently prunes it.
+      if (entry.handling === 'removed') { kept.push(entry); continue; }
+
       const name = deriveName(packageDir, type, entry.path);
 
       if (handled.has(`${type}:${name}`)) { kept.push(entry); continue; }   // already exported in Phase 1

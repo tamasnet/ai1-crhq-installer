@@ -21,7 +21,7 @@ export const FLAG_SPEC = {
   install: {
     bool: ['--dry-run', '--status', '--uninstall', '--respect-locks', '--install-skills-as-user',
       '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available',
-      '--copy-projects'],
+      '--copy-projects', '--removed', '--optional'],
     value: ['--type', '--include', '--exclude'],
   },
 };
@@ -103,6 +103,10 @@ Options:
   --install-skills-as-user   register all skills as unlocked user skills (default: org, locked)
   --copy-projects            for project components, copy source into /opt/projects/user/<name>
                              instead of symlinking to the package directory
+  --removed                  activate 'handling: removed' tombstone entries — remove those
+                             components on BOTH install and uninstall (default: inert, no-op)
+  --optional                 also install 'handling: optional' entries (default: skipped on
+                             install; uninstall removes them regardless of this flag)
   --type=<types>             restrict to component types: ${CLI_TYPE_VALUES.join(',')}
                              (comma-separated and/or the flag repeated)
   --include=<pat>            process only components whose name matches <pat>

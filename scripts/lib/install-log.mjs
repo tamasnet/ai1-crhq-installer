@@ -96,7 +96,11 @@ export function updateInstallLog(ctx, meta, plan, packageRoot) {
   const now = new Date().toISOString();
 
   for (const r of processed) {
-    if (ctx.mode === 'uninstall') {
+    // Decide per result, not per run: a component REMOVED this run drops its slot — that covers a
+    // normal uninstall AND a `handling: removed` tombstone activated by --removed during an install.
+    // r.op carries the effective operation (set by run.mjs); fall back to the run mode when absent.
+    const removed = r.op ? r.op === 'remove' : ctx.mode === 'uninstall';
+    if (removed) {
       byKey.delete(keyOf(r));
       continue;
     }

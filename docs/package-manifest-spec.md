@@ -44,6 +44,7 @@ components:
     - path: skills/my-skill
       version: 1                 # required positive integer; must match SKILL.md version
       install_type: org          # optional: org (default, locked) or user (unlocked)
+      handling: normal           # optional: normal (default) | removed | optional
   recipes:
     - path: recipes/my-recipe.md
       version: 1                 # optional positive integer
@@ -93,6 +94,38 @@ Component versions are positive integers.
 | Project | Required in manifest and `project.yaml`; values must match. |
 
 The package-level `version` is separate. `sync.mjs --mirror` increments it only when package content changes.
+
+### Component handling
+
+Every component entry may carry an optional `handling` field that controls whether and how the installer acts on it. It applies to all six component types.
+
+| Value | Install | Uninstall | Notes |
+|-------|---------|-----------|-------|
+| `normal` (default) | install/update | remove | The historical behavior; assumed when `handling` is omitted. |
+| `removed` | no-op, unless `--removed` → **remove** | no-op, unless `--removed` → **remove** | Tombstone for a component that used to ship in the package and has since been dropped. |
+| `optional` | skipped, unless `--optional` → install | remove (no flag required) | Opt-in component. Uninstall and status treat it like a normal component. |
+
+```yaml
+components:
+  skills:
+    - path: skills/legacy-skill     # files may be deleted from the package
+      handling: removed             # version pin not required for a tombstone
+      name: legacy-skill            # optional: override the name derived from the path basename
+    - path: skills/beta-skill
+      version: 1
+      handling: optional
+```
+
+`handling: removed` is for retiring a component cleanly across a fleet. When a skill is dropped from a package, leaving a tombstone entry lets the next `--removed` install delete the now-orphaned component from satellites that still have it. Because the component's files may already be gone, a `removed` entry is **not** loaded from disk and needs **no** version pin — the installer only needs the component's name. The name is the entry's explicit `name` when given, otherwise the path basename (with the extension stripped for single-file recipes/jobs).
+
+Activating flags (`install.mjs`):
+
+| Flag | Effect |
+|------|--------|
+| `--removed` | Act on `handling: removed` entries: remove those components on both install and uninstall (and report their live state under `--status`). |
+| `--optional` | Also install `handling: optional` entries on an install run. Not needed for uninstall. |
+
+Components skipped by their handling mode are reported with a `SKIPPED` verdict (exit-code neutral) so they remain visible in the run summary and `--json` output.
 
 ## Components
 

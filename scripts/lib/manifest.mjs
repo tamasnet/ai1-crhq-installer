@@ -1,7 +1,7 @@
 // manifest.mjs — load + validate ai1-package.yaml and resolve it to an ordered install plan (A1).
 // Component sources are parsed into the def shapes consumed by lib/core/* (api-design §7).
 import { readFileSync, existsSync, statSync } from 'fs';
-import { join, dirname, isAbsolute, resolve } from 'path';
+import { join, dirname, isAbsolute, resolve, basename, extname } from 'path';
 import { loadYaml, parseFrontmatter } from './parse.mjs';
 import { STANDARD_FLAG_NAMES } from './flags.mjs';
 
@@ -10,6 +10,21 @@ export class ManifestError extends Error {
 }
 
 const TYPE_ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services', 'projects'];
+
+// Per-component `handling` (optional, applies to EVERY component type) — how the installer treats a
+// manifest entry. The actual install/uninstall/skip decision lives in run.mjs (resolveHandling); the
+// manifest layer only validates the value and shapes the def.
+//   normal   — default; install on install, remove on uninstall (the historical behavior).
+//   removed  — a tombstone for a component that USED TO ship in the package but has been dropped.
+//              Inert by default; with the --removed flag it removes the component on BOTH install and
+//              uninstall. Its files may be gone, so a 'removed' entry is never loaded from disk.
+//   optional — not installed unless the --optional flag is given; uninstall (and status) behave
+//              exactly like a normal component, with no flag required.
+export const HANDLING_VALUES = new Set(['normal', 'removed', 'optional']);
+
+// Component types whose manifest path is a single FILE (recipe .md / job .yaml); the rest are
+// directories. Used when deriving a tombstone's name from its path.
+const FILE_TYPES = new Set(['recipes', 'jobs']);
 
 // The installer's own integer version (D-35). A package's optional `installer` field is the minimum
 // version it requires — a plain positive integer with an implicit ">=" — and a package that needs a
@@ -53,7 +68,13 @@ export function validateManifest(meta) {
     if (!Array.isArray(list)) throw new ManifestError(`components.${type} must be a list`);
     for (const entry of list) {
       if (!entry || !entry.path) throw new ManifestError(`components.${type}[] entry missing 'path'`);
-      if ((type === 'skills' || type === 'services' || type === 'projects') && !entry.version) {
+      // handling (optional): normal (default) | removed (tombstone) | optional — applies to any type.
+      if (entry.handling != null && !HANDLING_VALUES.has(entry.handling)) {
+        throw new ManifestError(`components.${type}[${entry.path}] handling must be one of ${[...HANDLING_VALUES].join(', ')} (got ${JSON.stringify(entry.handling)})`);
+      }
+      // A version pin is required for real skills/services/projects. A 'removed' tombstone is exempt:
+      // its component files are gone, so there is nothing left to version-check.
+      if (entry.handling !== 'removed' && (type === 'skills' || type === 'services' || type === 'projects') && !entry.version) {
         throw new ManifestError(`components.${type}[${entry.path}] requires a version pin`);
       }
     }
@@ -83,14 +104,41 @@ export function validateManifest(meta) {
 
 function buildPlan(meta, root) {
   const c = meta.components || {};
+  const load = (type, loader) => (c[type] || []).map((e) => resolveEntry(type, e, root, loader));
   return {
-    skills: (c.skills || []).map((e) => loadSkillDef(e, root)),
-    recipes: (c.recipes || []).map((e) => loadRecipeDef(e, root)),
-    agents: (c.agents || []).map((e) => loadAgentDef(e, root)),
-    jobs: (c.jobs || []).map((e) => loadJobDef(e, root)),
-    services: (c.services || []).map((e) => loadServiceDef(e, root)),
-    projects: (c.projects || []).map((e) => loadProjectDef(e, root)),
+    skills: load('skills', loadSkillDef),
+    recipes: load('recipes', loadRecipeDef),
+    agents: load('agents', loadAgentDef),
+    jobs: load('jobs', loadJobDef),
+    services: load('services', loadServiceDef),
+    projects: load('projects', loadProjectDef),
   };
+}
+
+// Resolve a single manifest entry into an install-plan def, tagging it with its `handling` mode
+// (default 'normal'). A 'removed' tombstone is deliberately NOT loaded from disk — its component
+// files may no longer exist (that is the whole point) — so it resolves to a minimal def carrying just
+// the canonical name needed to delete the component. 'normal' and 'optional' entries load the real
+// component exactly as before.
+function resolveEntry(type, entry, root, loader) {
+  const handling = entry.handling || 'normal';
+  if (handling === 'removed') return loadRemovedDef(type, entry, root);
+  return { ...loader(entry, root), handling };
+}
+
+// Build a 'removed' tombstone def. We never read the component's files; we only need its canonical DB
+// name to remove it (plus a `key` for the skill asset-dir fallback). The name comes from the entry's
+// explicit `name` when given, else the path basename (minus extension for single-file types).
+function loadRemovedDef(type, entry, root) {
+  const name = removedName(type, entry);
+  if (!name) throw new ManifestError(`components.${type}[${entry.path}] handling 'removed' has no derivable name — set 'name:' on the entry`);
+  const srcDir = join(root, entry.path);
+  return { name, key: name, handling: 'removed', srcDir, srcFile: srcDir };
+}
+
+function removedName(type, entry) {
+  if (entry.name != null && String(entry.name).trim() !== '') return String(entry.name).trim();
+  return FILE_TYPES.has(type) ? basename(entry.path, extname(entry.path)) : basename(entry.path);
 }
 
 function loadSkillDef(entry, root) {
