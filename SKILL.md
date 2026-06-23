@@ -88,7 +88,7 @@ node scripts/sync.mjs <package-dir> --dry-run
 ```
 
 Plain sync never removes manifest entries and never changes the package-level `version`.
-`--add-project=<name>` is special: it moves `/opt/projects/user/<name>` into `projects/<name>` inside the package, adds a project manifest entry, and replaces the live directory with a symlink. The live project must not be its own git repository — remove `.git` first so it is a plain directory. After that, sync/mirror do not export project content; git owns it.
+`--add-project=<name>` is special: it moves `/opt/projects/user/<name>` into `projects/<name>` inside the package, adds a project manifest entry, and replaces the live directory with a symlink. The live project must not be its own git repository — remove `.git` first so it is a plain directory. If the project has no `project.yaml`, a valid default is generated inside the package. After that, sync/mirror do not export project content; git owns it.
 
 ### Mirror backup
 

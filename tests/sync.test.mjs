@@ -298,6 +298,34 @@ try {
     assert.deepEqual(again.counts, { added: 0, synced: 0, unchanged: 0, removed: 0, skipped: 0, failed: 0 }, 'plain sync does not process projects once added');
   });
 
+  await test('--add-project generates a valid default project.yaml when the live project has none', async () => {
+    const liveBase = pkgDir('live-no-config');
+    const liveDir = join(liveBase, 'bare-project');
+    mkdirSync(liveDir, { recursive: true });
+    writeFileSync(join(liveDir, 'server.js'), "console.log('bare');\n");   // no project.yaml
+
+    const dirP = pkgDir('pkg-bare-project');
+    const { counts, manifest, results } = await runSync(sctx({ USER_PROJECTS_BASE: liveBase }), {
+      packageDir: dirP,
+      additions: { projects: ['bare-project'] },
+    });
+    assert.equal(counts.added, 1);
+    assert.deepEqual(manifest.components.projects, [{ path: 'projects/bare-project', version: 1 }]);
+    assert.ok(results.some((r) => r.type === 'project' && r.verdict === 'SYNC-ADDED'));
+
+    const genPath = join(dirP, 'projects', 'bare-project', 'project.yaml');
+    assert.ok(existsSync(genPath), 'a default project.yaml is generated in the package');
+    const cfg = loadYaml(readFileSync(genPath, 'utf8'));
+    assert.equal(cfg.name, 'bare-project');
+    assert.equal(cfg.version, 1);
+    assert.ok(cfg.start, 'default has a start command');
+    assert.equal(existsSync(join(dirP, 'projects', 'bare-project', 'server.js')), true, 'project source moved in');
+    assert.equal(lstatSync(liveDir).isSymbolicLink(), true, 'live dir replaced by symlink');
+
+    const { plan: pplan } = loadManifest(dirP);   // generated default keeps the package installable
+    assert.equal(pplan.projects[0].name, 'bare-project');
+  });
+
   await test('--add-project rejects a live project that is its own git repository', async () => {
     const liveBase = pkgDir('live-git-project');
     const liveDir = join(liveBase, 'git-project');

@@ -156,6 +156,13 @@ async function exportComponent(ctx, type, row, { packageDir, relPath, skillNames
   }
 }
 
+// A minimal but valid project.yaml for a live project that doesn't ship one. Required fields only
+// (name/version/start); port and nginx fall back to runtime defaults (auto-allocated port,
+// subdomain = name, ssl on). The author edits it afterward — git owns the project once it's added.
+function defaultProjectConfig(name) {
+  return dumpYaml({ name, version: 1, start: 'node server.js' });
+}
+
 function addProjectToPackage(ctx, name, { packageDir, relPath }) {
   const dry = !!ctx.DRY_RUN;
   const liveBase = ctx.USER_PROJECTS_BASE || resolveUserProjectsBase();
@@ -171,12 +178,20 @@ function addProjectToPackage(ctx, name, { packageDir, relPath }) {
     );
   }
 
-  const { config, version } = readWebAppConfig(liveDir, { kind: 'project', pathLabel: liveDir });
-  if (config.name !== name) throw new SyncError(`cannot add project '${name}': project config name is '${config.name}'`);
+  // project.yaml is optional. When present it's the source of truth for the name + version pin;
+  // when absent a valid default is generated in the package after the move (version 1).
+  const hasConfig = existsSync(join(liveDir, 'project.yaml'));
+  let version = 1;
+  if (hasConfig) {
+    const { config, version: pinned } = readWebAppConfig(liveDir, { kind: 'project', pathLabel: liveDir });
+    if (config.name !== name) throw new SyncError(`cannot add project '${name}': project config name is '${config.name}'`);
+    version = pinned;
+  }
 
   if (!dry) {
     moveTree(liveDir, destDir, { dryRun: false });
     try {
+      if (!hasConfig) writeIfChanged(join(destDir, 'project.yaml'), defaultProjectConfig(name), { dryRun: false });
       ensureSymlink(liveDir, destDir, { dryRun: false });
     } catch (e) {
       // Best-effort rollback: keep the live project usable if replacing it with a symlink failed.
@@ -185,7 +200,7 @@ function addProjectToPackage(ctx, name, { packageDir, relPath }) {
     }
   }
 
-  return { entry: { path: relPath, version }, changed: true };
+  return { entry: { path: relPath, version }, changed: true, generatedConfig: !hasConfig };
 }
 
 // Short label for log output.
@@ -318,9 +333,10 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
     }
 
     contentChanged = true;
+    const genNote = result.generatedConfig ? ' (generated default project.yaml)' : '';
     results.push({ type: 'project', name, verdict: 'SYNC-ADDED', action: dry ? 'added (dry-run)' : 'added' });
-    if (dry) log.dry(`move ${label(type, name)} from live project dir into package at ${relPath} and replace with symlink`);
-    else      log.ok(`${label(type, name)} → moved into package and symlinked`);
+    if (dry) log.dry(`move ${label(type, name)} from live project dir into package at ${relPath} and replace with symlink${result.generatedConfig ? '; generate a default project.yaml' : ''}`);
+    else      log.ok(`${label(type, name)} → moved into package and symlinked${genNote}`);
   }
 
   for (const type of SYNC_TYPES) {

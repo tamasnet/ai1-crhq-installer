@@ -36,6 +36,7 @@ never touched — run before git diff/add/commit.
   --add-project=<name>  Move /opt/projects/user/<name> into projects/<name>, add it to the manifest,
                         and replace the live directory with a symlink to the package (repeatable).
                         The live project must not be its own git repo (remove .git first).
+                        If the project has no project.yaml, a valid default is generated in the package.
                         Projects are then managed by git; later sync/mirror runs do not export them.
 
   --mirror              Backup mode: make the package mirror the live satellite. Auto-adds new

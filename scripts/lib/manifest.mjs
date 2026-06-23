@@ -190,17 +190,14 @@ function loadProjectDef(entry, root) {
 
 export function readWebAppConfig(srcDir, { kind = 'service', pathLabel = srcDir } = {}) {
   const cap = kind === 'project' ? 'Project' : 'Service';
-  const names = kind === 'project' ? ['project.yaml', 'service.yaml'] : ['service.yaml'];
-  const yPath = names.map((n) => join(srcDir, n)).find((p) => existsSync(p));
-  if (!yPath) {
-    const want = kind === 'project' ? 'project.yaml (or legacy service.yaml)' : 'service.yaml';
-    throw new ManifestError(`${cap} missing ${want}: ${pathLabel}`);
-  }
+  const fileName = kind === 'project' ? 'project.yaml' : 'service.yaml';
+  const yPath = join(srcDir, fileName);
+  if (!existsSync(yPath)) throw new ManifestError(`${cap} missing ${fileName}: ${pathLabel}`);
   const s = loadYaml(readFileSync(yPath, 'utf8'));
-  if (!s.name) throw new ManifestError(`${yPath.endsWith('project.yaml') ? 'project.yaml' : 'service.yaml'} missing 'name': ${pathLabel}`);
-  if (s.version == null) throw new ManifestError(`${yPath.endsWith('project.yaml') ? 'project.yaml' : 'service.yaml'} missing 'version': ${pathLabel}`);
+  if (!s.name) throw new ManifestError(`${fileName} missing 'name': ${pathLabel}`);
+  if (s.version == null) throw new ManifestError(`${fileName} missing 'version': ${pathLabel}`);
   const version = intVersion(`${cap} ${s.name} version`, s.version);
-  if (!s.start) throw new ManifestError(`${yPath.endsWith('project.yaml') ? 'project.yaml' : 'service.yaml'} missing 'start': ${pathLabel}`);
+  if (!s.start) throw new ManifestError(`${fileName} missing 'start': ${pathLabel}`);
   checkLen(`${kind} name`, s.name, kind === 'project' ? LIMITS.projectName : LIMITS.serviceName);
   return { config: s, version, srcFile: yPath };
 }
@@ -209,9 +206,10 @@ function loadWebAppDef(entry, root, kind) {
   const srcDir = join(root, entry.path);
   const { config: s, version, srcFile } = readWebAppConfig(srcDir, { kind, pathLabel: entry.path });
   const cap = kind === 'project' ? 'Project' : 'Service';
+  const fileName = kind === 'project' ? 'project.yaml' : 'service.yaml';
   const pin = intVersion(`${cap} ${entry.path} manifest version`, entry.version);
   if (version !== pin) {
-    throw new ManifestError(`${cap} ${s.name}: ${srcFile.endsWith('project.yaml') ? 'project.yaml' : 'service.yaml'} version ${version} != manifest pin ${pin}`);
+    throw new ManifestError(`${cap} ${s.name}: ${fileName} version ${version} != manifest pin ${pin}`);
   }
   return {
     name: s.name, version, start: s.start, port: s.port, cwd: s.cwd || './',
