@@ -66,6 +66,7 @@ try {
     assert.equal(row.mode, 'cli');
     assert.equal(row.is_active, true);
     assert.equal(row.provider, 'claude', 'provider rides DB default');
+    assert.equal(row.agent_type, 'specialist', 'agent_type rides DB default when the package omits it');
     assert.equal(row.icon, '🧪', 'icon from def');
     assert.equal(row.default_model, 'sonnet');
     assert.ok(agentDef.instructions && agentDef.instructions.length, 'def carries instructions from the AGENTS.md body');
@@ -83,11 +84,12 @@ try {
     assert.equal(r.verdict, 'ALREADY-INSTALLED', 'unchanged row + identical brain → no drift');
   });
 
-  await test('full field set: instructions + capabilities + provider + system_prompt_path persist; idempotent', async () => {
+  await test('full field set: instructions + capabilities + provider + system_prompt_path + agent_type persist; idempotent', async () => {
     const full = {
       ...agentDef, name: 'ai1-full-agent', skills: [], recipes: [],
       instructions: 'Persona body line one.\nLine two.\n',
       capabilities: ['search', 'write'], provider: 'openai', system_prompt_path: '/prompts/full.txt',
+      agent_type: 'orchestrator',
     };
     const r = await upsertAgent(ctx, full);
     assert.equal(r.verdict, 'INSTALL-OK');
@@ -96,8 +98,10 @@ try {
     assert.deepEqual(row.capabilities, ['search', 'write'], 'capabilities jsonb round-trips as an array');
     assert.equal(row.provider, 'openai', 'non-default provider persisted');
     assert.equal(row.system_prompt_path, '/prompts/full.txt');
+    assert.equal(row.agent_type, 'orchestrator', 'non-default agent_type persisted');
     assert.equal((await upsertAgent(ctx, full)).verdict, 'ALREADY-INSTALLED', 're-run → no drift');
     assert.equal((await upsertAgent(ctx, { ...full, instructions: 'Changed.\n' })).verdict, 'INSTALL-OK', 'instructions change → drift');
+    assert.equal((await upsertAgent(ctx, { ...full, agent_type: 'specialist' })).verdict, 'INSTALL-OK', 'agent_type change → drift');
     await removeAgent(ctx, full);
   });
 
@@ -162,6 +166,21 @@ try {
     assert.deepEqual(await recipeIdsOf(agentDef.name), []);
     assert.ok(existsSync(join(ctx.BRAINS, agentDef.name)), 'brain folder PRESERVED on uninstall (D-50)');
     assert.equal((await removeAgent(ctx, agentDef)).verdict, 'ALREADY-INSTALLED', 'absent → ALREADY');
+  });
+
+  await test('manifest: an over-long agent_type (> varchar(20)) is rejected with a clear error', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'ai1-agent-type-'));
+    try {
+      mkdirSync(join(tmp, 'agents', 'typed'), { recursive: true });
+      const tooLong = 'x'.repeat(21);   // agents.agent_type is varchar(20)
+      writeFileSync(join(tmp, 'agents', 'typed', 'AGENTS.md'),
+        `---\nname: typed\ndisplay_name: Typed\nagent_type: ${tooLong}\n---\nbody\n`);
+      writeFileSync(join(tmp, 'ai1-package.yaml'),
+        'name: type-test\nversion: 1\ndescription: d\ncomponents:\n  agents:\n    - path: agents/typed\n');
+      assert.throws(() => loadManifest(tmp), /agent agent_type exceeds 20 chars/, 'too-long agent_type fails fast at manifest load');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   await test('clean break: a flat agents/<name>.md is rejected by the manifest loader', async () => {

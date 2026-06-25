@@ -65,7 +65,7 @@ Install behavior:
 - `AGENTS.md` frontmatter `name` maps to `agents.key`.
 - `display_name` maps to `agents.name`.
 - Body maps to `agents.instructions` when non-empty.
-- Optional frontmatter maps to `description`, `mode`, `default_model`, `icon`, `provider`, `system_prompt_path`, and `capabilities`.
+- Optional frontmatter maps to `description`, `mode`, `default_model`, `agent_type`, `icon`, `provider`, `system_prompt_path`, and `capabilities`.
 - Upsert `agents` by `key`, with `is_active=true`.
 - Sync `agent_skills` to the declared installed active skill names.
 - Sync `agent_recipes` to declared recipe names resolved to UUIDs.

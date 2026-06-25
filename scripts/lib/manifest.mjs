@@ -34,7 +34,7 @@ export const INSTALLER_VERSION = 1;
 // varchar limits from the live schema (integration-reference §6) — validated here so a too-long
 // value fails fast with a clear message instead of a Postgres error mid-install.
 const LIMITS = {
-  skillName: 100, recipeName: 200, agentName: 50, agentMode: 10, agentModel: 20,
+  skillName: 100, recipeName: 200, agentName: 50, agentMode: 10, agentModel: 20, agentType: 20,
   jobName: 255, jobSchedule: 100, jobTimezone: 50, serviceName: 255, projectName: 255,
 };
 
@@ -199,13 +199,14 @@ function loadAgentDef(entry, root) {
   checkLen('agent name', a.name, LIMITS.agentName);
   if (a.mode) checkLen('agent mode', a.mode, LIMITS.agentMode);
   if (a.default_model) checkLen('agent default_model', a.default_model, LIMITS.agentModel);
+  if (a.agent_type) checkLen('agent agent_type', a.agent_type, LIMITS.agentType);
   // Body → instructions (leading blank lines trimmed); an empty body rides the DB default.
   const instructions = body && body.trim() ? body.replace(/^\n+/, '') : undefined;
   // Version is optional for agents; when present it round-trips through agent_versions (D-34).
   const version = resolveOptionalVersion(`Agent ${a.name}`, a.version, entry.version, entry.path);
   return {
     name: a.name, display_name: a.display_name, description: a.description || '', mode: a.mode || 'cli',
-    default_model: a.default_model, icon: a.icon, skills: a.skills || [], recipes: a.recipes || [],
+    default_model: a.default_model, agent_type: a.agent_type, icon: a.icon, skills: a.skills || [], recipes: a.recipes || [],
     instructions, system_prompt_path: a.system_prompt_path, capabilities: a.capabilities, provider: a.provider,
     // srcDir = the agent/brain directory (copied to AGENT_BRAINS_DIR/<key> on install); srcFile = its
     // AGENTS.md (the install log's `source`, mirroring a skill's SKILL.md).

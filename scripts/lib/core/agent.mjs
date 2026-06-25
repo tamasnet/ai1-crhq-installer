@@ -32,6 +32,7 @@ export async function upsertAgent(ctx, def) {
   const row = await db('agents').where({ key }).first();
   const fields = { name: def.display_name, description: def.description || '', mode: def.mode || 'cli', is_active: true };
   if (def.default_model) fields.default_model = def.default_model;
+  if (def.agent_type) fields.agent_type = def.agent_type;
   if (def.icon) fields.icon = def.icon;
   // Content/config fields that now ride in the manifest (D-32) — instructions is the Markdown body;
   // capabilities is jsonb (stringify on the way in). Each is set only when the def carries it, so an
@@ -64,6 +65,7 @@ export async function upsertAgent(ctx, def) {
     && row.mode === fields.mode
     && row.is_active === true
     && (def.default_model == null || row.default_model === def.default_model)
+    && (def.agent_type == null || row.agent_type === def.agent_type)
     && (def.icon == null || row.icon === def.icon)
     && (def.instructions == null || (row.instructions || '') === def.instructions)
     && (def.system_prompt_path == null || (row.system_prompt_path || '') === def.system_prompt_path)
@@ -162,6 +164,7 @@ export async function exportAgent(ctx, row, { outRoot, relPath }) {
     ...(row.description ? { description: row.description } : {}),
     mode: row.mode || 'cli',
     ...(row.default_model ? { default_model: row.default_model } : {}),
+    ...(row.agent_type ? { agent_type: row.agent_type } : {}),
     ...(row.icon ? { icon: row.icon } : {}),
     ...(row.provider && row.provider !== 'claude' ? { provider: row.provider } : {}),
     ...(row.system_prompt_path ? { system_prompt_path: row.system_prompt_path } : {}),

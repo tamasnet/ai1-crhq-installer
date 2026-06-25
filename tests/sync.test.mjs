@@ -82,7 +82,7 @@ try {
   });
   await db('agents').where({ key: 'ai1-sample-agent' }).update({
     provider: 'openai', system_prompt_path: '/prompts/sample.txt',
-    capabilities: JSON.stringify(['search', 'recall']),
+    capabilities: JSON.stringify(['search', 'recall']), agent_type: 'orchestrator',
   });
 
   // ── mirror bootstrap ─────────────────────────────────────────────────────────────────────────
@@ -127,6 +127,7 @@ try {
 
     const agent = parseFrontmatter(readFileSync(join(dirA, 'agents', 'ai1-sample-agent', 'AGENTS.md'), 'utf8')).meta;
     assert.equal(agent.provider, 'openai');
+    assert.equal(agent.agent_type, 'orchestrator', 'non-default agent_type emitted to AGENTS.md frontmatter');
     assert.deepEqual(agent.capabilities, ['search', 'recall']);
     assert.deepEqual(agent.skills, ['ai1-sample-skill']);
 
@@ -189,7 +190,7 @@ try {
     const FIELDS = {
       skill: ['name', 'description', 'content', 'skill_type', 'locked', 'skill_path', 'skill_dir', 'is_active'],
       recipe: ['name', 'description', 'content', 'is_active'],
-      agent: ['key', 'name', 'description', 'mode', 'icon', 'is_active', 'instructions', 'provider', 'system_prompt_path', 'capabilities'],
+      agent: ['key', 'name', 'description', 'mode', 'icon', 'is_active', 'instructions', 'provider', 'system_prompt_path', 'capabilities', 'agent_type'],
       job: ['name', 'description', 'schedule', 'timezone', 'job_type', 'script_path', 'script_args', 'timeout_minutes', 'enabled'],
     };
     for (const [kind, fields] of Object.entries(FIELDS)) {

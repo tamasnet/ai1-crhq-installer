@@ -177,6 +177,7 @@ display_name: My Agent
 description: Agent summary.
 mode: cli
 default_model: sonnet
+agent_type: orchestrator
 icon: "🤖"
 provider: claude
 system_prompt_path: prompts/main.md
@@ -188,7 +189,7 @@ recipes: [my-recipe]
 Agent instructions.
 ```
 
-Required frontmatter: `name`, `display_name`. Optional fields: `version`, `description`, `mode`, `default_model`, `icon`, `provider`, `system_prompt_path`, `capabilities`, `skills`, `recipes`.
+Required frontmatter: `name`, `display_name`. Optional fields: `version`, `description`, `mode`, `default_model`, `agent_type`, `icon`, `provider`, `system_prompt_path`, `capabilities`, `skills`, `recipes`.
 
 The body becomes `agents.instructions`. Skill links attach only to installed active skills. Recipe links resolve by recipe name. The whole directory copies to `AGENT_BRAINS_DIR/<name>`. Uninstall removes the DB row and joins but preserves the brain folder.
 
