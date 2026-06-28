@@ -1,18 +1,21 @@
 // install-log.mjs — persistent record of what's installed: ${PACKAGES_DIR}/install.json
-// (default ~/packages) — D-24. A FLAT list of installed components, one entry per component
-// identity (`type:name`). This mirrors the DB, which allows exactly one row per component name, so
-// the log holds exactly one slot per component. Each entry carries the component's own version
-// (when it has one) plus provenance: the `package` and `package_version` it was last installed
-// from, the `source` manifest file relative to that package root, and the `installed_at` time.
+// (default ~/packages) — D-24. The on-disk log is an object with installation-level metadata plus a
+// FLAT list of installed components under `installed_components`, one entry per component identity
+// (`type:name`). This mirrors the DB, which allows exactly one row per component name, so the log
+// holds exactly one slot per component. Each entry carries the component's own version (when it has
+// one) plus provenance: the `package` and `package_version` it was last installed from, the `source`
+// manifest file relative to that package root, and the `installed_at` time.
 // Because there is one slot per component, re-installing it — from a newer version of the same
 // package, or from a different package entirely — TRANSFERS ownership by overwriting that slot;
 // duplicate or stale claims cannot exist. A partial upgrade therefore shows up faithfully as mixed
 // package_versions across a package's components. Never written in dry-run or status mode;
 // uninstalling removes the entry. --sandbox redirects PACKAGES_DIR to a throwaway dir so test runs
-// never touch the real log.
+// never touch the real log. Legacy flat-array logs are still readable and are upgraded on the next
+// actual component-state change.
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, relative } from 'path';
 import { homedir } from 'os';
+import { isDeepStrictEqual } from 'util';
 import { VERDICT } from './log.mjs';
 
 // Canonical component types in install order (singular form, as stored in the log). Exported so the
@@ -27,13 +30,59 @@ export function installLogPath(packagesDir = resolvePackagesDir()) {
   return join(packagesDir, 'install.json');
 }
 
-// The log is a flat array of component entries ([] if absent).
-export function readInstallLog(packagesDir = resolvePackagesDir()) {
+function emptyInstallState() {
+  return { install_version: 0, install_changed_at: null, installed_components: [] };
+}
+
+function normalizeInstallState(data, p) {
+  // Legacy D-24 format: a flat array. Treat it as version 0 so the next real mutation writes
+  // version 1 in the new wrapper format.
+  if (Array.isArray(data)) {
+    return { ...emptyInstallState(), installed_components: data };
+  }
+
+  if (!data || typeof data !== 'object') {
+    throw new Error(`install log is not an object or array: ${p}`);
+  }
+  if (!Number.isInteger(data.install_version) || data.install_version < 0) {
+    throw new Error(`install log install_version must be a non-negative integer: ${p}`);
+  }
+  if (data.install_changed_at != null && typeof data.install_changed_at !== 'string') {
+    throw new Error(`install log install_changed_at must be a string or null: ${p}`);
+  }
+  if (!Array.isArray(data.installed_components)) {
+    throw new Error(`install log installed_components is not an array: ${p}`);
+  }
+  return {
+    install_version: data.install_version,
+    install_changed_at: data.install_changed_at ?? null,
+    installed_components: data.installed_components,
+  };
+}
+
+// The full log state object. Missing log → empty state.
+export function readInstallState(packagesDir = resolvePackagesDir()) {
   const p = installLogPath(packagesDir);
-  if (!existsSync(p)) return [];
+  if (!existsSync(p)) return emptyInstallState();
   const data = JSON.parse(readFileSync(p, 'utf8'));
-  if (!Array.isArray(data)) throw new Error(`install log is not an array: ${p}`);
-  return data;
+  return normalizeInstallState(data, p);
+}
+
+// Backward-compatible component-list accessor used by existing callers.
+export function readInstallLog(packagesDir = resolvePackagesDir()) {
+  return readInstallState(packagesDir).installed_components;
+}
+
+function writeInstallState(packagesDir, priorState, installedComponents, changedAt) {
+  const p = installLogPath(packagesDir);
+  const nextState = {
+    install_version: priorState.install_version + 1,
+    install_changed_at: changedAt,
+    installed_components: installedComponents,
+  };
+  mkdirSync(packagesDir, { recursive: true });
+  writeFileSync(p, `${JSON.stringify(nextState, null, 2)}\n`);
+  return p;
 }
 
 // The component's own manifest file, relative to the package root (the log's `source` field).
@@ -84,13 +133,14 @@ export function updateInstallLog(ctx, meta, plan, packageRoot) {
   if (!processed.length) return null;
 
   const packagesDir = ctx.PACKAGES_DIR || resolvePackagesDir();
-  let entries;
+  let state;
   try {
-    entries = readInstallLog(packagesDir);
+    state = readInstallState(packagesDir);
   } catch (e) {
     ctx.log.warn(`install log unreadable (${e.message}) — starting a fresh one`);
-    entries = [];
+    state = emptyInstallState();
   }
+  const entries = state.installed_components;
   const keyOf = (c) => `${c.type}:${c.name}`;
   const byKey = new Map(entries.map((c) => [keyOf(c), c]));
   const now = new Date().toISOString();
@@ -118,10 +168,9 @@ export function updateInstallLog(ctx, meta, plan, packageRoot) {
     byKey.set(keyOf(r), entry);
   }
 
-  mkdirSync(packagesDir, { recursive: true });
-  const p = installLogPath(packagesDir);
-  writeFileSync(p, `${JSON.stringify([...byKey.values()], null, 2)}\n`);
-  return p;
+  const nextEntries = [...byKey.values()];
+  if (isDeepStrictEqual(entries, nextEntries)) return null;
+  return writeInstallState(packagesDir, state, nextEntries, now);
 }
 
 // Apply a finished `sync --mirror` run to the install log (D-48) so it reflects the live satellite
@@ -143,13 +192,14 @@ export function updateInstallLogForMirror(ctx, { installed = [], removed = [], p
   if (!pkg || (!installed.length && !removed.length)) return null;
 
   const packagesDir = ctx.PACKAGES_DIR || resolvePackagesDir();
-  let entries;
+  let state;
   try {
-    entries = readInstallLog(packagesDir);
+    state = readInstallState(packagesDir);
   } catch (e) {
     ctx.log?.warn?.(`install log unreadable (${e.message}) — starting a fresh one`);
-    entries = [];
+    state = emptyInstallState();
   }
+  const entries = state.installed_components;
 
   const keyOf = (c) => `${c.type}:${c.name}`;
   const byKey = new Map(entries.map((c) => [keyOf(c), c]));
@@ -171,13 +221,7 @@ export function updateInstallLogForMirror(ctx, { installed = [], removed = [], p
     });
   }
 
-  const out = `${JSON.stringify([...byKey.values()], null, 2)}\n`;
-  const p = installLogPath(packagesDir);
-  let prev = null;
-  try { prev = readFileSync(p, 'utf8'); } catch { /* absent → write below */ }
-  if (prev === out) return null;            // unchanged → don't rewrite (a no-op mirror stays a no-op)
-
-  mkdirSync(packagesDir, { recursive: true });
-  writeFileSync(p, out);
-  return p;
+  const nextEntries = [...byKey.values()];
+  if (isDeepStrictEqual(entries, nextEntries)) return null;  // unchanged → don't bump metadata
+  return writeInstallState(packagesDir, state, nextEntries, now);
 }

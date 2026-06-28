@@ -204,9 +204,13 @@ try {
   };
 
   await test('--list-available prints the table (no package needed) → exit 0', () => {
-    const r = runCli([], [
-      { type: 'skill', name: 'entry-skill', version: 1, package: 'entry-pkg', package_version: '0.1.0' },
-    ]);
+    const r = runCli([], {
+      install_version: 2,
+      install_changed_at: '2026-06-28T00:00:00.000Z',
+      installed_components: [
+        { type: 'skill', name: 'entry-skill', version: 1, package: 'entry-pkg', package_version: '0.1.0' },
+      ],
+    });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /Available components \(/);
     assert.match(r.stdout, /installed\s+skill\s+entry-skill/);

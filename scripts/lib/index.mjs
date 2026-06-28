@@ -11,7 +11,7 @@ export { copyTree, writeIfChanged, removeTree, moveTree, ensureSymlink, pathExis
 export { makeLogger, VERDICT, SEVERITY } from './log.mjs';
 export { requireSkills, requireFiles, PrereqError } from './prereq.mjs';
 export { preflight, PreflightError } from './preflight.mjs';
-export { resolvePackagesDir, installLogPath, readInstallLog, updateInstallLog, updateInstallLogForMirror, sortInstalled, formatInstalledList, COMPONENT_TYPES } from './install-log.mjs';
+export { resolvePackagesDir, installLogPath, readInstallState, readInstallLog, updateInstallLog, updateInstallLogForMirror, sortInstalled, formatInstalledList, COMPONENT_TYPES } from './install-log.mjs';
 export { discoverPackages, collectAvailable, sortAvailable, formatAvailableList, buildAvailableReport } from './list-available.mjs';
 export { currentVersion, recordVersion, removeVersions, versionTable } from './version-history.mjs';
 export { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION, HANDLING_VALUES } from './manifest.mjs';

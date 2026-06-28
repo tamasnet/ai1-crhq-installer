@@ -75,19 +75,27 @@ Both sync modes edit the package in place and require the destination to be insi
 
 ## Install log and local package stores
 
-The install log is `${PACKAGES_DIR:-~/packages}/install.json`. It is a flat array with one slot per component identity (`type:name`) and records:
+The install log is `${PACKAGES_DIR:-~/packages}/install.json`. It stores install-level metadata plus a flat component list with one slot per component identity (`type:name`):
 
 ```json
 {
-  "type": "skill",
-  "name": "my-skill",
-  "version": 1,
-  "package": "my-package",
-  "package_version": "1",
-  "source": "skills/my-skill/SKILL.md",
-  "installed_at": "..."
+  "install_version": 12,
+  "install_changed_at": "2026-06-28T00:00:00.000Z",
+  "installed_components": [
+    {
+      "type": "skill",
+      "name": "my-skill",
+      "version": 1,
+      "package": "my-package",
+      "package_version": "1",
+      "source": "skills/my-skill/SKILL.md",
+      "installed_at": "..."
+    }
+  ]
 }
 ```
+
+`install_version` increments, and `install_changed_at` updates, only when the `installed_components` state changes. Legacy flat-array logs remain readable and are upgraded on the next actual install-state change.
 
 `install.mjs --list-installed` reads this log only. `install.mjs --list-available` scans:
 

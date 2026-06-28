@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // install-log verification (D-24) — ${PACKAGES_DIR}/install.json bookkeeping. DB-free: drives
 // updateInstallLog directly with a real parsed plan (examples/bundle) and synthetic results.
-// The log is a FLAT list of component entries, one slot per `type:name`; provenance (package +
-// package_version) rides on each entry, so re-install transfers ownership in place.
+// The log wraps a FLAT list of component entries in install-level metadata. There is one component
+// slot per `type:name`; provenance (package + package_version) rides on each entry, so re-install
+// transfers ownership in place.
 // Run from the project root:  node tests/install-log.test.mjs
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
-import { updateInstallLog, updateInstallLogForMirror, readInstallLog, installLogPath, resolvePackagesDir, sortInstalled, formatInstalledList } from '../scripts/lib/install-log.mjs';
+import { updateInstallLog, updateInstallLogForMirror, readInstallState, readInstallLog, installLogPath, resolvePackagesDir, sortInstalled, formatInstalledList } from '../scripts/lib/install-log.mjs';
 import { makeLogger, VERDICT } from '../scripts/lib/log.mjs';
 import { harness } from './_helpers.mjs';
 
@@ -33,12 +34,28 @@ const allOk = () => [
   ok('job', plan.jobs[0].name), ok('service', plan.services[0].name),
 ];
 const logged = (dir = packagesDir) => readInstallLog(dir);
+const state = (dir = packagesDir) => readInstallState(dir);
 const find = (dir, type, name) => logged(dir).find((c) => c.type === type && (name == null || c.name === name));
 
 try {
-  await test('install: flat entry per component with version/package/package_version/date/source', () => {
+  await test('legacy array log: read compatibility wraps as version 0 state', () => {
+    const dir = freshDir();
+    const legacy = [{ type: 'skill', name: 'legacy-skill', package: 'old', package_version: '1' }];
+    writeFileSync(installLogPath(dir), JSON.stringify(legacy));
+    assert.deepEqual(readInstallLog(dir), legacy, 'component-list API unwraps legacy arrays');
+    assert.deepEqual(state(dir), {
+      install_version: 0,
+      install_changed_at: null,
+      installed_components: legacy,
+    });
+  });
+
+  await test('install: wrapped metadata plus entry per component with version/package/package_version/date/source', () => {
     const p = updateInstallLog(makeCtx(packagesDir, { results: allOk() }), meta, plan, packageRoot);
     assert.equal(p, installLogPath(packagesDir));
+    const st = state();
+    assert.equal(st.install_version, 1);
+    assert.ok(st.install_changed_at);
     const entries = logged();
     assert.ok(Array.isArray(entries));
     assert.equal(entries.length, 5);
@@ -72,10 +89,15 @@ try {
     assert.equal(project.version, 1);
   });
 
-  await test('idempotent re-run (ALREADY): component date preserved', () => {
+  await test('idempotent re-run (ALREADY): component date preserved; metadata not bumped', () => {
     const before = find(packagesDir, 'skill').installed_at;
-    updateInstallLog(makeCtx(packagesDir, { results: [already('skill', plan.skills[0].name)] }), meta, plan, packageRoot);
+    const versionBefore = state().install_version;
+    const changedBefore = state().install_changed_at;
+    const p = updateInstallLog(makeCtx(packagesDir, { results: [already('skill', plan.skills[0].name)] }), meta, plan, packageRoot);
+    assert.equal(p, null, 'no component-state change → no metadata bump or rewrite');
     assert.equal(find(packagesDir, 'skill').installed_at, before, 'unchanged component keeps its original install date');
+    assert.equal(state().install_version, versionBefore);
+    assert.equal(state().install_changed_at, changedBefore);
   });
 
   await test('dry-run: returns null, log untouched', () => {
@@ -111,12 +133,14 @@ try {
     ];
     updateInstallLog(makeCtx(packagesDir, { mode: 'uninstall', results }), meta, plan, packageRoot);
     assert.deepEqual(logged(), [], 'every component removed → empty list');
+    assert.equal(state().installed_components.length, 0, 'wrapper remains even when empty');
   });
 
   await test('corrupt log: warned and rebuilt, not fatal', () => {
     writeFileSync(installLogPath(packagesDir), '{not json');
     updateInstallLog(makeCtx(packagesDir, { results: [ok('skill', plan.skills[0].name)] }), meta, plan, packageRoot);
     assert.equal(logged().length, 1);
+    assert.equal(state().install_version, 1, 'rebuilt fresh after unreadable log');
   });
 
   // ── Ownership transfer (the reason for the flat shape) ──────────────────────
@@ -205,6 +229,7 @@ try {
       pkg: { name: 'ai1-tamas', version: 3 },
     });
     assert.equal(p, installLogPath(dir));
+    assert.equal(readInstallState(dir).install_version, 1);
     const log = readInstallLog(dir);
     assert.equal(log.length, 2, 'recipe removed; skill + agent remain');
 
@@ -250,6 +275,7 @@ try {
     // real write
     const p = updateInstallLogForMirror(ctx(), { installed: [{ type: 'skill', name: 's', version: 1 }], pkg: { name: 'p', version: 1 } });
     assert.equal(p, installLogPath(dir));
+    assert.equal(readInstallState(dir).install_version, 1);
     const snapshot = readFileSync(installLogPath(dir), 'utf8');
     // identical mirror again → write-if-changed returns null, file untouched
     assert.equal(updateInstallLogForMirror(ctx(), { installed: [{ type: 'skill', name: 's', version: 1 }], pkg: { name: 'p', version: 1 } }), null);

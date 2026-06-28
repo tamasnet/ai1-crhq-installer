@@ -82,9 +82,9 @@ console.log('\ninstall.mjs --list-installed:');
 
 // Run --list-installed from a dir WITHOUT an ai1-package.yaml to prove it needs no package, with
 // PACKAGES_DIR pointed at a throwaway install log.
-const listInstalled = (logEntries, extra = []) => {
+const listInstalled = (log, extra = []) => {
   const dir = mkdtempSync(join(tmpdir(), 'ai1-listinst-'));
-  if (logEntries) writeFileSync(join(dir, 'install.json'), JSON.stringify(logEntries));
+  if (log) writeFileSync(join(dir, 'install.json'), JSON.stringify(log));
   try {
     return spawnSync(process.execPath, [join(root, 'scripts/install.mjs'), '--list-installed', ...extra],
       { cwd: tmpdir(), encoding: 'utf8', env: { ...process.env, PACKAGES_DIR: dir } });
@@ -94,11 +94,15 @@ const listInstalled = (logEntries, extra = []) => {
 };
 
 await test('--list-installed prints a sorted, formatted table (no package needed) → exit 0', () => {
-  const r = listInstalled([
-    { type: 'service', name: 'svc-b', version: '1.0.0', package: 'pkg', package_version: '1.0.0' },
-    { type: 'skill', name: 'zeta', version: '0.2.0', package: 'pkg', package_version: '1.0.0' },
-    { type: 'skill', name: 'alpha', version: '0.1.0', package: 'pkg', package_version: '1.0.0' },
-  ]);
+  const r = listInstalled({
+    install_version: 3,
+    install_changed_at: '2026-06-28T00:00:00.000Z',
+    installed_components: [
+      { type: 'service', name: 'svc-b', version: '1.0.0', package: 'pkg', package_version: '1.0.0' },
+      { type: 'skill', name: 'zeta', version: '0.2.0', package: 'pkg', package_version: '1.0.0' },
+      { type: 'skill', name: 'alpha', version: '0.1.0', package: 'pkg', package_version: '1.0.0' },
+    ],
+  });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /Installed components \(3\):/);
   const order = ['alpha', 'zeta', 'svc-b'].map((n) => r.stdout.indexOf(n));
