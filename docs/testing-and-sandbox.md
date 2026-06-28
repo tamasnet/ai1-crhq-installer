@@ -68,6 +68,7 @@ Coverage summary:
 | `list-available.test.mjs` | Package store scanning and status classification. |
 | `sync.test.mjs` | Plain sync, mirror backup, manifest reconciliation, version handling, filters, dry-run. |
 | `remote.test.mjs` | Hub client protocol against a stub server. |
+| `action.test.mjs` | Queued hub action processing, per-action removal/error tracking, CLI options. |
 | `polaris.test.mjs` | GitHub Client Repository clone helper and token handling. |
 | `identity.test.mjs` | Satellite id and package name resolution. |
 

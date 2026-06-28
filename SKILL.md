@@ -1,7 +1,7 @@
 ---
 name: ai1-satellite-tools
 version: 1
-description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, or status-check packaged skills, recipes, agents, background jobs, services, or projects from ai1-package.yaml; sync live satellite edits back into a package; create a restorable satellite backup with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's Polaris customer repository.
+description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, or status-check packaged skills, recipes, agents, background jobs, services, or projects from ai1-package.yaml; sync live satellite edits back into a package; create a restorable satellite backup with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, process queued hub actions, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's Polaris customer repository.
 ---
 
 # Ai1 Satellite Tools
@@ -27,6 +27,7 @@ Run commands from the skill/project root unless using an installed absolute path
 | Register with hub | `node scripts/remote.mjs register --hub=<url> --token=<bootstrap>` |
 | Pull hub config | `node scripts/remote.mjs pull-config` |
 | Send heartbeat | `node scripts/remote.mjs heartbeat` |
+| Process queued hub actions | `node scripts/action.mjs` |
 | Push install state to hub | `node scripts/remote.mjs push-install` |
 | Download registered package | `node scripts/remote.mjs get-package --name=<name> --version=<n>` |
 | Clone Polaris customer repository | `node scripts/polaris.mjs init` |
@@ -117,7 +118,7 @@ Services and projects are not mirrored because they are not DB-resident; project
 
 ## Hub client
 
-`remote.mjs` is network-only and DB-free. Runtime identity/config/state live under `${REMOTE_BASE_DIR:-~/remote}` with private file permissions.
+`remote.mjs` and `action.mjs` are network-only and DB-free. Runtime identity/config/state/actions live under `${REMOTE_BASE_DIR:-~/remote}` with private file permissions.
 `heartbeat` refreshes `${REMOTE_BASE_DIR}/state.json` with `install_version` and `install_changed_at`
 from `${PACKAGES_DIR:-~/packages}/install.json` before reporting state to the hub.
 
@@ -125,10 +126,17 @@ from `${PACKAGES_DIR:-~/packages}/install.json` before reporting state to the hu
 node scripts/remote.mjs register --hub=<url> --token=<bootstrap>
 node scripts/remote.mjs pull-config
 node scripts/remote.mjs heartbeat
+node scripts/action.mjs
+node scripts/action.mjs --limit=1
 node scripts/remote.mjs push-install
 node scripts/remote.mjs github-token
 node scripts/remote.mjs get-package --name=<name> --version=<n>
 ```
+
+`action.mjs` reads `${REMOTE_BASE_DIR}/actions.json`, processes queued actions in order, and updates
+the file after each action. Successful actions are removed. If an action fails, processing stops and
+the failed action is left in place with `status: "error"`, `error_message`, `error_at`, and
+`attempts` for troubleshooting. Supported action types are `pull-config` and `push-install`.
 
 Never print or persist hub tokens, bootstrap tokens, signed URLs, or GitHub tokens outside the tool's intended secure files/stdout contract.
 
@@ -205,7 +213,7 @@ Full package spec: `docs/package-manifest-spec.md`.
 | `PACKAGES_DIR` / `PACKAGE_BASE_DIR` | Package store and install log base. Defaults to `~/packages`. |
 | `SERVICES_BASE_DIR` | Parent dir for deployed service copies. Defaults to `~/services`. |
 | `REPOS_BASE_DIR` | Clone base for Git repos, including the Polaris customer repository. Defaults to `~/repos`. |
-| `REMOTE_BASE_DIR` | Hub client identity/config/state base. Defaults to `~/remote`. |
+| `REMOTE_BASE_DIR` | Hub client identity/config/state/action base. Defaults to `~/remote`. |
 | `AGENT_BRAIN_EXCLUDE` | Comma-separated top-level brain dirs excluded from sync/mirror. Default `activity,_backup,.scratch,memory`. |
 
 ## Safety rules

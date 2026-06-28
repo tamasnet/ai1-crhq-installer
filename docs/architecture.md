@@ -4,13 +4,14 @@
 
 ## Product shape
 
-Four CLIs sit on a shared library in `scripts/lib/`:
+Five CLIs sit on a shared library in `scripts/lib/`:
 
 | CLI | Role | Live dependencies |
 |-----|------|-------------------|
 | `scripts/install.mjs` | Install/status/uninstall packages; dry-run; sandbox lifecycle; package availability reports. | satellite DB for skills/recipes/agents/jobs; filesystem/nginx/PM2 for services/projects. |
 | `scripts/sync.mjs` | Export live satellite state back into a package; `--mirror` creates restorable backups. | satellite DB and installed skill/agent files. |
 | `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, install-state push, GitHub token, package download. | Network only. |
+| `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; currently `pull-config` and `push-install`. | Network only through remote client calls. |
 | `scripts/polaris.mjs` | GitHub Client Repository clone helper. | Network + local `git`; uses hub-provided GitHub token. |
 
 The library barrel is `scripts/lib/index.mjs`. Package hooks can import reusable functions from the installed skill path when they need custom behavior.
@@ -108,7 +109,7 @@ It cross-references package manifests with the install log and reports `availabl
 
 ```text
 scripts/
-├── install.mjs, sync.mjs, remote.mjs, polaris.mjs
+├── install.mjs, sync.mjs, remote.mjs, action.mjs, polaris.mjs
 └── lib/
     ├── index.mjs              # public export surface
     ├── context.mjs            # flag/env resolution and runtime context
@@ -117,6 +118,7 @@ scripts/
     ├── run.mjs                # ordered install/status/uninstall dispatch
     ├── sync.mjs               # package export and mirror reconciliation
     ├── remote.mjs             # hub protocol client
+    ├── action.mjs             # queued hub action processor
     ├── polaris.mjs            # GitHub clone helper
     ├── sandbox.mjs            # isolated schema/filesystem lifecycle
     ├── install-log.mjs        # install.json read/write/report helpers
@@ -148,6 +150,11 @@ scripts/
 `remote.mjs heartbeat` refreshes `${REMOTE_BASE_DIR}/state.json` with `install_version` and `install_changed_at` from `${PACKAGES_DIR}/install.json` before it reports state to the hub. `local_time` is included in the report but is not persisted.
 
 `remote.mjs push-install` sends the full normalized `${PACKAGES_DIR}/install.json` state to the hub with `PUT /remote/install`.
+
+`action.mjs` reads `${REMOTE_BASE_DIR}/actions.json`, processes actions in order, and writes the
+file after every action. Successful actions are removed. On failure, processing stops and the failed
+action remains with `status: "error"`, `error_message`, `error_at`, and `attempts`. `--limit=<n>`
+caps the number processed; `--json` returns a machine-readable summary.
 
 Legacy `CRHQ_BASE_DIR` and `SANDBOX_SCHEMA` fallbacks remain for existing harnesses.
 

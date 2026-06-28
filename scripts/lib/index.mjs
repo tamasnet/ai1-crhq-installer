@@ -20,6 +20,7 @@ export { CLI_TYPE_TO_COLLECTION, COLLECTION_TO_CLI_TYPE, CLI_TYPE_VALUES, COLLEC
 export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC } from './flags.mjs';
 export { runPlan, ORDER, resolveHandling } from './run.mjs';
 export { runSync, SyncError, SYNC_TYPES } from './sync.mjs';
+export { runActions, ActionError } from './action.mjs';
 export * as sandbox from './sandbox.mjs';
 export { upsertSkill, removeSkill, statusSkill, exportSkill } from './core/skill.mjs';
 export { upsertRecipe, removeRecipe, statusRecipe, exportRecipe } from './core/recipe.mjs';
