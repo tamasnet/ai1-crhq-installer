@@ -84,8 +84,8 @@ const hub = createServer((req, res) => {
       if (typeof b !== 'object' || b === null || Array.isArray(b) || 'status' in b) return json(400, { error: { code: 'bad_request', message: 'invalid state' } });
       const remoteId = token.slice(0, token.lastIndexOf('.'));
       // The response carries advisory actions (always present, possibly empty). 'no-actions' reports
-      // an empty array; everyone else gets a single get-config action.
-      const actions = remoteId === 'no-actions' ? [] : [{ type: 'get-config', config_version: 9 }];
+      // an empty array; everyone else gets a single pull-config action.
+      const actions = remoteId === 'no-actions' ? [] : [{ type: 'pull-config', config_version: 9 }];
       return json(200, { remote_id: remoteId, reported_at: '2026-06-14T00:00:00.000Z', actions });
     }
     // get-package: resolve a signed download URL. format=json → { url, expires_at }; auth mirrors the
@@ -142,18 +142,18 @@ function register(args, { env = {}, base } = {}) {
   });
   return { ...r, dir, out: `${r.stdout}${r.stderr}` };
 }
-// Run the get-config subcommand against an isolated REMOTE_BASE_DIR. Like register(), but does not
-// default SATELLITE_ID — get-config reads identity from the dir's id.json, written by a prior register.
-function getConfig(args, { env = {}, base } = {}) {
+// Run the pull-config subcommand against an isolated REMOTE_BASE_DIR. Like register(), but does not
+// default SATELLITE_ID — pull-config reads identity from the dir's id.json, written by a prior register.
+function pullConfig(args, { env = {}, base } = {}) {
   const dir = base ?? mkdtempSync(join(tmpdir(), 'remote-'));
-  const r = spawnSync(process.execPath, ['scripts/remote.mjs', 'get-config', ...args], {
+  const r = spawnSync(process.execPath, ['scripts/remote.mjs', 'pull-config', ...args], {
     cwd: root,
     encoding: 'utf8',
     env: { PATH: process.env.PATH, REMOTE_BASE_DIR: dir, ...env },
   });
   return { ...r, dir, out: `${r.stdout}${r.stderr}` };
 }
-// Run the heartbeat subcommand against an isolated REMOTE_BASE_DIR; like getConfig(), it reads
+// Run the heartbeat subcommand against an isolated REMOTE_BASE_DIR; like pullConfig(), it reads
 // identity from the dir's id.json written by a prior register.
 function heartbeat(args, { env = {}, base } = {}) {
   const dir = base ?? mkdtempSync(join(tmpdir(), 'remote-'));
@@ -271,9 +271,9 @@ await test('unreachable hub → exit 1 (could not reach)', () => {
   rmSync(r.dir, { recursive: true, force: true });
 });
 
-console.log('remote.mjs get-config:');
+console.log('remote.mjs pull-config:');
 
-// Register into `dir` (so id.json exists), returning the dir for a subsequent get-config call.
+// Register into `dir` (so id.json exists), returning the dir for a subsequent pull-config call.
 function registered(remoteId = 'cfg-sat') {
   const dir = mkdtempSync(join(tmpdir(), 'remote-'));
   const r = register([`--hub=${HUB}`, '--token=good-secret', `--remote-id=${remoteId}`], { base: dir });
@@ -283,7 +283,7 @@ function registered(remoteId = 'cfg-sat') {
 
 await test('caches the raw payload to config.json + version to state.json sidecar', () => {
   const dir = registered();
-  const r = getConfig([], { base: dir });
+  const r = pullConfig([], { base: dir });
   assert.equal(r.status, 0, r.out);
   // config.json is exactly the opaque payload the hub served — no wrapping record.
   const cfg = JSON.parse(readFileSync(configFile(dir), 'utf8'));
@@ -300,9 +300,9 @@ await test('caches the raw payload to config.json + version to state.json sideca
 
 await test('second poll is conditional → 304, config.json left untouched', () => {
   const dir = registered();
-  assert.equal(getConfig([], { base: dir }).status, 0);
+  assert.equal(pullConfig([], { base: dir }).status, 0);
   const before = readFileSync(configFile(dir), 'utf8');
-  const r2 = getConfig([], { base: dir });
+  const r2 = pullConfig([], { base: dir });
   assert.equal(r2.status, 0, r2.out);
   assert.match(r2.out, /unchanged \(version 5\)/);
   assert.equal(readFileSync(configFile(dir), 'utf8'), before);
@@ -311,7 +311,7 @@ await test('second poll is conditional → 304, config.json left untouched', () 
 
 await test('--json prints a machine-readable result', () => {
   const dir = registered();
-  const r = getConfig(['--json'], { base: dir });
+  const r = pullConfig(['--json'], { base: dir });
   assert.equal(r.status, 0, r.out);
   const out = JSON.parse(r.stdout);
   assert.equal(out.changed, true);
@@ -321,7 +321,7 @@ await test('--json prints a machine-readable result', () => {
 });
 
 await test('not registered (no id.json) → exit 1', () => {
-  const r = getConfig([]);
+  const r = pullConfig([]);
   assert.equal(r.status, 1, r.out);
   assert.match(r.out, /not registered/);
   assert.equal(existsSync(configFile(r.dir)), false);
@@ -330,15 +330,15 @@ await test('not registered (no id.json) → exit 1', () => {
 
 await test('403 not-yet-active → exit 1, no config.json written', () => {
   const dir = registered('sat-403');
-  const r = getConfig([], { base: dir });
+  const r = pullConfig([], { base: dir });
   assert.equal(r.status, 1, r.out);
   assert.match(r.out, /will not serve config yet \(403\)/);
   assert.equal(existsSync(configFile(dir)), false);
   rmSync(dir, { recursive: true, force: true });
 });
 
-await test('get-config unknown option → exit 2', () => {
-  const r = getConfig(['--nope']);
+await test('pull-config unknown option → exit 2', () => {
+  const r = pullConfig(['--nope']);
   assert.equal(r.status, 2, r.out);
   assert.match(r.out, /unknown option: --nope/);
   rmSync(r.dir, { recursive: true, force: true });
@@ -412,7 +412,7 @@ await test('writes the returned actions to actions.json wrapped with actions_fet
   assert.equal(r.status, 0, r.out);
   const wrapped = JSON.parse(readFileSync(actionsFile(dir), 'utf8'));
   assert.deepEqual(Object.keys(wrapped).sort(), ['actions', 'actions_fetched_at']);
-  assert.deepEqual(wrapped.actions, [{ type: 'get-config', config_version: 9 }]);
+  assert.deepEqual(wrapped.actions, [{ type: 'pull-config', config_version: 9 }]);
   assert.match(wrapped.actions_fetched_at, /^\d{4}-\d\d-\d\dT/);
   assert.match(r.out, /1 action written to/);
   assert.equal(statSync(actionsFile(dir)).mode & 0o777, 0o600);
@@ -430,7 +430,7 @@ await test('an empty actions array is still written (always present)', () => {
 
 await test('reports state.json contents + install metadata + local_time, without persisting local_time', () => {
   const dir = registered('beat-sat');
-  assert.equal(getConfig([], { base: dir }).status, 0); // writes state.json (config_version + config_fetched_at)
+  assert.equal(pullConfig([], { base: dir }).status, 0); // writes state.json (config_version + config_fetched_at)
   const before = JSON.parse(readFileSync(stateFile(dir), 'utf8'));
   assert.equal('install_version' in before, false);
 

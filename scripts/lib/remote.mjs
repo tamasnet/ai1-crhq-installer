@@ -214,7 +214,7 @@ export async function registerRemote(flags, { now = new Date(), log } = {}) {
   return { dest, remoteId: record.remote_id, status: result.status, hubUrl: inputs.hubUrl };
 }
 
-// --- get-config: poll the hub for this remote's configuration ---------------------------------
+// --- pull-config: poll the hub for this remote's configuration ---------------------------------
 //
 // `GET {hub}/remote/config` (see ai1-platform-hub apps/api routes/remote.ts): a per-remote-token
 // authenticated poll. The opaque config payload is the body; its monotonic `config_version` rides in
@@ -239,7 +239,7 @@ function readIdentity(base) {
   return id;
 }
 
-// Read the state.json sidecar as an object (the local bookkeeping get-config maintains). Returns an
+// Read the state.json sidecar as an object (the local bookkeeping pull-config maintains). Returns an
 // empty object when the file is absent or unusable, so callers can spread it unconditionally.
 function readState(base) {
   const dest = statePath(base);
@@ -289,7 +289,7 @@ function writeConfig(base, { version, config, fetchedAt }) {
   return dest;
 }
 
-// get-config subcommand: read the stored identity, conditionally poll the hub, and cache a fresh
+// pull-config subcommand: read the stored identity, conditionally poll the hub, and cache a fresh
 // config to config.json (leaving it untouched on a 304). `now` is injected by the CLI so the
 // fetched_at stamp is deterministic in tests. Returns a summary for the caller to print.
 export async function pullRemoteConfig(_flags, { now = new Date(), log } = {}) {
@@ -351,7 +351,7 @@ export async function pullRemoteConfig(_flags, { now = new Date(), log } = {}) {
 // authenticated full-replace report. The body is the opaque state object; the hub stamps it with a
 // server `reported_at` and echoes that back, along with an `actions` array — advisory instructions
 // the hub wants the remote to perform. The report is the local state.json sidecar (the
-// config_version / config_fetched_at get-config maintains) plus the install log's install_version /
+// config_version / config_fetched_at pull-config maintains) plus the install log's install_version /
 // install_changed_at and a freshly computed `local_time` — local_time is reported but not persisted
 // back to state.json. The payload must not carry
 // server-managed keys (the hub 400s those); none of these are.

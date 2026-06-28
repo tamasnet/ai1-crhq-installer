@@ -6,7 +6,7 @@
 //
 // Usage: remote.mjs <subcommand> [options]
 //   register     self-enroll this satellite with the hub and store the per-remote key
-//   get-config   poll the hub for this remote's config and cache it to config.json
+//   pull-config   poll the hub for this remote's config and cache it to config.json
 //   heartbeat    report state (state.json + a fresh local_time) and cache returned actions[]
 //   github-token print the GitHub token this remote should use (raw token to stdout)
 //   get-package  download + extract a registered package into PACKAGE_BASE_DIR/<name>@<version>
@@ -21,7 +21,7 @@
 //   --json                     machine-readable result output
 //   --help                     show this help and exit
 //
-// get-config / heartbeat options:
+// pull-config / heartbeat options:
 //   --json                     machine-readable result output
 //   --help                     show this help and exit
 import { makeLogger } from './lib/log.mjs';
@@ -35,7 +35,7 @@ Usage: node scripts/remote.mjs <subcommand> [options]
 Subcommands:
   register     self-enroll this satellite with the hub and store the per-remote key in
                \${REMOTE_BASE_DIR}/id.json (default ~/remote)
-  get-config   poll the hub for this remote's config and write the raw payload to
+  pull-config   poll the hub for this remote's config and write the raw payload to
                \${REMOTE_BASE_DIR}/config.json (+ a state.json sidecar with the version;
                conditional — a 304 leaves both files as-is)
   heartbeat    report this remote's state (state.json contents + a fresh local_time) to
@@ -58,7 +58,7 @@ register options:
   --json                     machine-readable result output
   --help                     show this help and exit
 
-get-config / heartbeat options:
+pull-config / heartbeat options:
   --json                     machine-readable result output
   --help                     show this help and exit
 
@@ -80,7 +80,7 @@ const SPEC = {
     bool: new Set(['--force', '--json']),
     value: new Set(['--hub', '--token', '--remote-id', '--remote-type', '--schema-version']),
   },
-  'get-config': {
+  'pull-config': {
     bool: new Set(['--json']),
     value: new Set([]),
   },
@@ -135,7 +135,7 @@ function parseRegisterArgs(argv) {
   return flags;
 }
 
-// Parse + validate the argv of a boolean-flag-only subcommand (get-config, heartbeat). Only --json;
+// Parse + validate the argv of a boolean-flag-only subcommand (pull-config, heartbeat). Only --json;
 // same strict contract as register — an unsupported option or a value on a boolean flag is a usage
 // error (exit 2).
 function parseBoolOnlyArgs(subcommand, argv) {
@@ -212,7 +212,7 @@ async function main() {
     return;
   }
 
-  if (subcommand === 'get-config') {
+  if (subcommand === 'pull-config') {
     const flags = parseBoolOnlyArgs(subcommand, rest);
     const result = await pullRemoteConfig(flags, { now: new Date(), log: flags.json ? undefined : log });
 

@@ -25,7 +25,7 @@ Run commands from the skill/project root unless using an installed absolute path
 | Add a live component to a package | `node scripts/sync.mjs <package-dir> --add-skill=<name>` |
 | Back up satellite into restorable package | `node scripts/sync.mjs <package-dir> --mirror` |
 | Register with hub | `node scripts/remote.mjs register --hub=<url> --token=<bootstrap>` |
-| Pull hub config | `node scripts/remote.mjs get-config` |
+| Pull hub config | `node scripts/remote.mjs pull-config` |
 | Send heartbeat | `node scripts/remote.mjs heartbeat` |
 | Download registered package | `node scripts/remote.mjs get-package --name=<name> --version=<n>` |
 | Clone Polaris customer repository | `node scripts/polaris.mjs init` |
@@ -122,7 +122,7 @@ from `${PACKAGES_DIR:-~/packages}/install.json` before reporting state to the hu
 
 ```bash
 node scripts/remote.mjs register --hub=<url> --token=<bootstrap>
-node scripts/remote.mjs get-config
+node scripts/remote.mjs pull-config
 node scripts/remote.mjs heartbeat
 node scripts/remote.mjs github-token
 node scripts/remote.mjs get-package --name=<name> --version=<n>
