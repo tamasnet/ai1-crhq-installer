@@ -27,6 +27,7 @@ Run commands from the skill/project root unless using an installed absolute path
 | Register with hub | `node scripts/remote.mjs register --hub=<url> --token=<bootstrap>` |
 | Pull hub config | `node scripts/remote.mjs pull-config` |
 | Send heartbeat | `node scripts/remote.mjs heartbeat` |
+| Push install state to hub | `node scripts/remote.mjs push-install` |
 | Download registered package | `node scripts/remote.mjs get-package --name=<name> --version=<n>` |
 | Clone Polaris customer repository | `node scripts/polaris.mjs init` |
 
@@ -124,6 +125,7 @@ from `${PACKAGES_DIR:-~/packages}/install.json` before reporting state to the hu
 node scripts/remote.mjs register --hub=<url> --token=<bootstrap>
 node scripts/remote.mjs pull-config
 node scripts/remote.mjs heartbeat
+node scripts/remote.mjs push-install
 node scripts/remote.mjs github-token
 node scripts/remote.mjs get-package --name=<name> --version=<n>
 ```

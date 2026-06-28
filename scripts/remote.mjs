@@ -8,6 +8,7 @@
 //   register     self-enroll this satellite with the hub and store the per-remote key
 //   pull-config   poll the hub for this remote's config and cache it to config.json
 //   heartbeat    report state (state.json + a fresh local_time) and cache returned actions[]
+//   push-install send install.json to the hub
 //   github-token print the GitHub token this remote should use (raw token to stdout)
 //   get-package  download + extract a registered package into PACKAGE_BASE_DIR/<name>@<version>
 //
@@ -21,12 +22,12 @@
 //   --json                     machine-readable result output
 //   --help                     show this help and exit
 //
-// pull-config / heartbeat options:
+// pull-config / heartbeat / push-install options:
 //   --json                     machine-readable result output
 //   --help                     show this help and exit
 import { makeLogger } from './lib/log.mjs';
 import { UsageError } from './lib/flags.mjs';
-import { registerRemote, pullRemoteConfig, reportRemoteState, fetchGithubToken, fetchRemotePackage, RemoteError } from './lib/remote.mjs';
+import { registerRemote, pullRemoteConfig, reportRemoteState, pushRemoteInstall, fetchGithubToken, fetchRemotePackage, RemoteError } from './lib/remote.mjs';
 
 const USAGE = `ai1-satellite-tools — register a satellite with the Ai1 Platform Hub
 
@@ -41,6 +42,8 @@ Subcommands:
   heartbeat    report this remote's state (state.json contents + a fresh local_time) to
                the hub; echo the server reported_at and cache the returned advisory
                actions[] to \${REMOTE_BASE_DIR}/actions.json
+  push-install send the normalized \${PACKAGES_DIR}/install.json state to the hub via
+               PUT /remote/install
   github-token resolve the GitHub token this remote should use and print just the raw
                token to stdout (suitable for \`TOKEN=\$(… github-token)\`)
   get-package  resolve a signed download URL for a registered package, download the
@@ -58,7 +61,7 @@ register options:
   --json                     machine-readable result output
   --help                     show this help and exit
 
-pull-config / heartbeat options:
+pull-config / heartbeat / push-install options:
   --json                     machine-readable result output
   --help                     show this help and exit
 
@@ -85,6 +88,10 @@ const SPEC = {
     value: new Set([]),
   },
   heartbeat: {
+    bool: new Set(['--json']),
+    value: new Set([]),
+  },
+  'push-install': {
     bool: new Set(['--json']),
     value: new Set([]),
   },
@@ -135,9 +142,9 @@ function parseRegisterArgs(argv) {
   return flags;
 }
 
-// Parse + validate the argv of a boolean-flag-only subcommand (pull-config, heartbeat). Only --json;
-// same strict contract as register — an unsupported option or a value on a boolean flag is a usage
-// error (exit 2).
+// Parse + validate the argv of a boolean-flag-only subcommand (pull-config, heartbeat,
+// push-install). Only --json; same strict contract as register — an unsupported option or a value on
+// a boolean flag is a usage error (exit 2).
 function parseBoolOnlyArgs(subcommand, argv) {
   const spec = SPEC[subcommand];
   const flags = { json: false };
@@ -236,6 +243,19 @@ async function main() {
       log.ok(`state reported for '${result.remoteId}' — recorded at ${result.reportedAt}`);
       const n = result.actions.length;
       log.info(`${n} action${n === 1 ? '' : 's'} written to ${result.dest}`);
+    }
+    return;
+  }
+
+  if (subcommand === 'push-install') {
+    const flags = parseBoolOnlyArgs(subcommand, rest);
+    const result = await pushRemoteInstall(flags, { log: flags.json ? undefined : log });
+
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      log.ok(`install state v${result.installVersion} pushed for '${result.remoteId}'`);
+      log.info(`${result.componentCount} component${result.componentCount === 1 ? '' : 's'} reported`);
     }
     return;
   }

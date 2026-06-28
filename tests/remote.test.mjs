@@ -88,6 +88,24 @@ const hub = createServer((req, res) => {
       const actions = remoteId === 'no-actions' ? [] : [{ type: 'pull-config', config_version: 9 }];
       return json(200, { remote_id: remoteId, reported_at: '2026-06-14T00:00:00.000Z', actions });
     }
+    if (req.method === 'PUT' && req.url === '/remote/install') {
+      const token = bearer();
+      if (!token) return json(401, { error: { code: 'unauthorized', message: 'Missing or malformed remote token' } });
+      if (token === 'sat-403.SECRETvalue') return json(403, { error: { code: 'forbidden', message: 'Remote is awaiting operator approval; keep polling' } });
+      if (!token.endsWith('.SECRETvalue')) return json(401, { error: { code: 'unauthorized', message: 'Invalid remote token' } });
+      const b = JSON.parse(body || '{}');
+      if (typeof b !== 'object' || b === null || Array.isArray(b)
+          || !Number.isInteger(b.install_version) || !Array.isArray(b.installed_components)) {
+        return json(400, { error: { code: 'bad_request', message: 'invalid install state' } });
+      }
+      const remoteId = token.slice(0, token.lastIndexOf('.'));
+      return json(200, {
+        remote_id: remoteId,
+        accepted_at: '2026-06-14T00:01:00.000Z',
+        install_version: b.install_version,
+        component_count: b.installed_components.length,
+      });
+    }
     // get-package: resolve a signed download URL. format=json → { url, expires_at }; auth mirrors the
     // other routes. 'widget' v3 is the only registered package; anything else is a 404.
     if (req.method === 'GET' && req.url.startsWith('/remote/package')) {
@@ -159,6 +177,18 @@ function heartbeat(args, { env = {}, base } = {}) {
   const dir = base ?? mkdtempSync(join(tmpdir(), 'remote-'));
   const packagesDir = env.PACKAGES_DIR || join(dir, 'packages');
   const r = spawnSync(process.execPath, ['scripts/remote.mjs', 'heartbeat', ...args], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH, REMOTE_BASE_DIR: dir, PACKAGES_DIR: packagesDir, ...env },
+  });
+  return { ...r, dir, out: `${r.stdout}${r.stderr}` };
+}
+// Run the push-install subcommand against an isolated REMOTE_BASE_DIR. It reads install.json from
+// PACKAGES_DIR, defaulting to a path inside the remote temp dir so tests never touch ~/packages.
+function pushInstall(args, { env = {}, base } = {}) {
+  const dir = base ?? mkdtempSync(join(tmpdir(), 'remote-'));
+  const packagesDir = env.PACKAGES_DIR || join(dir, 'packages');
+  const r = spawnSync(process.execPath, ['scripts/remote.mjs', 'push-install', ...args], {
     cwd: root,
     encoding: 'utf8',
     env: { PATH: process.env.PATH, REMOTE_BASE_DIR: dir, PACKAGES_DIR: packagesDir, ...env },
@@ -470,6 +500,63 @@ await test('403 not-yet-active → exit 1', () => {
 
 await test('heartbeat unknown option → exit 2', () => {
   const r = heartbeat(['--nope']);
+  assert.equal(r.status, 2, r.out);
+  assert.match(r.out, /unknown option: --nope/);
+  rmSync(r.dir, { recursive: true, force: true });
+});
+
+console.log('remote.mjs push-install:');
+
+await test('push-install sends install.json and reports summary', () => {
+  const dir = registered('install-sat');
+  const packagesDir = mkdtempSync(join(tmpdir(), 'remote-packages-'));
+  writeFileSync(join(packagesDir, 'install.json'), JSON.stringify({
+    install_version: 11,
+    install_changed_at: '2026-06-28T16:00:00.000Z',
+    installed_components: [
+      { type: 'skill', name: 'demo-skill', package: 'demo', package_version: '1', installed_at: '2026-06-28T15:59:00.000Z' },
+    ],
+  }));
+
+  const r = pushInstall(['--json'], { base: dir, env: { PACKAGES_DIR: packagesDir } });
+  assert.equal(r.status, 0, r.out);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.remoteId, 'install-sat');
+  assert.equal(out.installVersion, 11);
+  assert.equal(out.installChangedAt, '2026-06-28T16:00:00.000Z');
+  assert.equal(out.componentCount, 1);
+  assert.equal(out.acceptedAt, '2026-06-14T00:01:00.000Z');
+
+  rmSync(packagesDir, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await test('push-install with absent install.json sends empty version-0 state', () => {
+  const dir = registered('install-sat');
+  const r = pushInstall([], { base: dir });
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /install state v0 pushed for 'install-sat'/);
+  assert.match(r.out, /0 components reported/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await test('push-install not registered (no id.json) → exit 1', () => {
+  const r = pushInstall([]);
+  assert.equal(r.status, 1, r.out);
+  assert.match(r.out, /not registered/);
+  rmSync(r.dir, { recursive: true, force: true });
+});
+
+await test('push-install 403 not-yet-active → exit 1', () => {
+  const dir = registered('sat-403');
+  const r = pushInstall([], { base: dir });
+  assert.equal(r.status, 1, r.out);
+  assert.match(r.out, /will not accept install state yet \(403\)/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await test('push-install unknown option → exit 2', () => {
+  const r = pushInstall(['--nope']);
   assert.equal(r.status, 2, r.out);
   assert.match(r.out, /unknown option: --nope/);
   rmSync(r.dir, { recursive: true, force: true });

@@ -10,7 +10,7 @@ Four CLIs sit on a shared library in `scripts/lib/`:
 |-----|------|-------------------|
 | `scripts/install.mjs` | Install/status/uninstall packages; dry-run; sandbox lifecycle; package availability reports. | satellite DB for skills/recipes/agents/jobs; filesystem/nginx/PM2 for services/projects. |
 | `scripts/sync.mjs` | Export live satellite state back into a package; `--mirror` creates restorable backups. | satellite DB and installed skill/agent files. |
-| `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, GitHub token, package download. | Network only. |
+| `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, install-state push, GitHub token, package download. | Network only. |
 | `scripts/polaris.mjs` | GitHub Client Repository clone helper. | Network + local `git`; uses hub-provided GitHub token. |
 
 The library barrel is `scripts/lib/index.mjs`. Package hooks can import reusable functions from the installed skill path when they need custom behavior.
@@ -146,6 +146,8 @@ scripts/
 | `AGENT_BRAIN_EXCLUDE` | `activity,_backup,.scratch,memory` | Top-level brain dirs omitted from sync/mirror. |
 
 `remote.mjs heartbeat` refreshes `${REMOTE_BASE_DIR}/state.json` with `install_version` and `install_changed_at` from `${PACKAGES_DIR}/install.json` before it reports state to the hub. `local_time` is included in the report but is not persisted.
+
+`remote.mjs push-install` sends the full normalized `${PACKAGES_DIR}/install.json` state to the hub with `PUT /remote/install`.
 
 Legacy `CRHQ_BASE_DIR` and `SANDBOX_SCHEMA` fallbacks remain for existing harnesses.
 

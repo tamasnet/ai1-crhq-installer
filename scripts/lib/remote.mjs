@@ -435,6 +435,66 @@ export async function reportRemoteState(_flags, { now = new Date(), log } = {}) 
   throw new RemoteError(`hub state report failed (${res.status}${code ? ` ${code}` : ''}): ${message}`);
 }
 
+// --- push-install: send install.json to the hub -----------------------------------------------
+//
+// `PUT {hub}/remote/install`: authenticated full-replace report of the satellite's install log.
+// The payload is the normalized install state read from `${PACKAGES_DIR}/install.json`; absent logs
+// report the empty version-0 state, and legacy flat arrays are normalized by readInstallState().
+
+export async function pushRemoteInstall(_flags, { log } = {}) {
+  const base = resolveRemoteBase();
+  const id = readIdentity(base);
+  const install = readInstallState();
+  const url = `${id.hub_url}/remote/install`;
+
+  log?.info(`pushing install state for '${id.remote_id}' to ${id.hub_url} …`);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        authorization: `Bearer ${id.token}`,
+      },
+      body: JSON.stringify(install),
+    });
+  } catch (e) {
+    throw new RemoteError(`could not reach hub at ${url}: ${e.message}`);
+  }
+
+  let data = null;
+  const text = await res.text();
+  if (text) { try { data = JSON.parse(text); } catch { /* non-JSON body — handled below */ } }
+
+  if (res.status === 200 || res.status === 202 || res.status === 204) {
+    if (text && (!data || typeof data !== 'object' || Array.isArray(data))) {
+      throw new RemoteError(`hub returned ${res.status} but an unrecognized install-report body`);
+    }
+    const acceptedAt = data?.accepted_at || data?.reported_at || null;
+    return {
+      remoteId: typeof data?.remote_id === 'string' ? data.remote_id : id.remote_id,
+      installVersion: install.install_version,
+      installChangedAt: install.install_changed_at,
+      componentCount: install.installed_components.length,
+      acceptedAt,
+    };
+  }
+
+  const code = data?.error?.code;
+  const message = data?.error?.message || text || `HTTP ${res.status}`;
+  if (res.status === 401) {
+    throw new RemoteError(
+      `hub rejected the remote token (401): ${message}\n` +
+      `  Re-register with --force to mint a new token.`);
+  }
+  if (res.status === 403) {
+    throw new RemoteError(`hub will not accept install state yet (403): ${message}`);
+  }
+  throw new RemoteError(`hub install report failed (${res.status}${code ? ` ${code}` : ''}): ${message}`);
+}
+
 // --- github-token: resolve the GitHub token this remote should use ----------------------------
 //
 // `GET {hub}/remote/github-token` (see ai1-platform-hub apps/api routes/remote.ts): a per-remote-token
