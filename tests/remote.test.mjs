@@ -157,10 +157,11 @@ function getConfig(args, { env = {}, base } = {}) {
 // identity from the dir's id.json written by a prior register.
 function heartbeat(args, { env = {}, base } = {}) {
   const dir = base ?? mkdtempSync(join(tmpdir(), 'remote-'));
+  const packagesDir = env.PACKAGES_DIR || join(dir, 'packages');
   const r = spawnSync(process.execPath, ['scripts/remote.mjs', 'heartbeat', ...args], {
     cwd: root,
     encoding: 'utf8',
-    env: { PATH: process.env.PATH, REMOTE_BASE_DIR: dir, ...env },
+    env: { PATH: process.env.PATH, REMOTE_BASE_DIR: dir, PACKAGES_DIR: packagesDir, ...env },
   });
   return { ...r, dir, out: `${r.stdout}${r.stderr}` };
 }
@@ -345,12 +346,16 @@ await test('get-config unknown option → exit 2', () => {
 
 console.log('remote.mjs heartbeat:');
 
-await test('reports a { local_time } state and echoes the server reported_at', () => {
+await test('reports install metadata + local_time and echoes the server reported_at', () => {
   const dir = registered('beat-sat');
   const r = heartbeat([], { base: dir });
   assert.equal(r.status, 0, r.out);
   assert.match(r.out, /state reported for 'beat-sat'/);
   assert.match(r.out, /2026-06-14T00:00:00\.000Z/);
+  const state = JSON.parse(readFileSync(stateFile(dir), 'utf8'));
+  assert.equal(state.install_version, 0);
+  assert.equal(state.install_changed_at, null);
+  assert.equal('local_time' in state, false, 'local_time is not persisted');
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -361,8 +366,34 @@ await test('--json includes the reported_at + the local_time state sent', () => 
   const out = JSON.parse(r.stdout);
   assert.equal(out.remoteId, 'beat-sat');
   assert.equal(out.reportedAt, '2026-06-14T00:00:00.000Z');
+  assert.equal(out.state.install_version, 0);
+  assert.equal(out.state.install_changed_at, null);
   // local_time is a UTC instant rendered with an explicit +00:00 offset, not the Z designator.
   assert.match(out.state.local_time, /^\d{4}-\d\d-\d\dT[\d:.]+\+00:00$/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await test('heartbeat persists and reports install_version/install_changed_at from install.json', () => {
+  const dir = registered('beat-sat');
+  const packagesDir = mkdtempSync(join(tmpdir(), 'remote-packages-'));
+  writeFileSync(join(packagesDir, 'install.json'), JSON.stringify({
+    install_version: 7,
+    install_changed_at: '2026-06-28T15:00:00.000Z',
+    installed_components: [],
+  }));
+
+  const r = heartbeat(['--json'], { base: dir, env: { PACKAGES_DIR: packagesDir } });
+  assert.equal(r.status, 0, r.out);
+  const sent = JSON.parse(r.stdout).state;
+  assert.equal(sent.install_version, 7);
+  assert.equal(sent.install_changed_at, '2026-06-28T15:00:00.000Z');
+
+  const persisted = JSON.parse(readFileSync(stateFile(dir), 'utf8'));
+  assert.equal(persisted.install_version, 7);
+  assert.equal(persisted.install_changed_at, '2026-06-28T15:00:00.000Z');
+  assert.equal('local_time' in persisted, false);
+
+  rmSync(packagesDir, { recursive: true, force: true });
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -397,21 +428,28 @@ await test('an empty actions array is still written (always present)', () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-await test('reports state.json contents + local_time, without persisting local_time', () => {
+await test('reports state.json contents + install metadata + local_time, without persisting local_time', () => {
   const dir = registered('beat-sat');
   assert.equal(getConfig([], { base: dir }).status, 0); // writes state.json (config_version + config_fetched_at)
-  const before = readFileSync(stateFile(dir), 'utf8');
+  const before = JSON.parse(readFileSync(stateFile(dir), 'utf8'));
+  assert.equal('install_version' in before, false);
 
   const r = heartbeat(['--json'], { base: dir });
   assert.equal(r.status, 0, r.out);
   const sent = JSON.parse(r.stdout).state;
-  // The reported state carries the sidecar fields plus the freshly added local_time.
+  // The reported state carries the sidecar fields, refreshed install metadata, and local_time.
   assert.equal(sent.config_version, 5);
   assert.match(sent.config_fetched_at, /^\d{4}-\d\d-\d\dT/);
+  assert.equal(sent.install_version, 0);
+  assert.equal(sent.install_changed_at, null);
   assert.match(sent.local_time, /\+00:00$/);
-  // local_time is reported, not saved — state.json is unchanged on disk.
-  assert.equal(readFileSync(stateFile(dir), 'utf8'), before);
-  assert.equal('local_time' in JSON.parse(before), false);
+  // install metadata is persisted into state.json; local_time is reported, not saved.
+  const after = JSON.parse(readFileSync(stateFile(dir), 'utf8'));
+  assert.equal(after.config_version, 5);
+  assert.match(after.config_fetched_at, /^\d{4}-\d\d-\d\dT/);
+  assert.equal(after.install_version, 0);
+  assert.equal(after.install_changed_at, null);
+  assert.equal('local_time' in after, false);
   rmSync(dir, { recursive: true, force: true });
 });
 

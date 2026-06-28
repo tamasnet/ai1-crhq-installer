@@ -145,6 +145,8 @@ scripts/
 | `REPOS_BASE_DIR` | `~/repos` | Client Repository checkout base. |
 | `AGENT_BRAIN_EXCLUDE` | `activity,_backup,.scratch,memory` | Top-level brain dirs omitted from sync/mirror. |
 
+`remote.mjs heartbeat` refreshes `${REMOTE_BASE_DIR}/state.json` with `install_version` and `install_changed_at` from `${PACKAGES_DIR}/install.json` before it reports state to the hub. `local_time` is included in the report but is not persisted.
+
 Legacy `CRHQ_BASE_DIR` and `SANDBOX_SCHEMA` fallbacks remain for existing harnesses.
 
 ## Services and projects

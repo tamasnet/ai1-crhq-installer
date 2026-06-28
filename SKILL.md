@@ -117,6 +117,8 @@ Services and projects are not mirrored because they are not DB-resident; project
 ## Hub client
 
 `remote.mjs` is network-only and DB-free. Runtime identity/config/state live under `${REMOTE_BASE_DIR:-~/remote}` with private file permissions.
+`heartbeat` refreshes `${REMOTE_BASE_DIR}/state.json` with `install_version` and `install_changed_at`
+from `${PACKAGES_DIR:-~/packages}/install.json` before reporting state to the hub.
 
 ```bash
 node scripts/remote.mjs register --hub=<url> --token=<bootstrap>

@@ -16,6 +16,7 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { spawnSync } from 'child_process';
 import { UsageError } from './flags.mjs';
+import { readInstallState } from './install-log.mjs';
 
 // Raised on any registration failure that isn't a usage error (network, hub rejection, bad
 // response). The CLI maps it to a non-usage failure exit (1).
@@ -275,11 +276,13 @@ function writeJsonFile(dest, value) {
 }
 
 // Persist a freshly fetched config: the raw opaque payload to config.json, and the poll bookkeeping
-// (version + fetch time) to the state.json sidecar.
+// (version + fetch time) to the state.json sidecar. Preserve any heartbeat-maintained keys (such as
+// install_version) already present in state.json.
 function writeConfig(base, { version, config, fetchedAt }) {
   mkdirSync(base, { recursive: true });
   const dest = writeJsonFile(configPath(base), config);
   writeJsonFile(statePath(base), {
+    ...readState(base),
     config_version: version,
     config_fetched_at: fetchedAt,
   });
@@ -348,13 +351,31 @@ export async function pullRemoteConfig(_flags, { now = new Date(), log } = {}) {
 // authenticated full-replace report. The body is the opaque state object; the hub stamps it with a
 // server `reported_at` and echoes that back, along with an `actions` array — advisory instructions
 // the hub wants the remote to perform. The report is the local state.json sidecar (the
-// config_version / config_fetched_at get-config maintains) plus a freshly computed `local_time` — the
-// timestamp is reported but not persisted back to state.json. The payload must not carry
+// config_version / config_fetched_at get-config maintains) plus the install log's install_version /
+// install_changed_at and a freshly computed `local_time` — local_time is reported but not persisted
+// back to state.json. The payload must not carry
 // server-managed keys (the hub 400s those); none of these are.
 //
 // remote.mjs's sole responsibility for the actions is to record them: on success it writes the array
 // to actions.json (wrapped with `actions_fetched_at`). *Acting* on them is out of scope here — a
 // later consumer reads actions.json and performs/clears them.
+
+function installStateSummary() {
+  const state = readInstallState();
+  return {
+    install_version: state.install_version,
+    install_changed_at: state.install_changed_at,
+  };
+}
+
+function refreshHeartbeatState(base) {
+  const state = {
+    ...readState(base),
+    ...installStateSummary(),
+  };
+  writeJsonFile(statePath(base), state);
+  return state;
+}
 
 export async function reportRemoteState(_flags, { now = new Date(), log } = {}) {
   const base = resolveRemoteBase();
@@ -363,7 +384,7 @@ export async function reportRemoteState(_flags, { now = new Date(), log } = {}) 
   // local_time: a UTC instant rendered with an explicit `+00:00` offset rather than the `Z` military
   // designator — same moment, but the offset form makes the timezone convention unambiguous. It is
   // added to the reported state only, never written back to the sidecar.
-  const state = { ...readState(base), local_time: now.toISOString().replace(/Z$/, '+00:00') };
+  const state = { ...refreshHeartbeatState(base), local_time: now.toISOString().replace(/Z$/, '+00:00') };
 
   log?.info(`reporting state for '${id.remote_id}' to ${id.hub_url} …`);
 
