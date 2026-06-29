@@ -10,6 +10,8 @@ Use this skill to manage a satellite from declarative **Ai1 Packages**. An Ai1 P
 
 The toolkit is DB-direct for satellite resources, nginx/PM2-direct for services/projects, and idempotent.
 
+IMPORTANT: When working with Ai1 Packages you MUST use only tools from this skill. Do not manipulate, download or otherwise work with Ai1 Packages directly. Always display results from `--list-installed` or `--list-available` as a table.
+
 ## Command map
 
 Run commands from the skill/project root unless using an installed absolute path.

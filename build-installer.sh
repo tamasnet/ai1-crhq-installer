@@ -27,14 +27,17 @@ command -v base64 >/dev/null 2>&1 || { echo "build: base64 is required" >&2; exi
 mkdir -p "$(dirname "$OUT")"
 
 TARBALL=$(mktemp "${TMPDIR:-/tmp}/ai1-bundle.XXXXXX.tgz")
-STAGEDIR=$(mktemp -d "${TMPDIR:-/tmp}/ai1-stage.XXXXXX")
-trap 'rm -f "$TARBALL"; rm -rf "$STAGEDIR"' EXIT INT TERM
+trap 'rm -f "$TARBALL"' EXIT INT TERM
 
-# Stage the package layout. The skill directory is assembled here from root sources;
-# scripts/, docs/, README.md and SKILL.md all land under skills/ai1-satellite-tools/
-# so the installer copies them to SKILLS_BASE_DIR/ai1-satellite-tools/ as skill assets.
-# We use a temp staging dir because --transform (GNU tar) and -s (BSD tar) differ.
-echo "build: staging package layout ..." >&2
+# Stage the package layout into a local directory we keep around for inspection.
+# The skill directory is assembled here from root sources; scripts/, docs/, README.md
+# and SKILL.md all land under skills/ai1-satellite-tools/ so the installer copies them
+# to SKILLS_BASE_DIR/ai1-satellite-tools/ as skill assets. We stage into a real dir
+# (rather than tar --transform/-s) because GNU and BSD tar spell those differently.
+STAGEDIR="$ROOT/dist/package"
+echo "build: staging package layout in $STAGEDIR ..." >&2
+rm -rf "$STAGEDIR"
+mkdir -p "$STAGEDIR"
 cp "$ROOT/ai1-package.yaml" "$STAGEDIR/"
 mkdir -p "$STAGEDIR/skills/ai1-satellite-tools"
 cp "$ROOT/SKILL.md"   "$STAGEDIR/skills/ai1-satellite-tools/SKILL.md"

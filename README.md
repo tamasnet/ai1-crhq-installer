@@ -14,6 +14,8 @@ It manages:
 
 The package has zero runtime npm dependencies. YAML parsing is vendored; the satellite supplies Node, knex, Postgres access, nginx, and PM2.
 
+> **NOTE:** If you're viewing this README in a Git repository, the actual package structure is assembled by `build-installer.sh` rather than being present in the the repository itself as would be typical for an Ai1 Package.
+
 ## Quick start
 
 ```bash
