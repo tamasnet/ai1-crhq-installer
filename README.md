@@ -45,7 +45,7 @@ node scripts/polaris.mjs init
 | `scripts/install.mjs` | Install, uninstall, status-check, dry-run, sandbox-test, and list local package availability. |
 | `scripts/sync.mjs` | Export live satellite components back into a package; `--mirror` makes the package a restorable backup. |
 | `scripts/remote.mjs` | Register with the Ai1 Platform Hub, pull config, heartbeat, push install state, resolve GitHub tokens, and download registered packages. |
-| `scripts/action.mjs` | Process queued hub actions (`pull-config`, `push-install`) from `${REMOTE_BASE_DIR}/actions.json`. |
+| `scripts/action.mjs` | Process queued hub actions (`pull-config`, `push-install`, `install-package`) from `${REMOTE_BASE_DIR}/actions.json`. |
 | `scripts/polaris.mjs` | Clone the satellite's GitHub Client Repository using the hub-provided GitHub token. |
 
 ## Repository layout

@@ -13,8 +13,9 @@ Usage: node scripts/action.mjs [options]
 
 Reads \${REMOTE_BASE_DIR}/actions.json (default ~/remote/actions.json) and performs queued
 advisory actions in order. Supported action types:
-  pull-config   run the same logic as remote.mjs pull-config
-  push-install  run the same logic as remote.mjs push-install
+  pull-config     run the same logic as remote.mjs pull-config
+  push-install    run the same logic as remote.mjs push-install
+  install-package run remote.mjs get-package, then install.mjs on the downloaded package
 
 Options:
   --limit=<n>   maximum number of actions to process (default: all; n may be 0)

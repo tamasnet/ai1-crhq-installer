@@ -1,7 +1,9 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { actionsPath } from './remote.mjs';
-import { pullRemoteConfig, pushRemoteInstall } from './remote.mjs';
+import { pullRemoteConfig, pushRemoteInstall, fetchRemotePackage } from './remote.mjs';
 
 export class ActionError extends Error {
   constructor(message) { super(message); this.name = 'ActionError'; }
@@ -60,6 +62,71 @@ function markFailed(action, e, now) {
   };
 }
 
+function requiredString(action, field) {
+  const value = action[field];
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ActionError(`install-package action requires string field: ${field}`);
+  }
+  return value.trim();
+}
+
+function requiredPositiveInteger(action, field) {
+  const value = action[field];
+  if (Number.isInteger(value) && value >= 1) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value) && Number(value) >= 1) return Number(value);
+  throw new ActionError(`install-package action requires positive integer field: ${field}`);
+}
+
+function optionalStringFlag(action, field, flag) {
+  if (action[field] == null) return null;
+  if (typeof action[field] !== 'string' || action[field].trim() === '') {
+    throw new ActionError(`install-package action field ${field} must be a non-empty string when set`);
+  }
+  return `${flag}=${action[field].trim()}`;
+}
+
+function installFlagsForAction(action) {
+  return [
+    optionalStringFlag(action, 'install_type', '--type'),
+    optionalStringFlag(action, 'install_include', '--include'),
+    optionalStringFlag(action, 'install_exclude', '--exclude'),
+  ].filter(Boolean);
+}
+
+function defaultInstallPackage(packageDir, args = [], { log } = {}) {
+  const scriptsDir = dirname(dirname(fileURLToPath(import.meta.url)));
+  const installScript = join(scriptsDir, 'install.mjs');
+  const argv = [installScript, packageDir, ...args];
+
+  log?.info(`installing downloaded package → ${packageDir}${args.length ? ` (${args.join(' ')})` : ''}`);
+  const r = spawnSync(process.execPath, argv, {
+    cwd: dirname(scriptsDir),
+    encoding: 'utf8',
+    env: process.env,
+    stdio: log ? 'inherit' : 'pipe',
+  });
+  if (r.error) throw new ActionError(`could not run install.mjs: ${r.error.message}`);
+  if (r.status !== 0) {
+    throw new ActionError(`install.mjs failed for ${packageDir} (exit ${r.status})`);
+  }
+  return { packageDir, flags: args, exitCode: r.status };
+}
+
+async function performInstallPackage(action, deps, log) {
+  const name = requiredString(action, 'package_name');
+  const version = requiredPositiveInteger(action, 'package_version');
+  const installFlags = installFlagsForAction(action);
+  const fetched = await deps.getPackage({ name, version }, { log });
+  const install = await deps.installPackage(fetched.packageDir, installFlags, { log });
+  return {
+    name,
+    version,
+    packageDir: fetched.packageDir,
+    installFlags,
+    install,
+  };
+}
+
 async function performAction(action, deps, now, log) {
   if (!action || typeof action !== 'object' || Array.isArray(action)) {
     throw new ActionError('action must be an object');
@@ -74,6 +141,9 @@ async function performAction(action, deps, now, log) {
   if (action.type === 'push-install') {
     return deps.pushInstall({}, { log });
   }
+  if (action.type === 'install-package') {
+    return performInstallPackage(action, deps, log);
+  }
 
   throw new ActionError(`unsupported action type: ${action.type}`);
 }
@@ -83,6 +153,8 @@ export async function runActions({ limit = null } = {}, {
   log,
   pullConfig = pullRemoteConfig,
   pushInstall = pushRemoteInstall,
+  getPackage = fetchRemotePackage,
+  installPackage = defaultInstallPackage,
 } = {}) {
   const max = validateLimit(limit);
   const dest = actionsPath();
@@ -102,7 +174,7 @@ export async function runActions({ limit = null } = {}, {
     let result;
     try {
       log?.info(`processing action ${i + 1}/${toProcess}: ${type || '(unknown)'}`);
-      result = await performAction(action, { pullConfig, pushInstall }, now, log);
+      result = await performAction(action, { pullConfig, pushInstall, getPackage, installPackage }, now, log);
     } catch (e) {
       record.actions[0] = markFailed(action, e, now);
       writeActionsFile(dest, record);

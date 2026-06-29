@@ -11,7 +11,7 @@ Five CLIs sit on a shared library in `scripts/lib/`:
 | `scripts/install.mjs` | Install/status/uninstall packages; dry-run; sandbox lifecycle; package availability reports. | satellite DB for skills/recipes/agents/jobs; filesystem/nginx/PM2 for services/projects. |
 | `scripts/sync.mjs` | Export live satellite state back into a package; `--mirror` creates restorable backups. | satellite DB and installed skill/agent files. |
 | `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, install-state push, GitHub token, package download. | Network only. |
-| `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; currently `pull-config` and `push-install`. | Network only through remote client calls. |
+| `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; currently `pull-config`, `push-install`, and `install-package`. | Network only through remote client calls; `install-package` then invokes the local installer. |
 | `scripts/polaris.mjs` | GitHub Client Repository clone helper. | Network + local `git`; uses hub-provided GitHub token. |
 
 The library barrel is `scripts/lib/index.mjs`. Package hooks can import reusable functions from the installed skill path when they need custom behavior.
@@ -154,7 +154,10 @@ scripts/
 `action.mjs` reads `${REMOTE_BASE_DIR}/actions.json`, processes actions in order, and writes the
 file after every action. Successful actions are removed. On failure, processing stops and the failed
 action remains with `status: "error"`, `error_message`, `error_at`, and `attempts`. `--limit=<n>`
-caps the number processed; `--json` returns a machine-readable summary.
+caps the number processed; `--json` returns a machine-readable summary. `install-package` actions
+download a registered package via `remote.mjs get-package`, then call `install.mjs` on the extracted
+package; `install_type`, `install_include`, and `install_exclude` map to `--type`, `--include`, and
+`--exclude`.
 
 Legacy `CRHQ_BASE_DIR` and `SANDBOX_SCHEMA` fallbacks remain for existing harnesses.
 

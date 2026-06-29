@@ -85,6 +85,61 @@ await test('--limit processing leaves later actions queued', async () => {
   });
 });
 
+await test('install-package downloads a package then runs install.mjs with scoped flags', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{
+      type: 'install-package',
+      package_name: 'widget',
+      package_version: '3',
+      install_type: 'skill,recipe',
+      install_include: '^ai1-',
+      install_exclude: 'draft',
+    }]);
+    const calls = [];
+
+    const result = await runActions({}, {
+      getPackage: async (flags) => {
+        calls.push(['get-package', flags]);
+        return { name: flags.name, version: flags.version, packageDir: '/packages/widget@3' };
+      },
+      installPackage: async (packageDir, args) => {
+        calls.push(['install', packageDir, args]);
+        return { packageDir, flags: args, exitCode: 0 };
+      },
+    });
+
+    assert.deepEqual(calls, [
+      ['get-package', { name: 'widget', version: 3 }],
+      ['install', '/packages/widget@3', ['--type=skill,recipe', '--include=^ai1-', '--exclude=draft']],
+    ]);
+    assert.equal(result.processed, 1);
+    assert.equal(result.results[0].type, 'install-package');
+    assert.equal(result.results[0].result.name, 'widget');
+    assert.equal(result.results[0].result.version, 3);
+    assert.deepEqual(JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions, []);
+  });
+});
+
+await test('install-package validates package fields before side effects', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{ type: 'install-package', package_name: 'widget' }]);
+    const calls = [];
+
+    await assert.rejects(
+      runActions({}, {
+        getPackage: async () => { calls.push('get-package'); return {}; },
+        installPackage: async () => { calls.push('install'); return {}; },
+      }),
+      /package_version/,
+    );
+
+    assert.deepEqual(calls, []);
+    const action = JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions[0];
+    assert.equal(action.status, 'error');
+    assert.match(action.error_message, /package_version/);
+  });
+});
+
 await test('failure marks the current action with status/error and stops', async () => {
   await withRemoteDir(async (dir) => {
     writeActions(dir, [
