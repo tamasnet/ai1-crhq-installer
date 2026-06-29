@@ -179,6 +179,80 @@ await test('unsupported action type is recorded as a failed action', async () =>
   });
 });
 
+await test('queued action (with key) calls completeAction with completed on success', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{ type: 'pull-config', key: 'abc123', config_version: 3 }]);
+    const completions = [];
+
+    const result = await runActions({}, {
+      now: new Date('2026-06-28T20:00:00.000Z'),
+      pullConfig: async () => ({ changed: false, configVersion: 3 }),
+      completeAction: async (key, body) => { completions.push({ key, body }); return { key, status: body.status }; },
+    });
+
+    assert.equal(result.processed, 1);
+    assert.equal(completions.length, 1);
+    assert.equal(completions[0].key, 'abc123');
+    assert.equal(completions[0].body.status, 'completed');
+    assert.deepEqual(JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions, []);
+  });
+});
+
+await test('queued action calls completeAction with failed + error fields on failure', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{ type: 'pull-config', key: 'def456', config_version: 3 }]);
+    const completions = [];
+
+    await assert.rejects(
+      runActions({}, {
+        now: new Date('2026-06-28T20:00:00.000Z'),
+        pullConfig: async () => { throw new Error('hub down'); },
+        completeAction: async (key, body) => { completions.push({ key, body }); return { key, status: body.status }; },
+      }),
+      /pull-config failed/,
+    );
+
+    assert.equal(completions.length, 1);
+    assert.equal(completions[0].key, 'def456');
+    assert.equal(completions[0].body.status, 'failed');
+    assert.equal(completions[0].body.error_message, 'hub down');
+    assert.equal(completions[0].body.error_at, '2026-06-28T20:00:00.000Z');
+    assert.equal(completions[0].body.attempts, 1);
+    // action is still in the file (marked error, not removed)
+    const action = JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions[0];
+    assert.equal(action.status, 'error');
+  });
+});
+
+await test('non-queued action (no key) does not call completeAction', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{ type: 'push-install' }]);
+    const completions = [];
+
+    await runActions({}, {
+      pushInstall: async () => ({ installVersion: 1, componentCount: 0 }),
+      completeAction: async (key, body) => { completions.push({ key, body }); return { key, status: body.status }; },
+    });
+
+    assert.equal(completions.length, 0);
+  });
+});
+
+await test('completeAction failure is best-effort and does not mask action success', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{ type: 'push-install', key: 'ghi789' }]);
+
+    const result = await runActions({}, {
+      pushInstall: async () => ({ installVersion: 2, componentCount: 1 }),
+      completeAction: async () => { throw new Error('network timeout'); },
+    });
+
+    // Action still counted as processed; completeAction error was swallowed
+    assert.equal(result.processed, 1);
+    assert.deepEqual(JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions, []);
+  });
+});
+
 await test('absent actions.json is a no-op', async () => {
   await withRemoteDir(async (dir) => {
     const result = await runActions({});

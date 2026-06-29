@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { actionsPath } from './remote.mjs';
-import { pullRemoteConfig, pushRemoteInstall, fetchRemotePackage } from './remote.mjs';
+import { pullRemoteConfig, pushRemoteInstall, fetchRemotePackage, completeRemoteAction } from './remote.mjs';
 
 export class ActionError extends Error {
   constructor(message) { super(message); this.name = 'ActionError'; }
@@ -155,6 +155,7 @@ export async function runActions({ limit = null } = {}, {
   pushInstall = pushRemoteInstall,
   getPackage = fetchRemotePackage,
   installPackage = defaultInstallPackage,
+  completeAction = completeRemoteAction,
 } = {}) {
   const max = validateLimit(limit);
   const dest = actionsPath();
@@ -170,19 +171,42 @@ export async function runActions({ limit = null } = {}, {
   for (let i = 0; i < toProcess; i++) {
     const action = cleanErrorFields(record.actions[0]);
     const type = action?.type;
+    const key = typeof action?.key === 'string' && action.key.trim() !== '' ? action.key : null;
 
     let result;
     try {
-      log?.info(`processing action ${i + 1}/${toProcess}: ${type || '(unknown)'}`);
+      log?.info(`processing action ${i + 1}/${toProcess}: ${type || '(unknown)'}${key ? ` (key=${key})` : ''}`);
       result = await performAction(action, { pullConfig, pushInstall, getPackage, installPackage }, now, log);
     } catch (e) {
-      record.actions[0] = markFailed(action, e, now);
+      const failed = markFailed(action, e, now);
+      record.actions[0] = failed;
       writeActionsFile(dest, record);
+      // Notify the hub of the failure for queued actions (best-effort: don't mask the original error).
+      if (key) {
+        try {
+          await completeAction(key, {
+            status: 'failed',
+            error_message: failed.error_message,
+            error_at: failed.error_at,
+            attempts: failed.attempts,
+          }, { log });
+        } catch (ce) {
+          log?.warn?.(`could not report action '${key}' failure to hub: ${ce.message}`);
+        }
+      }
       throw new ActionError(`action ${type || '(unknown)'} failed: ${e?.message || String(e)}`);
     }
 
     record.actions.shift();
     writeActionsFile(dest, record);
+    // Notify the hub of completion for queued actions (best-effort: don't mask the main result).
+    if (key) {
+      try {
+        await completeAction(key, { status: 'completed' }, { log });
+      } catch (ce) {
+        log?.warn?.(`could not report action '${key}' completion to hub: ${ce.message}`);
+      }
+    }
     results.push({ type, status: 'ok', result });
     log?.ok(`action ${type} completed`);
   }

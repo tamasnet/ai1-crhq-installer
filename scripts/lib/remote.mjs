@@ -611,6 +611,66 @@ function extractArchive(kind, file, dest) {
   if (r.status !== 0) throw new RemoteError(`extracting ${basename(file)} failed (${cmd} exit ${r.status})`);
 }
 
+// --- complete-action: report a queued action's outcome back to the hub -----------------------
+//
+// `POST {hub}/remote/actions/{key}` (see ai1-platform-hub apps/api routes/remote.ts): a
+// per-remote-token authenticated partial-merge patch on the caller's own action. `status` is the
+// only required and interpreted field; everything else is flat verbatim outcome passenger data
+// (e.g. `error_message`, `error_at`, `attempts`). Last-writer-wins / idempotent: re-POSTing an
+// already-terminal action simply lands the same patch again.
+//
+// The hub echoes back `{ key, status }` on success (200). A `404` means the `key` doesn't exist
+// under *this* remote (unknown or foreign). 401/403 mirror the other subcommands.
+
+export async function completeRemoteAction(key, body, { log } = {}) {
+  const base = resolveRemoteBase();
+  const id = readIdentity(base);
+  const url = `${id.hub_url}/remote/actions/${encodeURIComponent(key)}`;
+
+  log?.info(`completing action '${key}' for '${id.remote_id}' (status=${body.status}) …`);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        authorization: `Bearer ${id.token}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new RemoteError(`could not reach hub at ${url}: ${e.message}`);
+  }
+
+  let data = null;
+  const text = await res.text();
+  if (text) { try { data = JSON.parse(text); } catch { /* non-JSON body — handled below */ } }
+
+  if (res.status === 200) {
+    if (!data || typeof data.key !== 'string' || typeof data.status !== 'string') {
+      throw new RemoteError('hub returned 200 but an unrecognized action-completion body');
+    }
+    return { key: data.key, status: data.status };
+  }
+
+  const code = data?.error?.code;
+  const message = data?.error?.message || text || `HTTP ${res.status}`;
+  if (res.status === 401) {
+    throw new RemoteError(
+      `hub rejected the remote token (401): ${message}\n` +
+      `  Re-register with --force to mint a new token.`);
+  }
+  if (res.status === 403) {
+    throw new RemoteError(`hub will not accept action completion yet (403): ${message}`);
+  }
+  if (res.status === 404) {
+    throw new RemoteError(`action '${key}' not found on the hub (404): ${message}`);
+  }
+  throw new RemoteError(`hub action-completion failed (${res.status}${code ? ` ${code}` : ''}): ${message}`);
+}
+
 export async function fetchRemotePackage(flags, { log } = {}) {
   const inputs = resolveGetPackageInputs(flags);
   const base = resolveRemoteBase();
