@@ -33,6 +33,7 @@ node scripts/sync.mjs <repo-or-package-dir> --mirror
 
 # Register with the Ai1 Platform Hub and fetch packages
 node scripts/remote.mjs register --hub=<hub-url> --token=<bootstrap-token>
+node scripts/action.mjs --dry-run
 node scripts/action.mjs
 node scripts/remote.mjs get-package --name=<package> --version=<version>
 

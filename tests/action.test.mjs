@@ -161,6 +161,35 @@ await test('install-package validates install_optional as boolean', async () => 
   });
 });
 
+await test('dry-run validates planned actions without side effects or queue mutation', async () => {
+  await withRemoteDir(async (dir) => {
+    const queued = [
+      { type: 'push-install' },
+      {
+        type: 'install-package',
+        package_name: 'widget',
+        package_version: 3,
+        install_optional: true,
+      },
+    ];
+    writeActions(dir, queued);
+
+    const result = await runActions({ dryRun: true }, {
+      pushInstall: async () => { throw new Error('should not push'); },
+      getPackage: async () => { throw new Error('should not download'); },
+      installPackage: async () => { throw new Error('should not install'); },
+    });
+
+    assert.equal(result.dryRun, true);
+    assert.equal(result.processed, 0);
+    assert.equal(result.wouldProcess, 2);
+    assert.equal(result.remaining, 2);
+    assert.deepEqual(result.results.map((r) => r.status), ['dry-run', 'dry-run']);
+    assert.deepEqual(result.results[1].plan.installFlags, ['--optional']);
+    assert.deepEqual(JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions, queued);
+  });
+});
+
 await test('failure marks the current action with status/error and stops', async () => {
   await withRemoteDir(async (dir) => {
     writeActions(dir, [
@@ -306,6 +335,19 @@ await test('--limit=0 processes nothing and leaves queued actions intact', () =>
   rmSync(dir, { recursive: true, force: true });
 });
 
+await test('--dry-run --json reports queued actions without requiring registration', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'action-cli-'));
+  writeActions(dir, [{ type: 'push-install' }]);
+  const r = runCli(['--dry-run', '--json'], { base: dir });
+  assert.equal(r.status, 0, r.out);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.dryRun, true);
+  assert.equal(out.processed, 0);
+  assert.equal(out.wouldProcess, 1);
+  assert.deepEqual(JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions, [{ type: 'push-install' }]);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 await test('option validation and help', () => {
   const badLimit = runCli(['--limit=abc']);
   assert.equal(badLimit.status, 2, badLimit.out);
@@ -317,9 +359,15 @@ await test('option validation and help', () => {
   assert.match(unknown.out, /unknown option: --nope/);
   rmSync(unknown.dir, { recursive: true, force: true });
 
+  const badDryRun = runCli(['--dry-run=yes']);
+  assert.equal(badDryRun.status, 2, badDryRun.out);
+  assert.match(badDryRun.out, /--dry-run does not take a value/);
+  rmSync(badDryRun.dir, { recursive: true, force: true });
+
   const help = spawnSync(process.execPath, ['scripts/action.mjs', '--help'], { cwd: root, encoding: 'utf8' });
   assert.equal(help.status, 0);
   assert.match(help.stdout, /Usage: node scripts\/action\.mjs/);
+  assert.match(help.stdout, /--dry-run/);
 });
 
 done();

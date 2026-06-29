@@ -130,6 +130,7 @@ node scripts/remote.mjs pull-config
 node scripts/remote.mjs heartbeat
 node scripts/action.mjs
 node scripts/action.mjs --limit=1
+node scripts/action.mjs --dry-run
 node scripts/remote.mjs push-install
 node scripts/remote.mjs github-token
 node scripts/remote.mjs get-package --name=<name> --version=<n>
@@ -143,6 +144,8 @@ the failed action is left in place with `status: "error"`, `error_message`, `err
 `package_version`, then runs `install.mjs` on the downloaded package. Optional `install_type`,
 `install_include`, `install_exclude`, and boolean `install_optional` map to install flags `--type`,
 `--include`, `--exclude`, and `--optional`.
+Pass `--dry-run` to validate and report queued actions without performing network/install side
+effects and without updating `actions.json`.
 
 Never print or persist hub tokens, bootstrap tokens, signed URLs, or GitHub tokens outside the tool's intended secure files/stdout contract.
 

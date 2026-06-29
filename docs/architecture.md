@@ -154,7 +154,8 @@ scripts/
 `action.mjs` reads `${REMOTE_BASE_DIR}/actions.json`, processes actions in order, and writes the
 file after every action. Successful actions are removed. On failure, processing stops and the failed
 action remains with `status: "error"`, `error_message`, `error_at`, and `attempts`. `--limit=<n>`
-caps the number processed; `--json` returns a machine-readable summary. `install-package` actions
+caps the number processed; `--dry-run` validates and reports the selected actions without side
+effects or queue mutation; `--json` returns a machine-readable summary. `install-package` actions
 download a registered package via `remote.mjs get-package`, then call `install.mjs` on the extracted
 package; `install_type`, `install_include`, and `install_exclude` map to `--type`, `--include`, and
 `--exclude`, while boolean `install_optional` maps to `--optional`.

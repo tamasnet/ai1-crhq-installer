@@ -122,21 +122,19 @@ function defaultInstallPackage(packageDir, args = [], { log } = {}) {
 }
 
 async function performInstallPackage(action, deps, log) {
-  const name = requiredString(action, 'package_name');
-  const version = requiredPositiveInteger(action, 'package_version');
-  const installFlags = installFlagsForAction(action);
-  const fetched = await deps.getPackage({ name, version }, { log });
-  const install = await deps.installPackage(fetched.packageDir, installFlags, { log });
+  const plan = planAction(action);
+  const fetched = await deps.getPackage({ name: plan.name, version: plan.version }, { log });
+  const install = await deps.installPackage(fetched.packageDir, plan.installFlags, { log });
   return {
-    name,
-    version,
+    name: plan.name,
+    version: plan.version,
     packageDir: fetched.packageDir,
-    installFlags,
+    installFlags: plan.installFlags,
     install,
   };
 }
 
-async function performAction(action, deps, now, log) {
+function planAction(action) {
   if (!action || typeof action !== 'object' || Array.isArray(action)) {
     throw new ActionError('action must be an object');
   }
@@ -145,19 +143,38 @@ async function performAction(action, deps, now, log) {
   }
 
   if (action.type === 'pull-config') {
-    return deps.pullConfig({}, { now, log });
+    return { type: action.type, operation: 'pull-config' };
   }
   if (action.type === 'push-install') {
-    return deps.pushInstall({}, { log });
+    return { type: action.type, operation: 'push-install' };
   }
   if (action.type === 'install-package') {
-    return performInstallPackage(action, deps, log);
+    const name = requiredString(action, 'package_name');
+    const version = requiredPositiveInteger(action, 'package_version');
+    const installFlags = installFlagsForAction(action);
+    return { type: action.type, operation: 'install-package', name, version, installFlags };
   }
 
   throw new ActionError(`unsupported action type: ${action.type}`);
 }
 
-export async function runActions({ limit = null } = {}, {
+async function performAction(action, deps, now, log) {
+  const plan = planAction(action);
+
+  if (plan.type === 'pull-config') {
+    return deps.pullConfig({}, { now, log });
+  }
+  if (plan.type === 'push-install') {
+    return deps.pushInstall({}, { log });
+  }
+  if (plan.type === 'install-package') {
+    return performInstallPackage(action, deps, log);
+  }
+
+  throw new ActionError(`unsupported action type: ${plan.type}`);
+}
+
+export async function runActions({ limit = null, dryRun = false } = {}, {
   now = new Date(),
   log,
   pullConfig = pullRemoteConfig,
@@ -174,7 +191,22 @@ export async function runActions({ limit = null } = {}, {
   const results = [];
 
   if (!found || toProcess === 0) {
-    return { dest, found, processed: 0, remaining: startingCount, results };
+    return { dest, found, dryRun, processed: 0, wouldProcess: 0, remaining: startingCount, results };
+  }
+
+  if (dryRun) {
+    for (let i = 0; i < toProcess; i++) {
+      const action = cleanErrorFields(record.actions[i]);
+      const type = action?.type;
+      try {
+        const plan = planAction(action);
+        results.push({ type: plan.type, status: 'dry-run', plan });
+        log?.info(`[dry-run] would process action ${i + 1}/${toProcess}: ${plan.type}`);
+      } catch (e) {
+        throw new ActionError(`action ${type || '(unknown)'} failed dry-run validation: ${e?.message || String(e)}`);
+      }
+    }
+    return { dest, found, dryRun: true, processed: 0, wouldProcess: results.length, remaining: startingCount, results };
   }
 
   for (let i = 0; i < toProcess; i++) {
@@ -220,5 +252,5 @@ export async function runActions({ limit = null } = {}, {
     log?.ok(`action ${type} completed`);
   }
 
-  return { dest, found, processed: results.length, remaining: record.actions.length, results };
+  return { dest, found, dryRun: false, processed: results.length, wouldProcess: results.length, remaining: record.actions.length, results };
 }
