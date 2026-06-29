@@ -94,6 +94,7 @@ await test('install-package downloads a package then runs install.mjs with scope
       install_type: 'skill,recipe',
       install_include: '^ai1-',
       install_exclude: 'draft',
+      install_optional: true,
     }]);
     const calls = [];
 
@@ -110,7 +111,7 @@ await test('install-package downloads a package then runs install.mjs with scope
 
     assert.deepEqual(calls, [
       ['get-package', { name: 'widget', version: 3 }],
-      ['install', '/packages/widget@3', ['--type=skill,recipe', '--include=^ai1-', '--exclude=draft']],
+      ['install', '/packages/widget@3', ['--type=skill,recipe', '--include=^ai1-', '--exclude=draft', '--optional']],
     ]);
     assert.equal(result.processed, 1);
     assert.equal(result.results[0].type, 'install-package');
@@ -137,6 +138,26 @@ await test('install-package validates package fields before side effects', async
     const action = JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions[0];
     assert.equal(action.status, 'error');
     assert.match(action.error_message, /package_version/);
+  });
+});
+
+await test('install-package validates install_optional as boolean', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{
+      type: 'install-package',
+      package_name: 'widget',
+      package_version: 3,
+      install_optional: 'yes',
+    }]);
+
+    await assert.rejects(runActions({}, {
+      getPackage: async () => { throw new Error('should not download'); },
+      installPackage: async () => { throw new Error('should not install'); },
+    }), /install_optional/);
+
+    const action = JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions[0];
+    assert.equal(action.status, 'error');
+    assert.match(action.error_message, /install_optional/);
   });
 });
 

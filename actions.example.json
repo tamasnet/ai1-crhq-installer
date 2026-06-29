@@ -13,7 +13,8 @@
       "package_version": 2,
       "install_type": "skill,recipe",
       "install_include": "^ai1-",
-      "install_exclude": "experimental"
+      "install_exclude": "experimental",
+      "install_optional": true
     }
   ],
   "actions_fetched_at": "2026-06-28T19:29:14.651Z"

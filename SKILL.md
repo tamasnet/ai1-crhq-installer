@@ -141,7 +141,8 @@ the failed action is left in place with `status: "error"`, `error_message`, `err
 `attempts` for troubleshooting. Supported action types are `pull-config`, `push-install`, and
 `install-package`. `install-package` runs `remote.mjs get-package` using `package_name` and
 `package_version`, then runs `install.mjs` on the downloaded package. Optional `install_type`,
-`install_include`, and `install_exclude` map to install flags `--type`, `--include`, and `--exclude`.
+`install_include`, `install_exclude`, and boolean `install_optional` map to install flags `--type`,
+`--include`, `--exclude`, and `--optional`.
 
 Never print or persist hub tokens, bootstrap tokens, signed URLs, or GitHub tokens outside the tool's intended secure files/stdout contract.
 

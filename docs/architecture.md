@@ -157,7 +157,7 @@ action remains with `status: "error"`, `error_message`, `error_at`, and `attempt
 caps the number processed; `--json` returns a machine-readable summary. `install-package` actions
 download a registered package via `remote.mjs get-package`, then call `install.mjs` on the extracted
 package; `install_type`, `install_include`, and `install_exclude` map to `--type`, `--include`, and
-`--exclude`.
+`--exclude`, while boolean `install_optional` maps to `--optional`.
 
 Legacy `CRHQ_BASE_DIR` and `SANDBOX_SCHEMA` fallbacks remain for existing harnesses.
 

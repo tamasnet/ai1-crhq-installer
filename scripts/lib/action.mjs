@@ -85,11 +85,20 @@ function optionalStringFlag(action, field, flag) {
   return `${flag}=${action[field].trim()}`;
 }
 
+function optionalBooleanFlag(action, field, flag) {
+  if (action[field] == null || action[field] === false) return null;
+  if (action[field] !== true) {
+    throw new ActionError(`install-package action field ${field} must be a boolean when set`);
+  }
+  return flag;
+}
+
 function installFlagsForAction(action) {
   return [
     optionalStringFlag(action, 'install_type', '--type'),
     optionalStringFlag(action, 'install_include', '--include'),
     optionalStringFlag(action, 'install_exclude', '--exclude'),
+    optionalBooleanFlag(action, 'install_optional', '--optional'),
   ].filter(Boolean);
 }
 
