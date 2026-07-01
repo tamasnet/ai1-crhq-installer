@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'no
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
-import { updateInstallLog, updateInstallLogForMirror, readInstallState, readInstallLog, installLogPath, resolvePackagesDir, sortInstalled, formatInstalledList } from '../scripts/lib/install-log.mjs';
+import { updateInstallLog, updateInstallLogForMirror, pruneInstallLog, readInstallState, readInstallLog, installLogPath, resolvePackagesDir, sortInstalled, formatInstalledList } from '../scripts/lib/install-log.mjs';
 import { makeLogger, VERDICT } from '../scripts/lib/log.mjs';
 import { harness } from './_helpers.mjs';
 
@@ -298,6 +298,39 @@ try {
     assert.ok(resolvePackagesDir().endsWith('/packages'), 'defaults to ~/packages');
     if (prev !== undefined) process.env.PACKAGES_DIR = prev;
     assert.ok(!existsSync(join(packagesDir, 'override')), 'resolution alone creates nothing');
+  });
+
+  await test('pruneInstallLog drops selected slots and bumps install_version', () => {
+    const dir = freshDir();
+    writeFileSync(installLogPath(dir), JSON.stringify({
+      install_version: 4,
+      install_changed_at: '2026-06-28T00:00:00.000Z',
+      installed_components: [
+        { type: 'skill', name: 'keep-me', package: 'p', package_version: '1' },
+        { type: 'recipe', name: 'drop-me', package: 'p', package_version: '1' },
+      ],
+    }));
+    const { path, removed } = pruneInstallLog(dir, [{ type: 'recipe', name: 'drop-me' }]);
+    assert.equal(path, installLogPath(dir));
+    assert.equal(removed.length, 1);
+    assert.equal(removed[0].name, 'drop-me');
+    const st = readInstallState(dir);
+    assert.equal(st.install_version, 5);
+    assert.deepEqual(logged(dir).map((c) => c.name), ['keep-me']);
+  });
+
+  await test('pruneInstallLog dry-run leaves file byte-identical', () => {
+    const dir = freshDir();
+    const snapshot = JSON.stringify({
+      install_version: 1,
+      install_changed_at: '2026-06-28T00:00:00.000Z',
+      installed_components: [{ type: 'skill', name: 'ghost', package: 'p', package_version: '1' }],
+    });
+    writeFileSync(installLogPath(dir), snapshot);
+    const { path, removed } = pruneInstallLog(dir, [{ type: 'skill', name: 'ghost' }], { dryRun: true });
+    assert.equal(path, null);
+    assert.equal(removed.length, 1);
+    assert.equal(readFileSync(installLogPath(dir), 'utf8'), snapshot);
   });
 } finally {
   for (const d of cleanups) rmSync(d, { recursive: true, force: true });

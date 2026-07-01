@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isInsideGitRepo } from '../scripts/lib/sync.mjs';
@@ -126,6 +126,58 @@ await test('--list-installed on an absent log says so (exit 0)', () => {
 
 await test('--list-installed is listed in --help', () => {
   assert.match(install(['--help']).stdout, /--list-installed/);
+});
+
+// ── install.mjs --prune-installed (standalone; needs DB for status checks) ─────────────────────
+console.log('\ninstall.mjs --prune-installed:');
+
+const pruneInstalled = (log, extra = []) => {
+  const dir = mkdtempSync(join(tmpdir(), 'ai1-prune-'));
+  if (log) writeFileSync(join(dir, 'install.json'), JSON.stringify(log));
+  try {
+    return spawnSync(process.execPath, [join(root, 'scripts/install.mjs'), '--prune-installed', ...extra],
+      { cwd: tmpdir(), encoding: 'utf8', env: { ...process.env, PACKAGES_DIR: dir } });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+await test('--prune-installed on empty log reports in sync → exit 0', () => {
+  const r = pruneInstalled({
+    install_version: 1,
+    install_changed_at: '2026-06-28T00:00:00.000Z',
+    installed_components: [],
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /in sync/);
+});
+
+await test('--prune-installed --dry-run --json previews stale entries without writing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ai1-prune-json-'));
+  const log = {
+    install_version: 2,
+    install_changed_at: '2026-06-28T00:00:00.000Z',
+    installed_components: [
+      { type: 'skill', name: 'ai1-definitely-not-installed-xyz', package: 'p', package_version: '1', installed_at: '2026-01-01T00:00:00.000Z' },
+    ],
+  };
+  writeFileSync(join(dir, 'install.json'), JSON.stringify(log));
+  try {
+    const r = spawnSync(process.execPath, [join(root, 'scripts/install.mjs'), '--prune-installed', '--dry-run', '--json'],
+      { cwd: tmpdir(), encoding: 'utf8', env: { ...process.env, PACKAGES_DIR: dir } });
+    assert.equal(r.status, 0, r.stderr);
+    const body = JSON.parse(r.stdout);
+    assert.equal(body.summary.pruned, 1);
+    assert.equal(body.summary.kept, 0);
+    assert.equal(body.dryRun, true);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'install.json'), 'utf8')).installed_components.length, 1, 'dry-run left log untouched');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await test('--prune-installed is listed in --help', () => {
+  assert.match(install(['--help']).stdout, /--prune-installed/);
 });
 
 // ── sync.mjs ─────────────────────────────────────────────────────────────────────────────────

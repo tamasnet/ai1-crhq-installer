@@ -11,7 +11,7 @@ export { copyTree, writeIfChanged, removeTree, moveTree, ensureSymlink, pathExis
 export { makeLogger, VERDICT, SEVERITY } from './log.mjs';
 export { requireSkills, requireFiles, PrereqError } from './prereq.mjs';
 export { preflight, PreflightError } from './preflight.mjs';
-export { resolvePackagesDir, installLogPath, readInstallState, readInstallLog, updateInstallLog, updateInstallLogForMirror, sortInstalled, formatInstalledList, COMPONENT_TYPES } from './install-log.mjs';
+export { resolvePackagesDir, installLogPath, readInstallState, readInstallLog, updateInstallLog, updateInstallLogForMirror, pruneInstallLog, sortInstalled, formatInstalledList, COMPONENT_TYPES } from './install-log.mjs';
 export { discoverPackages, collectAvailable, sortAvailable, formatAvailableList, buildAvailableReport } from './list-available.mjs';
 export { currentVersion, recordVersion, removeVersions, versionTable } from './version-history.mjs';
 export { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION, HANDLING_VALUES } from './manifest.mjs';
@@ -20,6 +20,7 @@ export { CLI_TYPE_TO_COLLECTION, COLLECTION_TO_CLI_TYPE, CLI_TYPE_VALUES, COLLEC
 export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC } from './flags.mjs';
 export { runPlan, ORDER, resolveHandling } from './run.mjs';
 export { runSync, SyncError, SYNC_TYPES } from './sync.mjs';
+export { runPruneInstalled, formatPruneReport } from './prune-installed.mjs';
 export { runActions, ActionError } from './action.mjs';
 export * as sandbox from './sandbox.mjs';
 export { upsertSkill, removeSkill, statusSkill, exportSkill } from './core/skill.mjs';

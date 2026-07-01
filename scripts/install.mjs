@@ -13,6 +13,7 @@ import {
   readInstallLog, sortInstalled, formatInstalledList, buildAvailableReport, formatAvailableList,
   validateFlags, usage, wantsHelp, declaredFlagNames, UsageError,
   ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
+  runPruneInstalled, formatPruneReport,
 } from './lib/index.mjs';
 
 const stamp = () => `${Date.now()}${Math.floor(Math.random() * 1000)}`;  // C10
@@ -29,6 +30,8 @@ if (has(argv, '--list-installed')) { listInstalled(argv); }
 // --list-available is the same kind of standalone read-only report, one level wider: it scans the
 // local package stores and joins them against the install log. Also no manifest, DB, or sandbox.
 if (has(argv, '--list-available')) { listAvailable(argv); }
+// --prune-installed reconciles install.json against live satellite state — drops stale slots only.
+if (has(argv, '--prune-installed')) { await pruneInstalled(argv); }
 
 let sb = null;
 try {
@@ -125,6 +128,24 @@ function listAvailable(rawArgv) {
   } catch (e) {
     console.error(`❌ could not list available components: ${e.message}`);
     process.exit(2);
+  }
+}
+
+// Reconcile install.json with live satellite state — prune slots whose component is absent.
+// Read-only with --dry-run; needs DB (status checks) but no manifest or package.
+async function pruneInstalled(rawArgv) {
+  try {
+    validateFlags(rawArgv, { mode: 'install' });
+    const ctx = await createContext(rawArgv);
+    await preflight(ctx);
+    const result = await runPruneInstalled(ctx);
+    console.log(has(rawArgv, '--json') ? JSON.stringify(result, null, 2) : formatPruneReport(result));
+    process.exit(0);
+  } catch (e) {
+    handleFatal(e);
+    process.exit(process.exitCode ?? 2);
+  } finally {
+    await closeDb();
   }
 }
 

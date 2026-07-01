@@ -225,3 +225,18 @@ export function updateInstallLogForMirror(ctx, { installed = [], removed = [], p
   if (isDeepStrictEqual(entries, nextEntries)) return null;  // unchanged → don't bump metadata
   return writeInstallState(packagesDir, state, nextEntries, now);
 }
+
+// Drop specific install-log slots (bookkeeping only — does not uninstall from the satellite).
+// `toRemove` is an array of log entry objects (or { type, name } stubs). Returns { path, removed }.
+// path is null when nothing changed or dryRun; removed lists the entries that would be/were dropped.
+export function pruneInstallLog(packagesDir, toRemove, { dryRun = false } = {}) {
+  if (!toRemove?.length) return { path: null, removed: [] };
+  const state = readInstallState(packagesDir);
+  const removeSet = new Set(toRemove.map((c) => `${c.type}:${c.name}`));
+  const removed = state.installed_components.filter((c) => removeSet.has(`${c.type}:${c.name}`));
+  const next = state.installed_components.filter((c) => !removeSet.has(`${c.type}:${c.name}`));
+  if (isDeepStrictEqual(state.installed_components, next)) return { path: null, removed: [] };
+  if (dryRun) return { path: null, removed, dryRun: true };
+  const path = writeInstallState(packagesDir, state, next, new Date().toISOString());
+  return { path, removed };
+}

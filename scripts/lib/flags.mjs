@@ -21,7 +21,7 @@ export const FLAG_SPEC = {
   install: {
     bool: ['--dry-run', '--status', '--uninstall', '--respect-locks', '--install-skills-as-user',
       '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available',
-      '--copy-projects', '--removed', '--optional'],
+      '--prune-installed', '--copy-projects', '--removed', '--optional'],
     value: ['--type', '--include', '--exclude'],
   },
 };
@@ -99,6 +99,9 @@ Options:
                              cross-reference the install log, and print every component with a STATUS
                              (available | installed | missing) + where its package lives, then exit;
                              standalone — needs no package or DB; combine with --json for the rows array
+  --prune-installed          remove install-log entries whose component is not on the satellite
+                             (same live-state check as --status); standalone — needs no package;
+                             combine with --dry-run to preview and --json for machine-readable output
   --respect-locks            skip locked skills instead of auto-unlocking them
   --install-skills-as-user   register all skills as unlocked user skills (default: org, locked)
   --copy-projects            for project components, copy source into /opt/projects/user/<name>
