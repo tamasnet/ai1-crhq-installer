@@ -12,7 +12,9 @@
 //              whose component is gone, and bump the integer package version when content changed.
 //
 // Usage: sync.mjs [<package-dir>] [--add-skill=<n>] [--add-recipe=<n>] [--add-agent=<n>]
-//                 [--add-job=<n>] [--add-project=<n>] [--mirror [--normalize] [--type=<t>] [--include=<p>]
+//                 [--add-job=<n>] [--add-project=<n>] [--remove-skill=<n>] [--remove-recipe=<n>]
+//                 [--remove-agent=<n>] [--remove-job=<n>] [--remove-project=<n>]
+//                 [--mirror [--normalize] [--type=<t>] [--include=<p>]
 //                 [--exclude=<p>]] [--dry-run] [--json] [--help]
 
 import { resolve } from 'node:path';
@@ -43,6 +45,14 @@ never touched — run before git diff/add/commit.
                         The live project must not be its own git repo (remove .git first).
                         If the project has no project.yaml, a valid default is generated in the package.
                         Projects are then managed by git; later sync/mirror runs do not export them.
+
+  --remove-skill=<name>   Remove a skill from the manifest and delete its files from the package (repeatable)
+  --remove-recipe=<name>  Remove a recipe from the manifest and delete its file from the package (repeatable)
+  --remove-agent=<name>   Remove an agent from the manifest and delete its directory from the package (repeatable)
+  --remove-job=<name>     Remove a job from the manifest and delete its file from the package (repeatable)
+  --remove-project=<name> Remove a project from the manifest and delete its directory from the package.
+                          When the live project is still a symlink into the package, restores it as a
+                          real directory under /opt/projects/user/<name> (reverses --add-project).
 
   --mirror              Backup mode: make the package mirror the live satellite. Auto-adds new
                         components, syncs existing ones, and REMOVES manifest entries (plus their
@@ -80,11 +90,14 @@ Exit codes: 0 = clean  1 = error or export failure  2 = usage error
 // sync's own flag set — a spec the satellite-tools mode-based validator doesn't cover.
 const FLAG_SPEC = {
   bool:  ['--mirror', '--normalize', '--dry-run', '--force', '--json', '--help'],
-  value: ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--add-project', '--type', '--include', '--exclude'],
+  value: ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--add-project',
+          '--remove-skill', '--remove-recipe', '--remove-agent', '--remove-job', '--remove-project',
+          '--type', '--include', '--exclude'],
 };
 // Flags that only make sense inside --mirror.
 const MIRROR_ONLY = ['--normalize', '--type', '--include', '--exclude'];
 const ADD_FLAGS = ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--add-project'];
+const REMOVE_FLAGS = ['--remove-skill', '--remove-recipe', '--remove-agent', '--remove-job', '--remove-project'];
 
 const nameOf = (token) => {
   const i = token.indexOf('=');
@@ -150,6 +163,13 @@ try {
     jobs:    flags['add-job']    ?? [],
     projects: flags['add-project'] ?? [],
   };
+  const removals = {
+    skills:  flags['remove-skill']  ?? [],
+    recipes: flags['remove-recipe'] ?? [],
+    agents:  flags['remove-agent']  ?? [],
+    jobs:    flags['remove-job']    ?? [],
+    projects: flags['remove-project'] ?? [],
+  };
 
   // Mode-consistency checks (before touching the DB).
   if (!mirror) {
@@ -158,6 +178,8 @@ try {
   } else {
     const usedAdds = ADD_FLAGS.filter((f) => (flags[f.slice(2)]?.length ?? 0) > 0);
     if (usedAdds.length) throw new UsageError(`${usedAdds.join(', ')} cannot be combined with --mirror (mirror auto-discovers all live components)`);
+    const usedRemoves = REMOVE_FLAGS.filter((f) => (flags[f.slice(2)]?.length ?? 0) > 0);
+    if (usedRemoves.length) throw new UsageError(`${usedRemoves.join(', ')} cannot be combined with --mirror`);
   }
 
   // --type: comma-separated and/or repeated; singular CLI values normalized to collection keys.
@@ -199,6 +221,7 @@ try {
   const { results, counts, manifest, installLog } = await runSync(ctx, {
     packageDir,
     additions,
+    removals,
     mode: mirror ? 'mirror' : 'sync',
     typeScope,
     filterSpec,

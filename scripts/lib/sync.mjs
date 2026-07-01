@@ -33,8 +33,8 @@
 // Manifest is updated in place when needed (versions, new/removed entries, package version). The
 // package-level `version` is auto-incremented ONLY in mirror mode; plain sync never touches it.
 
-import { existsSync, readFileSync } from 'node:fs';
-import { join, basename, extname, dirname } from 'node:path';
+import { existsSync, readFileSync, lstatSync, readlinkSync, unlinkSync } from 'node:fs';
+import { join, basename, extname, dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 // Import siblings directly (not the index barrel) so sync.mjs can itself be re-exported from index
@@ -203,6 +203,38 @@ function addProjectToPackage(ctx, name, { packageDir, relPath }) {
   return { entry: { path: relPath, version }, changed: true, generatedConfig: !hasConfig };
 }
 
+// Reverse --add-project: drop the manifest entry and its package files. When the live project path
+// is still a symlink into the package, restore it as a real directory under USER_PROJECTS_BASE.
+function removeProjectFromPackage(ctx, name, { packageDir, entryPath }) {
+  const dry = !!ctx.DRY_RUN;
+  const liveBase = ctx.USER_PROJECTS_BASE || resolveUserProjectsBase();
+  const liveDir = join(liveBase, name);
+  const destDir = join(packageDir, entryPath);
+  let changed = false;
+
+  try {
+    const st = lstatSync(liveDir);
+    if (st.isSymbolicLink()) {
+      const target = resolve(dirname(liveDir), readlinkSync(liveDir));
+      if (target === resolve(destDir)) {
+        if (!dry) {
+          unlinkSync(liveDir);
+          if (pathExistsOrLink(destDir)) moveTree(destDir, liveDir, { dryRun: false });
+        }
+        return true;
+      }
+      ctx.log.warn(`project '${name}': live path is a symlink but not to this package — removing package files only`);
+    } else {
+      ctx.log.warn(`project '${name}': live path exists and is not a symlink — removing package files only`);
+    }
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+
+  if (removeTree(destDir, { dryRun: dry })) changed = true;
+  return changed;
+}
+
 // Short label for log output.
 const label = (type, name) => `${type.replace(/s$/, '')}:${name}`;
 const singular = (type) => type.replace(/s$/, '');
@@ -223,11 +255,12 @@ const sourceOf = (type, path) => (
 // opts:
 //   packageDir  — the package repo dir holding ai1-package.yaml
 //   additions   — { skills, recipes, agents, jobs: string[] } explicit --add-* names (sync mode)
+//   removals    — { skills, recipes, agents, jobs, projects: string[] } explicit --remove-* names
 //   mode        — 'sync' (default) | 'mirror'
 //   typeScope   — (mirror) array of DB component types to restrict to; null = all, [] = none
 //   filterSpec  — (mirror) { include, exclude } name filters; also bounds what removal may touch
 //   normalize   — (mirror) strip live fidelity (skills → org/locked) like a sync addition
-export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', typeScope = null, filterSpec = {}, normalize = false } = {}) {
+export async function runSync(ctx, { packageDir, additions = {}, removals = {}, mode = 'sync', typeScope = null, filterSpec = {}, normalize = false } = {}) {
   const { db, log } = ctx;
   const dry = !!ctx.DRY_RUN;
   const isMirror = mode === 'mirror';
@@ -308,6 +341,42 @@ export async function runSync(ctx, { packageDir, additions = {}, mode = 'sync', 
 
   // (type:name) handled as an addition — Phase 2 must not re-export/re-count them.
   const handled = new Set();
+  // (type:name) explicitly removed — Phase 2 must not re-export them.
+  const removedKeys = new Set();
+
+  // ── Phase 0: explicit removals (--remove-* in plain sync) ─────────────────────────────────────
+  if (!isMirror) {
+    for (const type of [...SYNC_TYPES, 'projects']) {
+      for (const name of (removals[type] ?? [])) {
+        const list = manifest.components[type] ?? [];
+        const idx = list.findIndex((e) => deriveName(packageDir, type, e.path) === name);
+        if (idx < 0) {
+          log.warn(`${label(type, name)} not in manifest — skipping removal`);
+          results.push({ type: singular(type), name, verdict: 'SYNC-SKIP', action: 'not in manifest' });
+          continue;
+        }
+        const entry = list[idx];
+        let changed = false;
+        if (type === 'projects') {
+          changed = removeProjectFromPackage(ctx, name, { packageDir, entryPath: entry.path });
+        } else if (removeTree(join(packageDir, entry.path), { dryRun: dry })) {
+          changed = true;
+        }
+        list.splice(idx, 1);
+        if (list.length) manifest.components[type] = list;
+        else { delete manifest.components[type]; }
+        manifestDirty = true;
+        if (changed) contentChanged = true;
+        removedKeys.add(`${type}:${name}`);
+        results.push({ type: singular(type), name, verdict: 'SYNC-REMOVED', action: dry ? 'removed (dry-run)' : 'removed' });
+        if (dry) log.dry(`remove ${label(type, name)} from manifest (${entry.path})`);
+        else      log.ok(`${label(type, name)} → removed from package`);
+      }
+    }
+    // Rebuild skill names after removals (jobs' requires: field depends on this).
+    skillNamesInManifest.clear();
+    for (const e of (manifest.components.skills ?? [])) skillNamesInManifest.add(basename(e.path));
+  }
 
   // ── Phase 1: additions ────────────────────────────────────────────────────────────────────────
   for (const name of addQueue.projects) {
