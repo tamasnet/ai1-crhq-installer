@@ -72,8 +72,9 @@ try {
   });
   await db('agents').insert({ key: 'sys-agent', name: 'Sys Agent', is_system: true, is_active: true, created_at: now, updated_at: now });
   await db('background_jobs').insert({
-    id: 'job-bk-1', name: 'session-job', job_type: 'new_session', script_path: 'node', script_args: 'x',
-    schedule: '0 0 * * *', enabled: true, run_count: 0, created_at: now, updated_at: now,
+    id: 'job-bk-1', name: 'session-job', job_type: 'new_session', script_path: null, script_args: null,
+    agent: 'operator', task: 'Run heartbeat.', model: 'sonnet', schedule: '0 0 * * *', enabled: true,
+    run_count: 0, created_at: now, updated_at: now,
   });
   await db('background_jobs').insert({
     id: 'job-bk-2', name: 'outside-job', job_type: 'script', script_path: 'node',
@@ -93,13 +94,13 @@ try {
     const { counts, manifest } = await mirror(dirA);
     assert.equal(manifest.name, 'ai1-tamas', 'mirror names the package via satellitePackageName(SATELLITE_ID)');
     assert.equal(manifest.version, 1, 'fresh package starts at version 1 (not bumped on create)');
-    assert.deepEqual(counts, { added: 4, synced: 0, unchanged: 0, removed: 0, skipped: 2, failed: 0 });
+    assert.deepEqual(counts, { added: 5, synced: 0, unchanged: 0, removed: 0, skipped: 1, failed: 0 });
 
     const { plan: bplan, meta } = loadManifest(dirA);   // self-installable at parse level
     assert.deepEqual(bplan.skills.map((s) => s.name), ['ai1-sample-skill']);
     assert.deepEqual(bplan.recipes.map((r) => r.name), ['ai1-sample-recipe']);
     assert.deepEqual(bplan.agents.map((a) => a.name), ['ai1-sample-agent']);
-    assert.deepEqual(bplan.jobs.map((j) => j.name), ['ai1-sample-job']);
+    assert.deepEqual(bplan.jobs.map((j) => j.name).sort(), ['ai1-sample-job', 'session-job']);
     assert.equal(meta.components.skills[0].version, 1, 'live CRHQ version pinned');
 
     // out of scope: only `user` skills are auto-added — org/store/system/inactive skills and the
@@ -116,7 +117,7 @@ try {
   await test('unrepresentable live jobs are surfaced as SYNC-SKIP, not added', async () => {
     const { results } = await mirror(pkgDir('pkg-skip'));
     const skips = results.filter((r) => r.verdict === 'SYNC-SKIP').map((r) => r.name).sort();
-    assert.deepEqual(skips, ['outside-job', 'session-job']);
+    assert.deepEqual(skips, ['outside-job']);
   });
 
   await test('component reconstruction matches the live rows', async () => {
@@ -165,12 +166,14 @@ try {
   await test('uninstall everything, install the mirror package → state matches', async () => {
     const dirF = pkgDir('pkg-roundtrip');
     await mirror(dirF);
+    const { plan: mirrorPlan } = loadManifest(dirF);
 
     const snap = async () => ({
       skill: await db('skills').where({ name: 'ai1-sample-skill' }).first(),
       recipe: await db('recipes').where({ name: 'ai1-sample-recipe' }).first(),
       agent: await db('agents').where({ key: 'ai1-sample-agent' }).first(),
       job: await db('background_jobs').where({ name: 'ai1-sample-job' }).first(),
+      sessionJob: await db('background_jobs').where({ name: 'session-job' }).first(),
       links: {
         skills: (await db('agent_skills').where({ agent_key: 'ai1-sample-agent' }).orderBy('skill_name')).map((r) => r.skill_name),
         recipes: (await db('agent_recipes').where({ agent_key: 'ai1-sample-agent' })).length,
@@ -178,7 +181,7 @@ try {
     });
     const before = await snap();
 
-    await runPlan(makeCtx({ mode: 'uninstall', TYPE: DB_TYPES }), plan);
+    await runPlan(makeCtx({ mode: 'uninstall', TYPE: DB_TYPES }), mirrorPlan);
     assert.equal(await db('skills').where({ name: 'ai1-sample-skill' }).first(), undefined);
 
     const { plan: bplan } = loadManifest(dirF);
@@ -192,6 +195,7 @@ try {
       recipe: ['name', 'description', 'content', 'is_active'],
       agent: ['key', 'name', 'description', 'mode', 'icon', 'is_active', 'instructions', 'provider', 'system_prompt_path', 'capabilities', 'agent_type'],
       job: ['name', 'description', 'schedule', 'timezone', 'job_type', 'script_path', 'script_args', 'timeout_minutes', 'enabled'],
+      sessionJob: ['name', 'job_type', 'agent', 'task', 'model', 'schedule', 'timezone', 'enabled'],
     };
     for (const [kind, fields] of Object.entries(FIELDS)) {
       for (const f of fields) assert.deepEqual(after[kind]?.[f], before[kind]?.[f], `${kind}.${f} round-trips`);
@@ -235,7 +239,7 @@ try {
   await test('dry-run reports the plan but writes nothing', async () => {
     const dirD = pkgDir('pkg-dry');
     const { counts } = await mirror(dirD, { DRY_RUN: true });
-    assert.equal(counts.added, 4);
+    assert.equal(counts.added, 5);
     assert.ok(!existsSync(join(dirD, 'ai1-package.yaml')), 'no manifest written');
     assert.ok(!existsSync(join(dirD, 'skills')), 'no component files written');
   });
@@ -269,6 +273,26 @@ try {
     assert.equal(manifest.version, 5, 'plain sync never touches the package version');
     assert.ok(manifest.components.recipes.some((e) => e.path === 'recipes/ghost.md'), 'ghost entry retained');
     assert.ok(existsSync(join(dirE, 'recipes', 'ghost.md')), 'ghost file retained');
+  });
+
+  await test('--add-job exports a new_session job into the package', async () => {
+    const dirJ = pkgDir('pkg-add-job');
+    writeFileSync(join(dirJ, 'ai1-package.yaml'), dumpYaml({
+      name: 'add-job-test', version: 1, description: 'x', components: {},
+    }));
+
+    const { counts, manifest } = await runSync(sctx(), {
+      packageDir: dirJ,
+      additions: { jobs: ['session-job'] },
+    });
+    assert.equal(counts.added, 1);
+    assert.deepEqual(manifest.components.jobs, [{ path: 'jobs/session-job.yaml' }]);
+
+    const j = loadYaml(readFileSync(join(dirJ, 'jobs', 'session-job.yaml'), 'utf8'));
+    assert.equal(j.job_type, 'new_session');
+    assert.equal(j.agent, 'operator');
+    assert.equal(j.task, 'Run heartbeat.');
+    assert.equal(j.model, 'sonnet');
   });
 
   console.log('\nproject add:');
@@ -368,7 +392,7 @@ try {
     await db('background_jobs').where({ name: 'ai1-sample-job' }).del();
     const { counts, manifest } = await mirror(dirG);
     assert.equal(counts.removed, 1, 'the deleted job is removed');
-    assert.ok(!manifest.components.jobs, 'jobs section emptied + pruned from the manifest');
+    assert.deepEqual(manifest.components.jobs.map((e) => e.path), ['jobs/session-job.yaml'], 'other jobs retained');
     assert.ok(!existsSync(join(dirG, 'jobs', 'ai1-sample-job.yaml')), 'job file deleted from the package');
     assert.ok(manifest.components.skills && manifest.components.recipes, 'other components retained');
     assert.equal(manifest.version, 3, 'package version incremented again');
@@ -380,7 +404,7 @@ try {
     assert.equal(counts.added, 0);
     assert.equal(counts.removed, 0);
     assert.equal(counts.synced, 0, 'nothing reported as synced when nothing changed');
-    assert.equal(counts.unchanged, 3, 'the unchanged components are tallied as unchanged, not synced');
+    assert.equal(counts.unchanged, 4, 'the unchanged components are tallied as unchanged, not synced');
     assert.equal(readManifest(dirG).version, 3, 'version unchanged on a clean run');
     assert.equal(readFileSync(join(dirG, 'ai1-package.yaml'), 'utf8'), before, 'manifest byte-identical');
   });

@@ -13,8 +13,102 @@ const SCHEDULE_ALIASES = {
 const resolveSchedule = (s) => SCHEDULE_ALIASES[s] || s;
 const mintJobId = () => `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;  // C10
 
+const COMMON_DEFAULTS = {
+  timeout_minutes: 30,
+  max_concurrent: 1,
+  skip_if_running: true,
+  enabled: true,
+};
+
+function resolveJobType(def) {
+  if (def.job_type) return def.job_type;
+  if (def.script) return 'script';
+  return null;
+}
+
+function commonFields(def, schedule) {
+  return {
+    description: def.description || '',
+    schedule,
+    timezone: def.timezone || 'UTC',
+    timeout_minutes: def.timeout_minutes ?? COMMON_DEFAULTS.timeout_minutes,
+    max_concurrent: def.max_concurrent ?? COMMON_DEFAULTS.max_concurrent,
+    skip_if_running: def.skip_if_running ?? COMMON_DEFAULTS.skip_if_running,
+    enabled: def.enabled ?? COMMON_DEFAULTS.enabled,
+  };
+}
+
+function fieldsForDef(ctx, def) {
+  const schedule = resolveSchedule(def.schedule);
+  const jobType = resolveJobType(def);
+  const base = commonFields(def, schedule);
+
+  if (jobType === 'script') {
+    const scriptArgs = join(ctx.SKILLS_BASE, def.script) + (def.args ? ` ${def.args}` : '');
+    return {
+      ...base,
+      job_type: 'script',
+      script_path: 'node',
+      script_args: scriptArgs,
+      agent: null,
+      task: null,
+      recipe_id: null,
+      project_id: null,
+      target_session_id: null,
+      message: null,
+      model: null,
+      max_runs_before_rotate: null,
+    };
+  }
+  if (jobType === 'new_session') {
+    return {
+      ...base,
+      job_type: 'new_session',
+      agent: def.agent || null,
+      task: def.task || null,
+      recipe_id: def.recipe_id || null,
+      project_id: def.project_id || null,
+      model: def.model || null,
+      script_path: null,
+      script_args: null,
+      target_session_id: null,
+      message: null,
+      max_runs_before_rotate: null,
+    };
+  }
+  if (jobType === 'message_session') {
+    return {
+      ...base,
+      job_type: 'message_session',
+      target_session_id: def.target_session_id,
+      message: def.message,
+      max_runs_before_rotate: def.max_runs_before_rotate ?? null,
+      model: def.model || null,
+      agent: null,
+      task: null,
+      recipe_id: null,
+      project_id: null,
+      script_path: null,
+      script_args: null,
+    };
+  }
+  throw new Error(`unsupported job type: ${jobType}`);
+}
+
+const COMPARE_KEYS = {
+  script: ['schedule', 'timezone', 'script_args', 'timeout_minutes', 'max_concurrent', 'skip_if_running', 'enabled'],
+  new_session: ['schedule', 'timezone', 'agent', 'task', 'recipe_id', 'project_id', 'model', 'timeout_minutes', 'max_concurrent', 'skip_if_running', 'enabled'],
+  message_session: ['schedule', 'timezone', 'target_session_id', 'message', 'max_runs_before_rotate', 'model', 'timeout_minutes', 'max_concurrent', 'skip_if_running', 'enabled'],
+};
+
+function rowChanged(row, fields) {
+  if ((row.description || '') !== fields.description) return true;
+  const keys = COMPARE_KEYS[fields.job_type] || [];
+  return keys.some((k) => row[k] !== fields[k]);
+}
+
 export async function upsertJob(ctx, def) {
-  const { db, log, DRY_RUN, SKILLS_BASE } = ctx;
+  const { db, log, DRY_RUN } = ctx;
   const { name } = def;
 
   // C12: required skill install dirs must exist. In dry-run nothing is written, so only enforce
@@ -22,20 +116,12 @@ export async function upsertJob(ctx, def) {
   const reqs = def.requires || [];
   requireFiles(ctx, DRY_RUN ? reqs.filter((k) => !ctx.plannedSkills?.has(k)) : reqs);
 
-  const schedule = resolveSchedule(def.schedule);
-  const scriptArgs = join(SKILLS_BASE, def.script) + (def.args ? ` ${def.args}` : '');
-  const fields = {
-    description: def.description || '', schedule, timezone: def.timezone || 'UTC',
-    job_type: 'script', script_path: 'node', script_args: scriptArgs,
-    timeout_minutes: def.timeout_minutes ?? 30, max_concurrent: def.max_concurrent ?? 1,
-    skip_if_running: def.skip_if_running ?? true, enabled: def.enabled ?? true,
-  };
+  const fields = fieldsForDef(ctx, def);
   const row = await db('background_jobs').where({ name }).first();
-  const compareKeys = ['schedule', 'timezone', 'script_args', 'timeout_minutes', 'max_concurrent', 'skip_if_running', 'enabled'];
-  const changed = !row || (row.description || '') !== fields.description || compareKeys.some((k) => row[k] !== fields[k]);
+  const changed = !row || row.job_type !== fields.job_type || rowChanged(row, fields);
 
   if (DRY_RUN) {
-    log.dry(`${row ? 'update' : 'create'} job ${name} (${schedule})`);
+    log.dry(`${row ? 'update' : 'create'} job ${name} (${fields.schedule})`);
     return res(name, changed ? VERDICT.OK : VERDICT.ALREADY, row ? 'updated' : 'created');
   }
 
@@ -56,13 +142,20 @@ export async function removeJob(ctx, nameOrDef) {
   return res(name, VERDICT.OK, 'removed');
 }
 
-// exportJob — backup: reverse upsertJob's mapping. Only `job_type:'script'` + `script_path:'node'`
-// rows whose script lives under SKILLS_BASE_DIR can be expressed in the manifest's
-// `<skill-key>/scripts/<file>` form — anything else is BACKUP-SKIP, warned, non-fatal (D-28).
-// `script_args` was composed as `join(SKILLS_BASE, script)[ + ' ' + args]`, so it splits the same way.
-// The DB stores the resolved cron, which round-trips (aliases resolve idempotently). `requires`
-// is re-derived from the script's skill segment when that skill is part of the backup.
-export async function exportJob(ctx, row, { outRoot, relPath, skillNames }) {
+function exportCommonJobFields(row) {
+  return {
+    name: row.name,
+    ...(row.description ? { description: row.description } : {}),
+    schedule: row.schedule,
+    ...(row.timezone && row.timezone !== 'UTC' ? { timezone: row.timezone } : {}),
+    timeout_minutes: row.timeout_minutes ?? COMMON_DEFAULTS.timeout_minutes,
+    max_concurrent: row.max_concurrent ?? COMMON_DEFAULTS.max_concurrent,
+    skip_if_running: row.skip_if_running ?? COMMON_DEFAULTS.skip_if_running,
+    enabled: row.enabled ?? COMMON_DEFAULTS.enabled,
+  };
+}
+
+function exportScriptJob(ctx, row, { outRoot, relPath, skillNames }) {
   const { log, SKILLS_BASE } = ctx;
   const skip = (reason) => {
     log.warn(`job ${row.name}: ${reason} — skipped`);
@@ -82,20 +175,58 @@ export async function exportJob(ctx, row, { outRoot, relPath, skillNames }) {
   const skillKey = script.split('/')[0];
 
   const def = {
-    name: row.name,
-    ...(row.description ? { description: row.description } : {}),
-    schedule: row.schedule,
-    ...(row.timezone && row.timezone !== 'UTC' ? { timezone: row.timezone } : {}),
+    ...exportCommonJobFields(row),
     script,
     ...(args ? { args } : {}),
-    timeout_minutes: row.timeout_minutes ?? 30,
-    max_concurrent: row.max_concurrent ?? 1,
-    skip_if_running: row.skip_if_running ?? true,
-    enabled: row.enabled ?? true,
     ...(skillNames?.has(skillKey) ? { requires: [skillKey] } : {}),
   };
   const changed = writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: !!ctx.DRY_RUN });
   return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath }, changed };
+}
+
+function exportNewSessionJob(ctx, row, { outRoot, relPath }) {
+  const { log } = ctx;
+  if (!row.agent || (!row.task && !row.recipe_id)) {
+    log.warn(`job ${row.name}: new_session missing agent or task/recipe_id — skipped`);
+    return { type: 'job', name: row.name, verdict: VERDICT.BACKUP_SKIP, action: 'skipped', detail: 'incomplete new_session job' };
+  }
+  const def = {
+    ...exportCommonJobFields(row),
+    job_type: 'new_session',
+    agent: row.agent,
+    ...(row.task ? { task: row.task } : {}),
+    ...(row.recipe_id ? { recipe_id: row.recipe_id } : {}),
+    ...(row.project_id ? { project_id: row.project_id } : {}),
+    ...(row.model ? { model: row.model } : {}),
+  };
+  const changed = writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: !!ctx.DRY_RUN });
+  return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath }, changed };
+}
+
+function exportMessageSessionJob(ctx, row, { outRoot, relPath }) {
+  const { log } = ctx;
+  if (!row.target_session_id || !row.message) {
+    log.warn(`job ${row.name}: message_session missing target_session_id or message — skipped`);
+    return { type: 'job', name: row.name, verdict: VERDICT.BACKUP_SKIP, action: 'skipped', detail: 'incomplete message_session job' };
+  }
+  const def = {
+    ...exportCommonJobFields(row),
+    job_type: 'message_session',
+    target_session_id: row.target_session_id,
+    message: row.message,
+    ...(row.max_runs_before_rotate != null ? { max_runs_before_rotate: row.max_runs_before_rotate } : {}),
+    ...(row.model ? { model: row.model } : {}),
+  };
+  const changed = writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: !!ctx.DRY_RUN });
+  return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath }, changed };
+}
+
+// exportJob — backup: reverse upsertJob's mapping for script, new_session, and message_session jobs.
+// Script jobs must use `job_type:'script'` + `script_path:'node'` with script_args under SKILLS_BASE_DIR.
+export async function exportJob(ctx, row, opts) {
+  if (row.job_type === 'new_session') return exportNewSessionJob(ctx, row, opts);
+  if (row.job_type === 'message_session') return exportMessageSessionJob(ctx, row, opts);
+  return exportScriptJob(ctx, row, opts);
 }
 
 export async function statusJob(ctx, nameOrDef) {

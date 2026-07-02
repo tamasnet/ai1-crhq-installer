@@ -4,13 +4,14 @@
 // (id minting, script_args resolution, schedule-alias expansion, C12 requires prereq, dry-run).
 // Tears down. Run from the project root:  node tests/job.test.mjs
 import assert from 'node:assert/strict';
-import { rmSync } from 'node:fs';
+import { rmSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { provisionSandbox, runLifecycle } from '../scripts/lib/sandbox.mjs';
 import { closeDb } from '../scripts/lib/db.mjs';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
+import { loadYaml } from '../scripts/lib/parse.mjs';
 import { upsertSkill } from '../scripts/lib/core/skill.mjs';
-import { upsertJob, removeJob, statusJob } from '../scripts/lib/core/job.mjs';
+import { upsertJob, removeJob, statusJob, exportJob } from '../scripts/lib/core/job.mjs';
 import { makeCtx, harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -116,6 +117,42 @@ try {
     assert.equal(r.action, 'removed');
     assert.equal(await jobRow(jobDef.name), undefined);
     assert.equal((await removeJob(ctx, jobDef)).verdict, 'ALREADY-INSTALLED', 'absent → ALREADY');
+  });
+
+  console.log('\nnew_session jobs:');
+
+  await test('create: new_session row with agent/task/model', async () => {
+    const def = {
+      name: 'ai1-session-job',
+      job_type: 'new_session',
+      schedule: '15 0 * * *',
+      timezone: 'America/New_York',
+      agent: 'operator',
+      task: 'Run heartbeat check.',
+      model: 'sonnet',
+    };
+    const r = await upsertJob(ctx, def);
+    assert.equal(r.verdict, 'INSTALL-OK');
+    const row = await jobRow(def.name);
+    assert.equal(row.job_type, 'new_session');
+    assert.equal(row.agent, 'operator');
+    assert.equal(row.task, 'Run heartbeat check.');
+    assert.equal(row.model, 'sonnet');
+    assert.equal(row.script_path, null);
+    assert.equal(row.script_args, null);
+  });
+
+  await test('export: new_session round-trips to YAML', async () => {
+    const row = await jobRow('ai1-session-job');
+    const outRoot = join(sb.baseDir, 'export');
+    mkdirSync(outRoot, { recursive: true });
+    const relPath = 'jobs/ai1-session-job.yaml';
+    const r = await exportJob(ctx, row, { outRoot, relPath, skillNames: new Set() });
+    assert.equal(r.verdict, 'BACKUP-OK');
+    const j = loadYaml(readFileSync(join(outRoot, relPath), 'utf8'));
+    assert.equal(j.job_type, 'new_session');
+    assert.equal(j.agent, 'operator');
+    assert.equal(j.task, 'Run heartbeat check.');
   });
 } finally {
   await sb.teardown(false);

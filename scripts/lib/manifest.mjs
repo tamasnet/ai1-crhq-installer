@@ -220,12 +220,46 @@ function loadJobDef(entry, root) {
   const j = loadYaml(readFileSync(srcFile, 'utf8'));
   if (!j.name) throw new ManifestError(`Job missing 'name': ${entry.path}`);
   if (!j.schedule) throw new ManifestError(`Job missing 'schedule': ${entry.path}`);
-  if (!j.script) throw new ManifestError(`Job missing 'script': ${entry.path}`);
   checkLen('job name', j.name, LIMITS.jobName);
+
+  const jobType = j.job_type || (j.script ? 'script' : null);
+  if (!jobType) throw new ManifestError(`Job missing 'script' or 'job_type': ${entry.path}`);
+  if (!['script', 'new_session', 'message_session'].includes(jobType)) {
+    throw new ManifestError(`Job ${j.name}: invalid job_type '${j.job_type}'`);
+  }
+  if (jobType === 'script' && !j.script) throw new ManifestError(`Job missing 'script': ${entry.path}`);
+  if (jobType === 'new_session' && !j.agent) {
+    throw new ManifestError(`Job ${j.name}: new_session requires 'agent'`);
+  }
+  if (jobType === 'new_session' && !j.task && !j.recipe_id) {
+    throw new ManifestError(`Job ${j.name}: new_session requires 'task' or 'recipe_id'`);
+  }
+  if (jobType === 'message_session' && (!j.target_session_id || !j.message)) {
+    throw new ManifestError(`Job ${j.name}: message_session requires 'target_session_id' and 'message'`);
+  }
+
   return {
-    name: j.name, description: j.description || '', schedule: j.schedule, timezone: j.timezone,
-    script: j.script, args: j.args, timeout_minutes: j.timeout_minutes, max_concurrent: j.max_concurrent,
-    skip_if_running: j.skip_if_running, enabled: j.enabled, requires: j.requires || [], srcFile,
+    name: j.name,
+    job_type: jobType,
+    description: j.description || '',
+    schedule: j.schedule,
+    timezone: j.timezone,
+    script: j.script,
+    args: j.args,
+    agent: j.agent,
+    task: j.task,
+    recipe_id: j.recipe_id,
+    project_id: j.project_id,
+    target_session_id: j.target_session_id,
+    message: j.message,
+    model: j.model,
+    max_runs_before_rotate: j.max_runs_before_rotate,
+    timeout_minutes: j.timeout_minutes,
+    max_concurrent: j.max_concurrent,
+    skip_if_running: j.skip_if_running,
+    enabled: j.enabled,
+    requires: j.requires || [],
+    srcFile,
   };
 }
 
