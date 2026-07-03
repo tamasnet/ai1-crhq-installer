@@ -12,6 +12,7 @@ Five CLIs sit on a shared library in `scripts/lib/`:
 | `scripts/sync.mjs` | Export live satellite state back into a package; `--mirror` creates restorable backups. | satellite DB and installed skill/agent files. |
 | `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, install-state push, GitHub token, package download. | Network only. |
 | `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; currently `pull-config`, `push-install`, and `install-package`. | Network only through remote client calls; `install-package` then invokes the local installer. |
+| `scripts/drift.mjs` | Read-only drift report: compare install-log components against source packages; list orphans. | satellite DB, filesystem, local package stores. |
 | `scripts/polaris.mjs` | GitHub Client Repository clone helper. | Network + local `git`; uses hub-provided GitHub token. |
 
 The library barrel is `scripts/lib/index.mjs`. Package hooks can import reusable functions from the installed skill path when they need custom behavior.

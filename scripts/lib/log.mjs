@@ -34,8 +34,8 @@ export const SEVERITY = {
   [VERDICT.BACKUP_FAIL]: 1,
 };
 
-export function makeLogger({ dryRun = false } = {}) {
-  const out = (s) => console.log(s);
+export function makeLogger({ dryRun = false, quiet = false } = {}) {
+  const out = (s) => { if (!quiet) console.log(s); };
   return {
     dryRun,
     info: (m) => out(`${PREFIX} ${m}`),

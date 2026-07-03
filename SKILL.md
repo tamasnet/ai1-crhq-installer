@@ -30,6 +30,7 @@ Run commands from the skill/project root unless using an installed absolute path
 | Pull hub config | `node scripts/remote.mjs pull-config` |
 | Send heartbeat | `node scripts/remote.mjs heartbeat` |
 | Process queued hub actions | `node scripts/action.mjs` |
+| Drift report (live vs packages) | `node scripts/drift.mjs` |
 | Push install state to hub | `node scripts/remote.mjs push-install` |
 | Download registered package | `node scripts/remote.mjs get-package --name=<name> --version=<n>` |
 | Clone Polaris customer repository | `node scripts/polaris.mjs init` |
@@ -74,6 +75,19 @@ Development/testing flags:
 | `--install-skills-as-user` | Register all skills as unlocked `user` skills. |
 
 The installer accepts only standard flags plus package-specific flags declared in `install_flags`. Unknown flags fail before side effects.
+
+## Drift report
+
+`drift.mjs` compares the live satellite against install-log entries and their source packages. Read-only.
+
+```bash
+node scripts/drift.mjs
+node scripts/drift.mjs --json
+node scripts/drift.mjs --package=<name>
+node scripts/drift.mjs --type=skill,recipe --include='^acme-'
+```
+
+Managed drift checks each `install.json` slot against the logged package@version in local package stores (`PACKAGE_BASE_DIR`, `REPOS_BASE_DIR`). States: `in-sync`, `modified`, `absent`, `source-missing`. Orphans are live components (same curation as `sync --mirror`) plus deployed services/projects not attributed in the install log. The report lists every out-of-sync row in one table with VERSION, PACKAGE, SOURCE (manifest path), LOCATION (local package dir), and DETAIL. Exit code 1 when any drift is found.
 
 ## Sync and backup
 

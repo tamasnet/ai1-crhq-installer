@@ -134,7 +134,8 @@ async function findRow(db, type, name) {
 // manifest can't express them and restoring one would misrepresent the satellite. (Removal is
 // deliberately more conservative — see findRow — so an org/store/system or already-listed component
 // in the manifest is synced or skipped, never silently purged just because it isn't auto-added.)
-async function discover(db) {
+// Curated live inventory (same set mirror auto-adds). Exported for drift/orphan reporting.
+export async function discoverLiveComponents(db) {
   return {
     skills: await db('skills').where({ skill_type: 'user', is_active: true }).orderBy('name'),
     recipes: await db('recipes').where({ is_active: true }).orderBy('name'),
@@ -327,7 +328,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
   addQueue.projects = [...(additions.projects ?? [])];
 
   if (isMirror) {
-    const live = await discover(db);
+    const live = await discoverLiveComponents(db);
     for (const t of SYNC_TYPES) {
       if (!typeInScope(t)) continue;
       const present = new Set((manifest.components[t] ?? []).map((e) => deriveName(packageDir, t, e.path)));
