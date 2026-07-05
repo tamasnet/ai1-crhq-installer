@@ -27,8 +27,9 @@ command -v base64 >/dev/null 2>&1 || { echo "build: base64 is required" >&2; exi
 
 mkdir -p "$(dirname "$OUT")"
 
-TARBALL=$(mktemp "${TMPDIR:-/tmp}/ai1-bundle.XXXXXX.tgz")
-trap 'rm -f "$TARBALL"' EXIT INT TERM
+PKG_VERSION=$(grep '^version:' "$ROOT/ai1-package.yaml" | head -1 | sed 's/^version:[[:space:]]*//')
+[ -n "$PKG_VERSION" ] || { echo "build: could not read version from ai1-package.yaml" >&2; exit 1; }
+TARBALL="$ROOT/dist/ai1-satellite@${PKG_VERSION}.tgz"
 
 # Stage the package layout into a local directory we keep around for inspection.
 # The skill directory is assembled here from root sources; scripts/, docs/, README.md
@@ -219,3 +220,4 @@ base64 < "$TARBALL" >> "$OUT"
 
 chmod +x "$OUT"
 echo "build: wrote $OUT ($(wc -c < "$OUT" | tr -d ' ') bytes)" >&2
+echo "build: tarball kept at $TARBALL ($(wc -c < "$TARBALL" | tr -d ' ') bytes)" >&2
