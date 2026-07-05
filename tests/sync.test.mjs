@@ -295,6 +295,54 @@ try {
     assert.equal(j.model, 'sonnet');
   });
 
+  await test('--add-* skips syncing other manifest entries (mutation-only)', async () => {
+    const dirM = pkgDir('pkg-add-only');
+    const skillPath = join(dirM, 'skills', 'ai1-sample-skill', 'SKILL.md');
+    mkdirSync(join(dirM, 'skills', 'ai1-sample-skill'), { recursive: true });
+    writeFileSync(join(dirM, 'ai1-package.yaml'), dumpYaml({
+      name: 'add-only', version: 1, description: 'x',
+      components: { skills: [{ path: 'skills/ai1-sample-skill', version: 1 }] },
+    }));
+    writeFileSync(skillPath, '---\nname: ai1-sample-skill\nversion: 1\ndescription: d\n---\nstale package body\n');
+
+    await db('skills').where({ name: 'ai1-sample-skill' }).update({ content: 'fresh live body' });
+
+    const { counts } = await runSync(sctx(), {
+      packageDir: dirM,
+      additions: { jobs: ['session-job'] },
+    });
+    assert.equal(counts.added, 1);
+    assert.equal(counts.synced, 0, 'existing manifest entries are not synced');
+    assert.match(readFileSync(skillPath, 'utf8'), /stale package body/, 'skill file left untouched');
+  });
+
+  await test('--remove-* skips syncing other manifest entries (mutation-only)', async () => {
+    const dirR = pkgDir('pkg-remove-only');
+    const skillPath = join(dirR, 'skills', 'ai1-sample-skill', 'SKILL.md');
+    mkdirSync(join(dirR, 'skills', 'ai1-sample-skill'), { recursive: true });
+    mkdirSync(join(dirR, 'recipes'), { recursive: true });
+    writeFileSync(join(dirR, 'ai1-package.yaml'), dumpYaml({
+      name: 'remove-only', version: 1, description: 'x',
+      components: {
+        skills: [{ path: 'skills/ai1-sample-skill', version: 1 }],
+        recipes: [{ path: 'recipes/ghost.md' }],
+      },
+    }));
+    writeFileSync(skillPath, '---\nname: ai1-sample-skill\nversion: 1\ndescription: d\n---\nstale package body\n');
+    writeFileSync(join(dirR, 'recipes', 'ghost.md'), '---\nname: ghost\n---\nghost recipe\n');
+
+    await db('skills').where({ name: 'ai1-sample-skill' }).update({ content: 'fresh live body' });
+
+    const { counts } = await runSync(sctx(), {
+      packageDir: dirR,
+      removals: { recipes: ['ghost'] },
+    });
+    assert.equal(counts.removed, 1);
+    assert.equal(counts.synced, 0, 'remaining manifest entries are not synced');
+    assert.ok(!existsSync(join(dirR, 'recipes', 'ghost.md')), 'ghost recipe removed');
+    assert.match(readFileSync(skillPath, 'utf8'), /stale package body/, 'skill file left untouched');
+  });
+
   console.log('\nproject add:');
 
   await test('--add-project moves /opt/projects/user content into the package and leaves a symlink', async () => {

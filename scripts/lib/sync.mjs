@@ -8,10 +8,12 @@
 //
 // Two modes (both share every primitive — export*, manifest read/write, version logic):
 //
-//   mode 'sync' (default): the MANIFEST is the authority. Export each component the manifest lists,
-//     plus any --add-<type>=<name> the author asked for. --add-project moves the live project into
-//     the package and leaves a symlink. Nothing is removed; package-level version is left untouched;
-//     DB additions are normalized to the distributable default (org/locked skills).
+//   mode 'sync' (default): the MANIFEST is the authority. With no --add-* / --remove-* flags, export
+//     each component the manifest lists. When any --add-* or --remove-* is present, only those
+//     mutations run (Phase 2 is skipped — run plain sync afterward to export the rest). --add-project
+//     moves the live project into the package and leaves a symlink. Nothing is removed unless
+//     --remove-*; package-level version is left untouched; DB additions are normalized to the
+//     distributable default (org/locked skills).
 //
 //   mode 'mirror' (`--mirror`, the former `backup`): the LIVE SATELLITE is the authority. Make the
 //     package mirror it — within the --type/--include/--exclude scope:
@@ -277,6 +279,9 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
   const manifestExists = existsSync(manifestPath);
 
   const explicitAdds = [...SYNC_TYPES, 'projects'].some((t) => (additions[t]?.length ?? 0) > 0);
+  const explicitRemoves = [...SYNC_TYPES, 'projects'].some((t) => (removals[t]?.length ?? 0) > 0);
+  // Plain sync with --add-* / --remove-* performs only those mutations; skip Phase 2.
+  const mutationOnly = !isMirror && (explicitAdds || explicitRemoves);
 
   if (!manifestExists && !isMirror && !explicitAdds) {
     throw new SyncError(
@@ -342,8 +347,6 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
 
   // (type:name) handled as an addition — Phase 2 must not re-export/re-count them.
   const handled = new Set();
-  // (type:name) explicitly removed — Phase 2 must not re-export them.
-  const removedKeys = new Set();
 
   // ── Phase 0: explicit removals (--remove-* in plain sync) ─────────────────────────────────────
   if (!isMirror) {
@@ -368,7 +371,6 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
         else { delete manifest.components[type]; }
         manifestDirty = true;
         if (changed) contentChanged = true;
-        removedKeys.add(`${type}:${name}`);
         results.push({ type: singular(type), name, verdict: 'SYNC-REMOVED', action: dry ? 'removed (dry-run)' : 'removed' });
         if (dry) log.dry(`remove ${label(type, name)} from manifest (${entry.path})`);
         else      log.ok(`${label(type, name)} → removed from package`);
@@ -469,7 +471,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
   }
 
   // ── Phase 2: sync existing manifest entries (mirror also removes the dead ones) ────────────────
-  for (const type of SYNC_TYPES) {
+  if (!mutationOnly) for (const type of SYNC_TYPES) {
     const list = manifest.components[type] ?? [];
     const kept = [];
     for (const entry of list) {

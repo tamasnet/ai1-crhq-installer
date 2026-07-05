@@ -36,7 +36,8 @@ Reads <package-dir>/ai1-package.yaml and exports each listed component from the
 satellite (DB + SKILLS_BASE_DIR) to the package directory. Unchanged files are
 never touched — run before git diff/add/commit.
 
-  --add-skill=<name>    Register a skill in the manifest and export it (repeatable)
+  --add-skill=<name>    Register a skill in the manifest and export it (repeatable). Skips syncing
+                        other manifest entries; run plain sync afterward to export the rest.
   --add-recipe=<name>   Register a recipe in the manifest and export it (repeatable)
   --add-agent=<name>    Register an agent in the manifest and export it (repeatable)
   --add-job=<name>      Register a job in the manifest and export it (repeatable)
@@ -46,7 +47,8 @@ never touched — run before git diff/add/commit.
                         If the project has no project.yaml, a valid default is generated in the package.
                         Projects are then managed by git; later sync/mirror runs do not export them.
 
-  --remove-skill=<name>   Remove a skill from the manifest and delete its files from the package (repeatable)
+  --remove-skill=<name>   Remove a skill from the manifest and delete its files from the package (repeatable).
+                          Skips syncing other manifest entries; run plain sync afterward to export the rest.
   --remove-recipe=<name>  Remove a recipe from the manifest and delete its file from the package (repeatable)
   --remove-agent=<name>   Remove an agent from the manifest and delete its directory from the package (repeatable)
   --remove-job=<name>     Remove a job from the manifest and delete its file from the package (repeatable)
