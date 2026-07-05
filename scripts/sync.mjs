@@ -19,7 +19,7 @@
 
 import { resolve } from 'node:path';
 import {
-  getDb, closeDb, makeLogger, resolveSkillsBase, wantsHelp, UsageError, updateInstallLogForMirror,
+  getDb, closeDb, makeLogger, resolveSkillsBase, resolveBrains, wantsHelp, UsageError, updateInstallLogForMirror,
 } from './lib/index.mjs';
 import { runSync, SyncError, SYNC_TYPES, isInsideGitRepo } from './lib/sync.mjs';
 import {
@@ -220,6 +220,7 @@ try {
     log,
     DRY_RUN: dryRun,
     SKILLS_BASE: resolveSkillsBase(),   // needed by exportJob for script-path resolution
+    BRAINS: resolveBrains(),            // needed by exportAgent for brain-tree capture (D-50)
   };
 
   const { results, counts, manifest, installLog } = await runSync(ctx, {

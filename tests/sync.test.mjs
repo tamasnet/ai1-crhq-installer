@@ -160,6 +160,21 @@ try {
     rmSync(join(brainDir, 'activity'), { recursive: true, force: true });   // keep later runs pristine
   });
 
+  await test('exportAgent requires ctx.BRAINS for brain-tree capture (sync.mjs contract)', async () => {
+    const row = await db('agents').where({ key: 'ai1-sample-agent' }).first();
+    const { exportAgent } = await import('../scripts/lib/core/agent.mjs');
+    const base = { db, log: sctx().log, DRY_RUN: false, SKILLS_BASE: process.env.SKILLS_BASE_DIR };
+
+    const noBrains = pkgDir('pkg-no-brains-ctx');
+    await exportAgent(base, row, { outRoot: noBrains, relPath: 'agents/ai1-sample-agent' });
+    assert.ok(existsSync(join(noBrains, 'agents', 'ai1-sample-agent', 'AGENTS.md')), 'AGENTS.md always exported from DB');
+    assert.ok(!existsSync(join(noBrains, 'agents', 'ai1-sample-agent', 'identity.md')), 'without BRAINS, brain files skipped');
+
+    const withBrains = pkgDir('pkg-with-brains-ctx');
+    await exportAgent({ ...base, BRAINS: process.env.AGENT_BRAINS_DIR }, row, { outRoot: withBrains, relPath: 'agents/ai1-sample-agent' });
+    assert.ok(existsSync(join(withBrains, 'agents', 'ai1-sample-agent', 'identity.md')), 'with BRAINS, brain files copied');
+  });
+
   // ── round trip ───────────────────────────────────────────────────────────────────────────────
   console.log('\nround trip:');
 
