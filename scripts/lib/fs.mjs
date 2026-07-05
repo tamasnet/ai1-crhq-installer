@@ -3,8 +3,11 @@
 import {
   existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync,
   lstatSync, readlinkSync, symlinkSync, unlinkSync, renameSync,
+  statSync, copyFileSync, chmodSync, utimesSync, openSync, readSync, closeSync,
 } from 'fs';
 import { join, dirname, resolve } from 'path';
+
+const CMP_CHUNK = 64 * 1024;
 
 export function writeIfChanged(path, content, { dryRun = false } = {}) {
   if (existsSync(path) && readFileSync(path, 'utf8') === content) return false;
@@ -33,19 +36,77 @@ function copyTreeRel(srcDir, destDir, rel, dryRun, skip) {
     if (entry.isDirectory()) {
       changed += copyTreeRel(src, dest, r, dryRun, skip);
     } else if (entry.isFile()) {
-      if (writeBufIfChanged(dest, readFileSync(src), dryRun)) changed++;
+      if (copyFileIfChanged(src, dest, { dryRun })) changed++;
     }
   }
   return changed;
 }
 
-function writeBufIfChanged(path, buf, dryRun) {
-  if (existsSync(path)) {
-    try { if (readFileSync(path).equals(buf)) return false; } catch { /* fall through to write */ }
-  }
+function modeBits(st) {
+  return st.mode & 0o777;
+}
+
+function mtimeEqual(srcStat, destStat) {
+  // utimes is second-granular on common filesystems; ignore sub-ms and atime (reads bump atime).
+  return Math.floor(srcStat.mtimeMs / 1000) === Math.floor(destStat.mtimeMs / 1000);
+}
+
+// Mirror source mode + mtime onto dest when either differs.
+function syncMetadata(dest, srcStat, { dryRun = false } = {}) {
+  const destStat = statSync(dest);
+  const srcMode = modeBits(srcStat);
+  const needsMode = modeBits(destStat) !== srcMode;
+  const needsTime = !mtimeEqual(srcStat, destStat);
+  if (!needsMode && !needsTime) return false;
   if (dryRun) return true;
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, buf);
+  if (needsMode) chmodSync(dest, srcMode);
+  if (needsTime) utimesSync(dest, destStat.atime, srcStat.mtime);
+  return true;
+}
+
+// Chunked byte compare — avoids loading whole files into memory (OOM on large assets).
+function filesByteEqual(src, dest, size) {
+  if (size === 0) return true;
+  const fdA = openSync(src, 'r');
+  const fdB = openSync(dest, 'r');
+  const bufA = Buffer.alloc(CMP_CHUNK);
+  const bufB = Buffer.alloc(CMP_CHUNK);
+  try {
+    let remaining = size;
+    while (remaining > 0) {
+      const n = Math.min(remaining, CMP_CHUNK);
+      const ra = readSync(fdA, bufA, 0, n, null);
+      const rb = readSync(fdB, bufB, 0, n, null);
+      if (ra !== rb || !bufA.subarray(0, ra).equals(bufB.subarray(0, rb))) return false;
+      remaining -= ra;
+    }
+    return true;
+  } finally {
+    closeSync(fdA);
+    closeSync(fdB);
+  }
+}
+
+// Copy when content differs; chmod when content matches but mode does not. Uses copyFileSync
+// (kernel copy) instead of read/write buffers so large files do not allocate full-file buffers.
+// Mode and mtime always mirror the source on any write path.
+function copyFileIfChanged(src, dest, { dryRun = false } = {}) {
+  const srcStat = statSync(src);
+
+  if (existsSync(dest)) {
+    let destStat;
+    try { destStat = statSync(dest); } catch { destStat = null; }
+    if (destStat?.isFile() && destStat.size === srcStat.size
+        && filesByteEqual(src, dest, srcStat.size)) {
+      if (syncMetadata(dest, srcStat, { dryRun })) return true;
+      return false;
+    }
+  }
+
+  if (dryRun) return true;
+  mkdirSync(dirname(dest), { recursive: true });
+  copyFileSync(src, dest);
+  syncMetadata(dest, srcStat);
   return true;
 }
 
