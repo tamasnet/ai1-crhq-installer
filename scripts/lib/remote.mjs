@@ -214,6 +214,46 @@ export async function registerRemote(flags, { now = new Date(), log } = {}) {
   return { dest, remoteId: record.remote_id, status: result.status, hubUrl: inputs.hubUrl };
 }
 
+// Local hub-client files under REMOTE_BASE_DIR (install.json in PACKAGES_DIR is untouched).
+function remoteLocalFiles(base) {
+  return [
+    { key: 'id.json', path: idPath(base) },
+    { key: 'config.json', path: configPath(base) },
+    { key: 'state.json', path: statePath(base) },
+    { key: 'actions.json', path: actionsPath(base) },
+  ];
+}
+
+// unregister subcommand: local teardown only — remove identity + cached config/state/actions. No hub
+// API call; re-enroll via register (hub operator may still need to reset the remote row). Idempotent:
+// when id.json is absent, exits success as already unregistered; orphan cache files are still removed.
+export function unregisterRemote(flags, { log } = {}) {
+  const base = resolveRemoteBase();
+  const idDest = idPath(base);
+  const alreadyUnregistered = !existsSync(idDest);
+
+  let remoteId = null;
+  if (!alreadyUnregistered) {
+    try { remoteId = JSON.parse(readFileSync(idDest, 'utf8'))?.remote_id ?? null; } catch { /* unreadable */ }
+  }
+
+  const toRemove = remoteLocalFiles(base).filter((f) => existsSync(f.path));
+  const removed = toRemove.map((f) => f.key);
+
+  if (toRemove.length === 0) {
+    return { remoteId, removed, alreadyUnregistered: true, dryRun: !!flags.dryRun };
+  }
+
+  if (flags.dryRun) {
+    log?.dry(`remove ${removed.join(', ')} from ${base}`);
+    return { remoteId, removed, alreadyUnregistered, dryRun: true };
+  }
+
+  for (const f of toRemove) rmSync(f.path, { force: true });
+  log?.ok?.(`removed ${removed.join(', ')} from ${base}`);
+  return { remoteId, removed, alreadyUnregistered, dryRun: false };
+}
+
 // --- pull-config: poll the hub for this remote's configuration ---------------------------------
 //
 // `GET {hub}/remote/config` (see ai1-platform-hub apps/api routes/remote.ts): a per-remote-token

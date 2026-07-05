@@ -27,6 +27,7 @@ Run commands from the skill/project root unless using an installed absolute path
 | Add a live component to a package | `node scripts/sync.mjs <package-dir> --add-skill=<name>` |
 | Back up satellite into restorable package | `node scripts/sync.mjs <package-dir> --mirror` |
 | Register with hub | `node scripts/remote.mjs register --hub=<url> --token=<bootstrap>` |
+| Unregister locally | `node scripts/remote.mjs unregister` |
 | Pull hub config | `node scripts/remote.mjs pull-config` |
 | Send heartbeat | `node scripts/remote.mjs heartbeat` |
 | Process queued hub actions | `node scripts/action.mjs` |
@@ -144,6 +145,7 @@ from `${PACKAGES_DIR:-~/packages}/install.json` before reporting state to the hu
 
 ```bash
 node scripts/remote.mjs register --hub=<url> --token=<bootstrap>
+node scripts/remote.mjs unregister
 node scripts/remote.mjs pull-config
 node scripts/remote.mjs heartbeat
 node scripts/action.mjs

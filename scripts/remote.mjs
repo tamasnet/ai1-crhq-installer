@@ -11,6 +11,7 @@
 //   push-install send install.json to the hub
 //   github-token print the GitHub token this remote should use (raw token to stdout)
 //   get-package  download + extract a registered package into PACKAGE_BASE_DIR/<name>@<version>
+//   unregister   remove local hub identity and cached config/state/actions (no hub API call)
 //
 // register options:
 //   --hub=<url>                hub base URL (else AI1_HUB_URL / HUB_URL)
@@ -22,12 +23,20 @@
 //   --json                     machine-readable result output
 //   --help                     show this help and exit
 //
-// pull-config / heartbeat / push-install options:
+// pull-config / heartbeat / push-install / unregister options:
+//   --json                     machine-readable result output
+//   --help                     show this help and exit
+//
+// unregister options:
+//   --dry-run                  report files that would be removed without deleting them
 //   --json                     machine-readable result output
 //   --help                     show this help and exit
 import { makeLogger } from './lib/log.mjs';
 import { UsageError } from './lib/flags.mjs';
-import { registerRemote, pullRemoteConfig, reportRemoteState, pushRemoteInstall, fetchGithubToken, fetchRemotePackage, RemoteError } from './lib/remote.mjs';
+import {
+  registerRemote, unregisterRemote, pullRemoteConfig, reportRemoteState, pushRemoteInstall,
+  fetchGithubToken, fetchRemotePackage, resolveRemoteBase, RemoteError,
+} from './lib/remote.mjs';
 
 const USAGE = `ai1-satellite-tools — register a satellite with the Ai1 Platform Hub
 
@@ -50,6 +59,9 @@ Subcommands:
                archive to \${DOWNLOAD_BASE_DIR} (default system temp) and extract it to
                \${PACKAGE_BASE_DIR}/<name>@<version> (default ~/packages); the archive is
                deleted after a successful extract unless --keep-download is given
+  unregister   remove local hub identity and cached files (id.json, config.json,
+               state.json, actions.json) under \${REMOTE_BASE_DIR}; does not call the hub
+               and does not touch \${PACKAGES_DIR}/install.json
 
 register options:
   --hub=<url>                hub base URL (else AI1_HUB_URL / HUB_URL env)
@@ -62,6 +74,11 @@ register options:
   --help                     show this help and exit
 
 pull-config / heartbeat / push-install options:
+  --json                     machine-readable result output
+  --help                     show this help and exit
+
+unregister options:
+  --dry-run                  report files that would be removed without deleting them
   --json                     machine-readable result output
   --help                     show this help and exit
 
@@ -93,6 +110,10 @@ const SPEC = {
   },
   'push-install': {
     bool: new Set(['--json']),
+    value: new Set([]),
+  },
+  unregister: {
+    bool: new Set(['--json', '--dry-run']),
     value: new Set([]),
   },
   'github-token': {
@@ -143,11 +164,11 @@ function parseRegisterArgs(argv) {
 }
 
 // Parse + validate the argv of a boolean-flag-only subcommand (pull-config, heartbeat,
-// push-install). Only --json; same strict contract as register — an unsupported option or a value on
-// a boolean flag is a usage error (exit 2).
+// push-install, unregister). Only flags listed in SPEC[subcommand].bool; same strict contract as
+// register — an unsupported option or a value on a boolean flag is a usage error (exit 2).
 function parseBoolOnlyArgs(subcommand, argv) {
   const spec = SPEC[subcommand];
-  const flags = { json: false };
+  const flags = { json: false, dryRun: false };
   for (const token of argv) {
     if (!token.startsWith('--')) throw new UsageError(`unexpected argument: ${token} (see --help)`);
     const name = flagName(token);
@@ -155,6 +176,7 @@ function parseBoolOnlyArgs(subcommand, argv) {
     if (spec.bool.has(name)) {
       if (hasEq) throw new UsageError(`option ${name} does not take a value`);
       if (name === '--json') flags.json = true;
+      else if (name === '--dry-run') flags.dryRun = true;
     } else {
       throw new UsageError(`unknown option: ${token} (see --help)`);
     }
@@ -256,6 +278,23 @@ async function main() {
     } else {
       log.ok(`install state v${result.installVersion} pushed for '${result.remoteId}'`);
       log.info(`${result.componentCount} component${result.componentCount === 1 ? '' : 's'} reported`);
+    }
+    return;
+  }
+
+  if (subcommand === 'unregister') {
+    const flags = parseBoolOnlyArgs(subcommand, rest);
+    const result = unregisterRemote(flags, { log: flags.json ? undefined : log });
+
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else if (result.removed.length === 0 && result.alreadyUnregistered) {
+      log.info('already unregistered — nothing to remove');
+    } else if (result.dryRun) {
+      log.dry(`remove ${result.removed.join(', ')} from ${resolveRemoteBase()}`);
+    } else {
+      const who = result.remoteId ? ` '${result.remoteId}'` : '';
+      log.ok(`unregistered${who} — removed ${result.removed.join(', ')}`);
     }
     return;
   }

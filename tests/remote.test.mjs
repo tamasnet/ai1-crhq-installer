@@ -217,6 +217,16 @@ function getPackage(args, { env = {}, base } = {}) {
   });
   return { ...r, dir, out: `${r.stdout}${r.stderr}` };
 }
+// Run the unregister subcommand against an isolated REMOTE_BASE_DIR.
+function unregister(args, { env = {}, base } = {}) {
+  const dir = base ?? mkdtempSync(join(tmpdir(), 'remote-'));
+  const r = spawnSync(process.execPath, ['scripts/remote.mjs', 'unregister', ...args], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH, REMOTE_BASE_DIR: dir, ...env },
+  });
+  return { ...r, dir, out: `${r.stdout}${r.stderr}` };
+}
 const idFile = (dir) => join(dir, 'id.json');
 const configFile = (dir) => join(dir, 'config.json');
 const stateFile = (dir) => join(dir, 'state.json');
@@ -485,6 +495,67 @@ await test('403 not-yet-active → exit 1', () => {
 
 await test('heartbeat unknown option → exit 2', () => {
   const r = heartbeat(['--nope']);
+  assert.equal(r.status, 2, r.out);
+  assert.match(r.out, /unknown option: --nope/);
+  rmSync(r.dir, { recursive: true, force: true });
+});
+
+console.log('remote.mjs unregister:');
+
+await test('removes id.json, config.json, state.json, and actions.json', () => {
+  const dir = registered('unreg-sat');
+  pullConfig([], { base: dir });
+  heartbeat([], { base: dir });
+
+  const r = unregister(['--json'], { base: dir });
+  assert.equal(r.status, 0, r.out);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.remoteId, 'unreg-sat');
+  assert.equal(out.alreadyUnregistered, false);
+  assert.equal(out.dryRun, false);
+  assert.deepEqual(out.removed.sort(), ['actions.json', 'config.json', 'id.json', 'state.json']);
+  assert.equal(existsSync(idFile(dir)), false);
+  assert.equal(existsSync(configFile(dir)), false);
+  assert.equal(existsSync(stateFile(dir)), false);
+  assert.equal(existsSync(actionsFile(dir)), false);
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await test('--dry-run reports files without deleting them', () => {
+  const dir = registered('dry-sat');
+  const r = unregister(['--dry-run'], { base: dir });
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /would remove id\.json/);
+  assert.equal(existsSync(idFile(dir)), true);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await test('already unregistered (empty dir) → exit 0', () => {
+  const r = unregister([]);
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /already unregistered/);
+  rmSync(r.dir, { recursive: true, force: true });
+});
+
+await test('already unregistered but orphan cache files are still removed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'remote-'));
+  writeFileSync(configFile(dir), '{}');
+  writeFileSync(stateFile(dir), '{}');
+
+  const r = unregister(['--json'], { base: dir });
+  assert.equal(r.status, 0, r.out);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.alreadyUnregistered, true);
+  assert.equal(out.remoteId, null);
+  assert.deepEqual(out.removed.sort(), ['config.json', 'state.json']);
+  assert.equal(existsSync(configFile(dir)), false);
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await test('unregister unknown option → exit 2', () => {
+  const r = unregister(['--nope']);
   assert.equal(r.status, 2, r.out);
   assert.match(r.out, /unknown option: --nope/);
   rmSync(r.dir, { recursive: true, force: true });
