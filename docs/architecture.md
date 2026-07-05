@@ -148,7 +148,7 @@ scripts/
 | `REPOS_BASE_DIR` | `~/repos` | Client Repository checkout base. |
 | `AGENT_BRAIN_EXCLUDE` | `activity,_backup,.scratch,memory` | Top-level brain dirs omitted from sync/mirror. |
 
-`remote.mjs heartbeat` refreshes `${REMOTE_BASE_DIR}/state.json` with `install_version` and `install_changed_at` from `${PACKAGES_DIR}/install.json` before it reports state to the hub. `local_time` is included in the report but is not persisted.
+`remote.mjs heartbeat` refreshes `${REMOTE_BASE_DIR}/state.json` with `install_version` and `install_changed_at` from `${PACKAGES_DIR}/install.json` before it reports state to the hub.
 
 `remote.mjs push-install` sends the full normalized `${PACKAGES_DIR}/install.json` state to the hub with `PUT /remote/install`.
 

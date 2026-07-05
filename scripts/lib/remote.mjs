@@ -352,9 +352,7 @@ export async function pullRemoteConfig(_flags, { now = new Date(), log } = {}) {
 // server `reported_at` and echoes that back, along with an `actions` array — advisory instructions
 // the hub wants the remote to perform. The report is the local state.json sidecar (the
 // config_version / config_fetched_at pull-config maintains) plus the install log's install_version /
-// install_changed_at and a freshly computed `local_time` — local_time is reported but not persisted
-// back to state.json. The payload must not carry
-// server-managed keys (the hub 400s those); none of these are.
+// install_changed_at. The payload must not carry server-managed keys (the hub 400s those); none of
 //
 // remote.mjs's sole responsibility for the actions is to record them: on success it writes the array
 // to actions.json (wrapped with `actions_fetched_at`). *Acting* on them is out of scope here — a
@@ -381,10 +379,7 @@ export async function reportRemoteState(_flags, { now = new Date(), log } = {}) 
   const base = resolveRemoteBase();
   const id = readIdentity(base);
   const url = `${id.hub_url}/remote/state`;
-  // local_time: a UTC instant rendered with an explicit `+00:00` offset rather than the `Z` military
-  // designator — same moment, but the offset form makes the timezone convention unambiguous. It is
-  // added to the reported state only, never written back to the sidecar.
-  const state = { ...refreshHeartbeatState(base), local_time: now.toISOString().replace(/Z$/, '+00:00') };
+  const state = refreshHeartbeatState(base);
 
   log?.info(`reporting state for '${id.remote_id}' to ${id.hub_url} …`);
 

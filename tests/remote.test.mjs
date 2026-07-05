@@ -376,7 +376,7 @@ await test('pull-config unknown option → exit 2', () => {
 
 console.log('remote.mjs heartbeat:');
 
-await test('reports install metadata + local_time and echoes the server reported_at', () => {
+await test('reports install metadata and echoes the server reported_at', () => {
   const dir = registered('beat-sat');
   const r = heartbeat([], { base: dir });
   assert.equal(r.status, 0, r.out);
@@ -385,11 +385,10 @@ await test('reports install metadata + local_time and echoes the server reported
   const state = JSON.parse(readFileSync(stateFile(dir), 'utf8'));
   assert.equal(state.install_version, 0);
   assert.equal(state.install_changed_at, null);
-  assert.equal('local_time' in state, false, 'local_time is not persisted');
   rmSync(dir, { recursive: true, force: true });
 });
 
-await test('--json includes the reported_at + the local_time state sent', () => {
+await test('--json includes the reported_at and state sent', () => {
   const dir = registered('beat-sat');
   const r = heartbeat(['--json'], { base: dir });
   assert.equal(r.status, 0, r.out);
@@ -398,8 +397,7 @@ await test('--json includes the reported_at + the local_time state sent', () => 
   assert.equal(out.reportedAt, '2026-06-14T00:00:00.000Z');
   assert.equal(out.state.install_version, 0);
   assert.equal(out.state.install_changed_at, null);
-  // local_time is a UTC instant rendered with an explicit +00:00 offset, not the Z designator.
-  assert.match(out.state.local_time, /^\d{4}-\d\d-\d\dT[\d:.]+\+00:00$/);
+  assert.equal('local_time' in out.state, false);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -421,18 +419,8 @@ await test('heartbeat persists and reports install_version/install_changed_at fr
   const persisted = JSON.parse(readFileSync(stateFile(dir), 'utf8'));
   assert.equal(persisted.install_version, 7);
   assert.equal(persisted.install_changed_at, '2026-06-28T15:00:00.000Z');
-  assert.equal('local_time' in persisted, false);
 
   rmSync(packagesDir, { recursive: true, force: true });
-  rmSync(dir, { recursive: true, force: true });
-});
-
-await test('local_time is sent with a +00:00 offset, not Z', () => {
-  const dir = registered('beat-sat');
-  const r = heartbeat(['--json'], { base: dir });
-  const sent = JSON.parse(r.stdout).state.local_time;
-  assert.equal(sent.endsWith('+00:00'), true, sent);
-  assert.equal(sent.includes('Z'), false, sent);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -458,7 +446,7 @@ await test('an empty actions array is still written (always present)', () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-await test('reports state.json contents + install metadata + local_time, without persisting local_time', () => {
+await test('reports state.json contents + install metadata', () => {
   const dir = registered('beat-sat');
   assert.equal(pullConfig([], { base: dir }).status, 0); // writes state.json (config_version + config_fetched_at)
   const before = JSON.parse(readFileSync(stateFile(dir), 'utf8'));
@@ -467,19 +455,16 @@ await test('reports state.json contents + install metadata + local_time, without
   const r = heartbeat(['--json'], { base: dir });
   assert.equal(r.status, 0, r.out);
   const sent = JSON.parse(r.stdout).state;
-  // The reported state carries the sidecar fields, refreshed install metadata, and local_time.
   assert.equal(sent.config_version, 5);
   assert.match(sent.config_fetched_at, /^\d{4}-\d\d-\d\dT/);
   assert.equal(sent.install_version, 0);
   assert.equal(sent.install_changed_at, null);
-  assert.match(sent.local_time, /\+00:00$/);
-  // install metadata is persisted into state.json; local_time is reported, not saved.
+  assert.equal('local_time' in sent, false);
   const after = JSON.parse(readFileSync(stateFile(dir), 'utf8'));
   assert.equal(after.config_version, 5);
   assert.match(after.config_fetched_at, /^\d{4}-\d\d-\d\dT/);
   assert.equal(after.install_version, 0);
   assert.equal(after.install_changed_at, null);
-  assert.equal('local_time' in after, false);
   rmSync(dir, { recursive: true, force: true });
 });
 

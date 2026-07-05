@@ -4,6 +4,10 @@ description: >
   Satellite toolkit — installs and manages Ai1 Packages; registers and syncs
   with the Ai1 Platform Hub.
 installer: 1
+install_entry: scripts/install-satellite-tools.sh
+install_flags:
+  - name: --skip-extra
+    description: Skip symlink and cron setup (forwarded to install_entry).
 components:
   skills:
     - path: skills/ai1-satellite-tools

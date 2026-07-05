@@ -72,10 +72,11 @@ try {
   await closeDb();
 }
 
-// Invoke the package's install_entry (if declared) as an isolated `node` subprocess, forwarding the
+// Invoke the package's install_entry (if declared) as an isolated subprocess, forwarding the
 // mode + standard + package-specific flags so it can honor them (e.g. skip side effects on
 // --dry-run). The subprocess inherits INSTALL_SCHEMA / SKILLS_BASE_DIR via env, so it targets the
 // same (sandbox) schema + dir. The sandbox-internal flags and the package path are not forwarded.
+// .mjs/.js entries run under node; other paths run directly (shebang + executable bit).
 function runInstallEntry(ctx, meta, packageRoot, rawArgv) {
   if (!meta.install_entry) return;
   const entryPath = resolve(packageRoot, meta.install_entry);
@@ -85,7 +86,12 @@ function runInstallEntry(ctx, meta, packageRoot, rawArgv) {
   }
   const forwarded = rawArgv.filter((a) => a !== ctx.packageArg && !['--sandbox', '--keep', '--lifecycle'].includes(a));
   ctx.log.info(`install_entry → ${meta.install_entry} ${forwarded.join(' ')}`.trim());
-  const r = spawnSync(process.execPath, [entryPath, ...forwarded], { cwd: packageRoot, stdio: 'inherit', env: process.env });
+  const isNode = /\.mjs$|\.js$/.test(entryPath);
+  const r = spawnSync(
+    isNode ? process.execPath : entryPath,
+    isNode ? [entryPath, ...forwarded] : forwarded,
+    { cwd: packageRoot, stdio: 'inherit', env: process.env },
+  );
   ctx.record({
     type: 'entry', name: meta.install_entry,
     verdict: r.status === 0 ? VERDICT.OK : VERDICT.FAIL,

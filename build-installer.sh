@@ -23,6 +23,7 @@ command -v base64 >/dev/null 2>&1 || { echo "build: base64 is required" >&2; exi
 [ -f "$ROOT/README.md" ] || { echo "build: README.md not found" >&2; exit 1; }
 [ -d "$ROOT/docs" ] || { echo "build: docs/ not found" >&2; exit 1; }
 [ -d "$ROOT/scripts" ] || { echo "build: scripts/ not found" >&2; exit 1; }
+[ -f "$ROOT/install-satellite-tools.sh" ] || { echo "build: install-satellite-tools.sh not found" >&2; exit 1; }
 
 mkdir -p "$(dirname "$OUT")"
 
@@ -39,6 +40,8 @@ echo "build: staging package layout in $STAGEDIR ..." >&2
 rm -rf "$STAGEDIR"
 mkdir -p "$STAGEDIR"
 cp "$ROOT/ai1-package.yaml" "$STAGEDIR/"
+mkdir -p "$STAGEDIR/scripts"
+cp "$ROOT/install-satellite-tools.sh" "$STAGEDIR/scripts/"
 mkdir -p "$STAGEDIR/skills/ai1-satellite-tools"
 cp "$ROOT/SKILL.md"   "$STAGEDIR/skills/ai1-satellite-tools/SKILL.md"
 cp "$ROOT/README.md"  "$STAGEDIR/skills/ai1-satellite-tools/README.md"
@@ -59,7 +62,7 @@ for opt in --no-xattrs --no-mac-metadata; do
   fi
 done
 # shellcheck disable=SC2086
-COPYFILE_DISABLE=1 tar -C "$STAGEDIR" $TAR_OPTS -czf "$TARBALL" ai1-package.yaml skills
+COPYFILE_DISABLE=1 tar -C "$STAGEDIR" $TAR_OPTS -czf "$TARBALL" ai1-package.yaml scripts skills
 
 BYTES=$(wc -c < "$TARBALL" | tr -d ' ')
 echo "build: bundle is ${BYTES} bytes (compressed)" >&2

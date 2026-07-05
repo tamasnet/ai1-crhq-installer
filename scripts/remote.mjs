@@ -7,7 +7,7 @@
 // Usage: remote.mjs <subcommand> [options]
 //   register     self-enroll this satellite with the hub and store the per-remote key
 //   pull-config   poll the hub for this remote's config and cache it to config.json
-//   heartbeat    report state (state.json + a fresh local_time) and cache returned actions[]
+//   heartbeat    report state (state.json) and cache returned actions[]
 //   push-install send install.json to the hub
 //   github-token print the GitHub token this remote should use (raw token to stdout)
 //   get-package  download + extract a registered package into PACKAGE_BASE_DIR/<name>@<version>
@@ -39,7 +39,7 @@ Subcommands:
   pull-config   poll the hub for this remote's config and write the raw payload to
                \${REMOTE_BASE_DIR}/config.json (+ a state.json sidecar with the version;
                conditional — a 304 leaves both files as-is)
-  heartbeat    report this remote's state (state.json contents + a fresh local_time) to
+  heartbeat    report this remote's state (state.json contents) to
                the hub; echo the server reported_at and cache the returned advisory
                actions[] to \${REMOTE_BASE_DIR}/actions.json
   push-install send the normalized \${PACKAGES_DIR}/install.json state to the hub via
