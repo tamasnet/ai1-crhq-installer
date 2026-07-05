@@ -105,11 +105,13 @@ node scripts/sync.mjs <package-dir> --add-agent=<name>
 node scripts/sync.mjs <package-dir> --add-job=<name>
 node scripts/sync.mjs <package-dir> --add-project=<name>
 node scripts/sync.mjs <package-dir> --dry-run
+node scripts/sync.mjs <package-dir> --type=skill,recipe --include='^acme-'
 ```
 
 Plain sync never removes manifest entries and never changes the package-level `version`.
 When any `--add-*` or `--remove-*` flag is present, only those mutations run — other manifest
 entries are not exported. Run plain sync with no mutation flags afterward to sync the rest.
+Use `--type`, `--include`, and `--exclude` to export a subset of manifest entries selectively.
 `--add-project=<name>` is special: it moves `/opt/projects/user/<name>` into `projects/<name>` inside the package, adds a project manifest entry, and replaces the live directory with a symlink. The live project must not be its own git repository — remove `.git` first so it is a plain directory. If the project has no `project.yaml`, a valid default is generated inside the package. After that, sync/mirror do not export project content; git owns it.
 
 ### Mirror backup

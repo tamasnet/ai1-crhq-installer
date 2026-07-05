@@ -14,8 +14,8 @@
 // Usage: sync.mjs [<package-dir>] [--add-skill=<n>] [--add-recipe=<n>] [--add-agent=<n>]
 //                 [--add-job=<n>] [--add-project=<n>] [--remove-skill=<n>] [--remove-recipe=<n>]
 //                 [--remove-agent=<n>] [--remove-job=<n>] [--remove-project=<n>]
-//                 [--mirror [--normalize] [--type=<t>] [--include=<p>]
-//                 [--exclude=<p>]] [--dry-run] [--json] [--help]
+//                 [--type=<t>] [--include=<p>] [--exclude=<p>]
+//                 [--mirror [--normalize]] [--dry-run] [--json] [--help]
 
 import { resolve } from 'node:path';
 import {
@@ -56,18 +56,20 @@ never touched — run before git diff/add/commit.
                           When the live project is still a symlink into the package, restores it as a
                           real directory under /opt/projects/user/<name> (reverses --add-project).
 
+  --type=<types>        Restrict to DB component types (${SYNC_CLI_TYPE_VALUES.join(',')};
+                        comma-separated and/or repeated). Plain sync: limits which manifest entries
+                        are exported. Mirror: also scopes auto-additions and live removals.
+                        service/project are accepted for convenience but ignored.
+  --include=<pat>       Only components whose name matches <pat>
+                        (regex; a value with no regex metacharacter is an exact ^pat$ match)
+  --exclude=<pat>       Skip components whose name matches <pat> (after --include)
+
   --mirror              Backup mode: make the package mirror the live satellite. Auto-adds new
                         components, syncs existing ones, and REMOVES manifest entries (plus their
                         files) whose component no longer exists on the satellite. Bumps the integer
                         package version by 1 when the run changed package content.
   --normalize           With --mirror: ship the distributable default for added skills (org/locked)
                         instead of preserving the live user/org install_type. (Default: preserve.)
-  --type=<types>        With --mirror: restrict to DB component types (${SYNC_CLI_TYPE_VALUES.join(',')};
-                        comma-separated and/or repeated). Scopes additions, syncs AND removals.
-                        service/project are accepted for convenience but ignored.
-  --include=<pat>       With --mirror: only components whose name matches <pat>
-                        (regex; a value with no regex metacharacter is an exact ^pat$ match)
-  --exclude=<pat>       With --mirror: skip components whose name matches <pat> (after --include)
 
   --dry-run             Preview what would be written/removed; no filesystem or manifest changes
   --force               Proceed even if <package-dir> is not inside a git repository (see below)
@@ -97,7 +99,7 @@ const FLAG_SPEC = {
           '--type', '--include', '--exclude'],
 };
 // Flags that only make sense inside --mirror.
-const MIRROR_ONLY = ['--normalize', '--type', '--include', '--exclude'];
+const MIRROR_ONLY = ['--normalize'];
 const ADD_FLAGS = ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--add-project'];
 const REMOVE_FLAGS = ['--remove-skill', '--remove-recipe', '--remove-agent', '--remove-job', '--remove-project'];
 
@@ -192,7 +194,7 @@ try {
     typeScope = normalized.types;
     const log0 = makeLogger({ dryRun });
     for (const nonDb of ['services', 'projects']) {
-      if (typeScope.includes(nonDb)) log0.warn(`${COLLECTION_TO_CLI_TYPE[nonDb]} components are package/git-managed — mirror does not cover them; ignoring`);
+      if (typeScope.includes(nonDb)) log0.warn(`${COLLECTION_TO_CLI_TYPE[nonDb]} components are package/git-managed — sync/mirror do not export them; ignoring`);
     }
     typeScope = typeScope.filter((t) => SYNC_TYPES.includes(t));
   }

@@ -275,6 +275,45 @@ try {
     assert.ok(existsSync(join(dirE, 'recipes', 'ghost.md')), 'ghost file retained');
   });
 
+  await test('plain sync --type scopes Phase 2 to one component type', async () => {
+    const dirT = pkgDir('pkg-type-plain');
+    await mirror(dirT);
+
+    const skillPath = join(dirT, 'skills', 'ai1-sample-skill', 'SKILL.md');
+    const recipePath = join(dirT, 'recipes', 'ai1-sample-recipe.md');
+    writeFileSync(skillPath, readFileSync(skillPath, 'utf8').replace(/^---[\s\S]*?---\n/, '---\nname: ai1-sample-skill\nversion: 1\ndescription: d\n---\nstale skill\n'));
+    writeFileSync(recipePath, '---\nname: ai1-sample-recipe\n---\nstale recipe\n');
+
+    await db('skills').where({ name: 'ai1-sample-skill' }).update({ content: 'fresh skill body' });
+    await db('recipes').where({ name: 'ai1-sample-recipe' }).update({ content: 'fresh recipe body' });
+
+    const { counts } = await runSync(sctx(), { packageDir: dirT, typeScope: ['skills'] });
+    assert.equal(counts.synced, 1);
+    assert.match(readFileSync(skillPath, 'utf8'), /fresh skill body/);
+    assert.match(readFileSync(recipePath, 'utf8'), /stale recipe/, 'recipe out of --type scope left untouched');
+  });
+
+  await test('plain sync --include scopes Phase 2 by component name', async () => {
+    const dirI = pkgDir('pkg-include-plain');
+    await mirror(dirI);
+
+    const skillPath = join(dirI, 'skills', 'ai1-sample-skill', 'SKILL.md');
+    const recipePath = join(dirI, 'recipes', 'ai1-sample-recipe.md');
+    writeFileSync(skillPath, readFileSync(skillPath, 'utf8').replace(/^---[\s\S]*?---\n/, '---\nname: ai1-sample-skill\nversion: 1\ndescription: d\n---\nstale skill\n'));
+    writeFileSync(recipePath, '---\nname: ai1-sample-recipe\n---\nstale recipe\n');
+
+    await db('skills').where({ name: 'ai1-sample-skill' }).update({ content: 'fresh skill body' });
+    await db('recipes').where({ name: 'ai1-sample-recipe' }).update({ content: 'fresh recipe body' });
+
+    const { counts } = await runSync(sctx(), {
+      packageDir: dirI,
+      filterSpec: { include: 'ai1-sample-recipe' },
+    });
+    assert.equal(counts.synced, 1);
+    assert.match(readFileSync(recipePath, 'utf8'), /fresh recipe body/);
+    assert.match(readFileSync(skillPath, 'utf8'), /stale skill/, 'skill outside --include left untouched');
+  });
+
   await test('--add-job exports a new_session job into the package', async () => {
     const dirJ = pkgDir('pkg-add-job');
     writeFileSync(join(dirJ, 'ai1-package.yaml'), dumpYaml({

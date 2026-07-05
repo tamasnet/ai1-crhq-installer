@@ -44,7 +44,7 @@ import { spawnSync } from 'node:child_process';
 import { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
 import { safeName, writeIfChanged, removeTree, moveTree, ensureSymlink, pathExistsOrLink } from './fs.mjs';
 import { validateManifest, readWebAppConfig } from './manifest.mjs';
-import { makeFilter } from './filter.mjs';
+import { makeFilter, hasFilter } from './filter.mjs';
 import { VERDICT } from './log.mjs';
 import { exportSkill } from './core/skill.mjs';
 import { exportRecipe } from './core/recipe.mjs';
@@ -260,8 +260,8 @@ const sourceOf = (type, path) => (
 //   additions   — { skills, recipes, agents, jobs: string[] } explicit --add-* names (sync mode)
 //   removals    — { skills, recipes, agents, jobs, projects: string[] } explicit --remove-* names
 //   mode        — 'sync' (default) | 'mirror'
-//   typeScope   — (mirror) array of DB component types to restrict to; null = all, [] = none
-//   filterSpec  — (mirror) { include, exclude } name filters; also bounds what removal may touch
+//   typeScope   — array of DB component types to restrict to; null = all types, [] = none
+//   filterSpec  — { include, exclude } name filters (combined with --type when both are set)
 //   normalize   — (mirror) strip live fidelity (skills → org/locked) like a sync addition
 export async function runSync(ctx, { packageDir, additions = {}, removals = {}, mode = 'sync', typeScope = null, filterSpec = {}, normalize = false } = {}) {
   const { db, log } = ctx;
@@ -269,9 +269,10 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
   const isMirror = mode === 'mirror';
   const preserveFidelity = isMirror && !normalize;
 
-  // Scope (mirror only). In plain sync everything is in scope.
-  const typeSet = (isMirror && Array.isArray(typeScope)) ? new Set(typeScope) : null;
-  const nameMatch = isMirror ? makeFilter(filterSpec) : () => true;
+  // Scope: --type / --include / --exclude apply in both plain sync (Phase 2) and mirror (all phases).
+  const scoped = Array.isArray(typeScope) || hasFilter(filterSpec);
+  const typeSet = Array.isArray(typeScope) ? new Set(typeScope) : null;
+  const nameMatch = makeFilter(filterSpec);
   const typeInScope = (t) => !typeSet || typeSet.has(t);
   const inScope = (t, name) => typeInScope(t) && nameMatch(name);
 
@@ -482,7 +483,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
       const name = deriveName(packageDir, type, entry.path);
 
       if (handled.has(`${type}:${name}`)) { kept.push(entry); continue; }   // already exported in Phase 1
-      if (isMirror && !inScope(type, name)) { kept.push(entry); continue; } // out of scope → untouched
+      if (scoped && !inScope(type, name)) { kept.push(entry); continue; } // out of scope → untouched
 
       const row = await findRow(db, type, name);
 

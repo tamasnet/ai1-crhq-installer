@@ -210,7 +210,7 @@ await test('boolean flag given a value → message + exit 2', () => {
 });
 
 await test('mirror-only flag without --mirror → message + exit 2', () => {
-  for (const f of ['--normalize', '--type=skill', '--include=foo', '--exclude=bar']) {
+  for (const f of ['--normalize']) {
     const r = sync([f]);
     assert.equal(r.status, 2, f);
     assert.match(out(r), /requires? --mirror/, f);
@@ -281,6 +281,13 @@ await test('a real git repo is accepted without --force', () => {
   assert.equal(r.status, 1);
   assert.doesNotMatch(out(r), /not inside a git repository/, 'a git repo passes the guard');
   assert.match(out(r), /No ai1-package\.yaml/);
+});
+
+await test('--type without --mirror is accepted', () => {
+  const d = mkTmp(true);
+  writeFileSync(join(d, 'ai1-package.yaml'), 'name: x\nversion: 1\ndescription: x\ncomponents: {}\n');
+  const r = sync([d, '--type=skill']);
+  assert.doesNotMatch(out(r), /requires? --mirror/);
 });
 
 await test('--force is listed in --help', () => {
