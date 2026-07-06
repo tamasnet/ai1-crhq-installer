@@ -16,6 +16,7 @@ advisory actions in order. Supported action types:
   pull-config     run the same logic as remote.mjs pull-config
   push-install    run the same logic as remote.mjs push-install
   install-package run remote.mjs get-package, then install.mjs on the downloaded package
+  drift-report    run drift.mjs and return the JSON report as action result data
 
 Options:
   --limit=<n>   maximum number of actions to process (default: all; n may be 0)

@@ -2,6 +2,10 @@ import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from '
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createContext } from './context.mjs';
+import { preflight } from './preflight.mjs';
+import { closeDb } from './db.mjs';
+import { runDrift } from './drift.mjs';
 import { actionsPath } from './remote.mjs';
 import { pullRemoteConfig, pushRemoteInstall, fetchRemotePackage, completeRemoteAction } from './remote.mjs';
 
@@ -121,6 +125,26 @@ function defaultInstallPackage(packageDir, args = [], { log } = {}) {
   return { packageDir, flags: args, exitCode: r.status };
 }
 
+async function defaultDriftReport(_action, { log } = {}) {
+  try {
+    const ctx = await createContext([], { mode: 'status' });
+    ctx.DRY_RUN = true;
+    await preflight(ctx);
+    log?.info('running drift report …');
+    const data = await runDrift(ctx, {});
+    return { type: 'drift-report', data };
+  } finally {
+    await closeDb();
+  }
+}
+
+function completionBodyForResult(result) {
+  if (result?.type === 'drift-report' && result.data != null) {
+    return { status: 'completed', type: result.type, data: result.data };
+  }
+  return { status: 'completed' };
+}
+
 async function performInstallPackage(action, deps, log) {
   const plan = planAction(action);
   const fetched = await deps.getPackage({ name: plan.name, version: plan.version }, { log });
@@ -154,6 +178,9 @@ function planAction(action) {
     const installFlags = installFlagsForAction(action);
     return { type: action.type, operation: 'install-package', name, version, installFlags };
   }
+  if (action.type === 'drift-report') {
+    return { type: action.type, operation: 'drift-report' };
+  }
 
   throw new ActionError(`unsupported action type: ${action.type}`);
 }
@@ -170,6 +197,9 @@ async function performAction(action, deps, now, log) {
   if (plan.type === 'install-package') {
     return performInstallPackage(action, deps, log);
   }
+  if (plan.type === 'drift-report') {
+    return deps.driftReport(action, { log });
+  }
 
   throw new ActionError(`unsupported action type: ${plan.type}`);
 }
@@ -181,6 +211,7 @@ export async function runActions({ limit = null, dryRun = false } = {}, {
   pushInstall = pushRemoteInstall,
   getPackage = fetchRemotePackage,
   installPackage = defaultInstallPackage,
+  driftReport = defaultDriftReport,
   completeAction = completeRemoteAction,
 } = {}) {
   const max = validateLimit(limit);
@@ -217,7 +248,7 @@ export async function runActions({ limit = null, dryRun = false } = {}, {
     let result;
     try {
       log?.info(`processing action ${i + 1}/${toProcess}: ${type || '(unknown)'}${key ? ` (key=${key})` : ''}`);
-      result = await performAction(action, { pullConfig, pushInstall, getPackage, installPackage }, now, log);
+      result = await performAction(action, { pullConfig, pushInstall, getPackage, installPackage, driftReport }, now, log);
     } catch (e) {
       const failed = markFailed(action, e, now);
       record.actions[0] = failed;
@@ -243,7 +274,7 @@ export async function runActions({ limit = null, dryRun = false } = {}, {
     // Notify the hub of completion for queued actions (best-effort: don't mask the main result).
     if (key) {
       try {
-        await completeAction(key, { status: 'completed' }, { log });
+        await completeAction(key, completionBodyForResult(result), { log });
       } catch (ce) {
         log?.warn?.(`could not report action '${key}' completion to hub: ${ce.message}`);
       }

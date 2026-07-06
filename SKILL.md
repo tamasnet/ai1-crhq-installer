@@ -159,11 +159,12 @@ node scripts/remote.mjs get-package --name=<name> --version=<n>
 `action.mjs` reads `${REMOTE_BASE_DIR}/actions.json`, processes queued actions in order, and updates
 the file after each action. Successful actions are removed. If an action fails, processing stops and
 the failed action is left in place with `status: "error"`, `error_message`, `error_at`, and
-`attempts` for troubleshooting. Supported action types are `pull-config`, `push-install`, and
-`install-package`. `install-package` runs `remote.mjs get-package` using `package_name` and
+`attempts` for troubleshooting. Supported action types are `pull-config`, `push-install`,
+`install-package`, and `drift-report`. `install-package` runs `remote.mjs get-package` using `package_name` and
 `package_version`, then runs `install.mjs` on the downloaded package. Optional `install_type`,
 `install_include`, `install_exclude`, and boolean `install_optional` map to install flags `--type`,
-`--include`, `--exclude`, and `--optional`.
+`--include`, `--exclude`, and `--optional`. `drift-report` runs `drift.mjs --json` and completes
+with `{ type: "drift-report", data: <drift report> }`.
 Pass `--dry-run` to validate and report queued actions without performing network/install side
 effects and without updating `actions.json`.
 

@@ -190,6 +190,60 @@ await test('dry-run validates planned actions without side effects or queue muta
   });
 });
 
+await test('drift-report returns { type, data } matching drift.mjs --json', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{ type: 'drift-report' }]);
+    const driftData = {
+      ok: true,
+      packagesDir: '/packages',
+      packageFilter: null,
+      summary: { managed: 0, orphans: 0, in_sync: 0, modified: 0, absent: 0, source_missing: 0, drift: 0 },
+      managed: [],
+      orphans: [],
+      outOfSync: [],
+      warnings: [],
+    };
+
+    const result = await runActions({}, {
+      driftReport: async () => ({ type: 'drift-report', data: driftData }),
+    });
+
+    assert.equal(result.processed, 1);
+    assert.equal(result.results[0].type, 'drift-report');
+    assert.equal(result.results[0].status, 'ok');
+    assert.deepEqual(result.results[0].result, { type: 'drift-report', data: driftData });
+    assert.deepEqual(JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions, []);
+  });
+});
+
+await test('queued drift-report calls completeAction with type and data on success', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{ type: 'drift-report', key: 'drift1' }]);
+    const driftData = {
+      ok: true,
+      packagesDir: '/packages',
+      packageFilter: null,
+      summary: { managed: 1, orphans: 0, in_sync: 1, modified: 0, absent: 0, source_missing: 0, drift: 0 },
+      managed: [{ type: 'skill', name: 'x', state: 'in-sync' }],
+      orphans: [],
+      outOfSync: [],
+      warnings: [],
+    };
+    const completions = [];
+
+    await runActions({}, {
+      driftReport: async () => ({ type: 'drift-report', data: driftData }),
+      completeAction: async (key, body) => { completions.push({ key, body }); return { key, status: body.status }; },
+    });
+
+    assert.equal(completions.length, 1);
+    assert.equal(completions[0].key, 'drift1');
+    assert.equal(completions[0].body.status, 'completed');
+    assert.equal(completions[0].body.type, 'drift-report');
+    assert.deepEqual(completions[0].body.data, driftData);
+  });
+});
+
 await test('failure marks the current action with status/error and stops', async () => {
   await withRemoteDir(async (dir) => {
     writeActions(dir, [
