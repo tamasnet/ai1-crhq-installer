@@ -6,11 +6,14 @@
 //   node tests/remote.test.mjs
 import assert from 'node:assert/strict';
 import { spawnSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, statSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { harness } from './_helpers.mjs';
+import { normalizeHubUrl } from '../scripts/lib/remote.mjs';
+import { UsageError } from '../scripts/lib/flags.mjs';
 
 const { test, done } = harness();
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -31,10 +34,12 @@ writeFileSync(join(pkgSrc, 'ai1-package.yaml'), 'name: widget\nversion: 3\n');
 const tarball = join(mkdtempSync(join(tmpdir(), 'remote-tar-')), 'widget.tar.gz');
 const tarRes = spawnSync('tar', ['-czf', tarball, '-C', pkgSrc, '.']);
 if (tarRes.status !== 0) throw new Error(`failed to build test tarball: ${tarRes.stderr}`);
+const tarballDigest = createHash('sha256').update(readFileSync(tarball)).digest('hex');
 
 const HUB_SRC = `import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 const TARBALL = ${JSON.stringify(tarball)};
+const TARBALL_DIGEST = ${JSON.stringify(tarballDigest)};
 const CONFIG = { poll_interval_seconds: 60, greeting: 'hello' };
 const CONFIG_VERSION = 5;
 const hub = createServer((req, res) => {
@@ -116,10 +121,11 @@ const hub = createServer((req, res) => {
       const u = new URL(req.url, \`http://\${req.headers.host}\`);
       const name = u.searchParams.get('name');
       const version = u.searchParams.get('version');
-      if (name !== 'widget' || version !== '3') return json(404, { error: { code: 'not_found', message: \`Package '\${name}@\${version}' is not registered\` } });
+      if (name !== 'widget' || (version !== '3' && version !== '4')) return json(404, { error: { code: 'not_found', message: \`Package '\${name}@\${version}' is not registered\` } });
       res.setHeader('cache-control', 'no-store');
       // The signed URL points back at the stub's own /blob route — the basename carries the .tar.gz ext.
-      return json(200, { url: \`http://\${req.headers.host}/blob/widget.tar.gz\`, expires_at: '2026-06-15T12:15:00.000Z' });
+      const digest = version === '4' ? '0'.repeat(64) : TARBALL_DIGEST;
+      return json(200, { url: \`http://\${req.headers.host}/blob/widget.tar.gz\`, expires_at: '2026-06-15T12:15:00.000Z', digest });
     }
     if (req.method === 'GET' && req.url === '/blob/widget.tar.gz') {
       // Stand in for GCS: serve the package archive bytes with no auth (the real signed URL self-auths).
@@ -765,6 +771,29 @@ await test('get-package unknown option → exit 2', () => {
   assert.equal(r.status, 2, r.out);
   assert.match(r.out, /unknown option: --nope/);
   cleanup();
+});
+
+await test('digest mismatch → exit 1, nothing extracted', () => {
+  const { dir, pkgBase, env, cleanup } = pkgEnv();
+  const r = getPackage(['--name=widget', '--version=4'], { base: dir, env });
+  assert.equal(r.status, 1, r.out);
+  assert.match(r.out, /digest mismatch/);
+  assert.equal(existsSync(join(pkgBase, 'widget@4')), false);
+  cleanup();
+});
+
+console.log('remote.mjs normalizeHubUrl:');
+
+await test('rejects cleartext http for remote hosts', () => {
+  assert.throws(
+    () => normalizeHubUrl('http://hub.example.com'),
+    (e) => e instanceof UsageError && /https/.test(e.message),
+  );
+});
+
+await test('allows http for localhost dev stubs', () => {
+  assert.equal(normalizeHubUrl('http://127.0.0.1:8080'), 'http://127.0.0.1:8080');
+  assert.equal(normalizeHubUrl('http://localhost:3000/'), 'http://localhost:3000');
 });
 
 console.log('remote.mjs option validation:');

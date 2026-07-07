@@ -4,7 +4,7 @@
 // never touch crhq-satellite).
 //
 // Safety model:
-//   • dry-run (D-2a)     → run the build step + render artifacts, SKIP the apply (no nginx/PM2/port).
+//   • dry-run (D-2a)     → render artifacts, SKIP build + apply (no nginx/PM2/port) unless --run-build.
 //   • --sandbox          → web apps aren't modelled by the sandbox → SKIP entirely (build + apply).
 //   • real install       → applyWebApp(): copy/symlink source, write .env/ecosystem/vhost,
 //                          alloc port, pm2 start+save, nginx reload. This MUTATES THE LIVE VPS.
@@ -193,26 +193,36 @@ export function installProject(ctx, def) {
 }
 
 async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
-  const { log, DRY_RUN, SANDBOX } = ctx;
+  const { log, DRY_RUN, SANDBOX, RUN_BUILD } = ctx;
 
   if (SANDBOX) {                                  // nginx/PM2 aren't sandbox-modelled (skip cleanly)
     log.warn(`${type} ${def.name}: skipped under --sandbox (nginx/PM2 not modelled)`);
     return out(type, def.name, VERDICT.ALREADY, 'sandbox-skipped');
   }
 
+  const buildCmds = def.build || [];
+  const runBuilds = !DRY_RUN || RUN_BUILD;
+  if (DRY_RUN && buildCmds.length && !RUN_BUILD) {
+    log.warn(`${type} ${def.name}: build commands skipped under --dry-run (pass --run-build to execute them)`);
+  } else if (DRY_RUN && buildCmds.length && RUN_BUILD) {
+    log.warn(`${type} ${def.name}: running build commands under --dry-run (--run-build)`);
+  }
+
   // def.build is a normalized list of shell commands (manifest.normalizeBuild); run them in order,
-  // fail fast on the first non-zero exit. D-2a: the build runs in dry-run too.
+  // fail fast on the first non-zero exit when builds are enabled.
   //
   // Build commands must NOT inherit NODE_ENV=production: npm's `omit` config defaults to ['dev']
   // when NODE_ENV=production, so `npm install`/`npm ci` would silently skip devDependencies and the
   // build's own tooling (vite, webpack, tsc, babel…) goes missing. Strip it for the build env only —
   // the deployed app still gets NODE_ENV=production via renderEnv()/renderEcosystem().
-  const buildEnv = { ...process.env };
-  delete buildEnv.NODE_ENV;
-  for (const cmd of def.build || []) {
-    log.info(`${type} ${def.name}: build (${cmd})`);
-    const r = spawnSync(cmd, { cwd: def.srcDir, shell: true, stdio: 'inherit', env: buildEnv });
-    if (r.status !== 0) return out(type, def.name, VERDICT.FAIL, 'build-failed');
+  if (runBuilds) {
+    const buildEnv = { ...process.env };
+    delete buildEnv.NODE_ENV;
+    for (const cmd of buildCmds) {
+      log.info(`${type} ${def.name}: build (${cmd})`);
+      const r = spawnSync(cmd, { cwd: def.srcDir, shell: true, stdio: 'inherit', env: buildEnv });
+      if (r.status !== 0) return out(type, def.name, VERDICT.FAIL, 'build-failed');
+    }
   }
 
   const projectDir = join(baseDir, def.name);

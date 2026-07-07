@@ -66,7 +66,8 @@ Development/testing flags:
 
 | Flag | Meaning |
 |------|---------|
-| `--dry-run` | Preview with no DB writes and no nginx/PM2 apply. Service/project **build shell commands still run**; only live deploy artifacts (copied/symlinked files, vhost, pm2 start) are skipped. |
+| `--dry-run` | Preview with no DB writes and no nginx/PM2 apply. Service/project build commands are **skipped** by default; pass `--run-build` to execute them. |
+| `--run-build` | With `--dry-run`: run service/project build shell commands (default: skipped for safer untrusted-package previews). |
 | `--sandbox` | Provision an isolated DB schema and temp install dirs, then tear them down. For package/installer testing, not normal satellite installs. |
 | `--lifecycle` | With `--sandbox`, assert install/status/idempotency/uninstall/reinstall. |
 | `--keep` | With `--sandbox`, leave the schema and dirs for inspection. |
@@ -154,7 +155,16 @@ node scripts/action.mjs --dry-run
 node scripts/remote.mjs push-install
 node scripts/remote.mjs github-token
 node scripts/remote.mjs get-package --name=<name> --version=<n>
+node scripts/remote.mjs get-package --name=<name> --version=<n> --keep-download
 ```
+
+`get-package` downloads a registered package archive, verifies an optional hub-provided `digest`
+(sha256 hex) when present, extracts to `${PACKAGE_BASE_DIR:-~/packages}/<name>@<version>`, and
+deletes the download by default. Pass `--keep-download` to retain the archive in
+`${DOWNLOAD_BASE_DIR:-$TMPDIR}`.
+
+The cron helper `scripts/heartbeat-actions.sh` runs heartbeat then processes queued actions when
+present. It requires `jq` on `PATH` to read `actions.json`.
 
 `action.mjs` reads `${REMOTE_BASE_DIR}/actions.json`, processes queued actions in order, and updates
 the file after each action. Successful actions are removed. If an action fails, processing stops and

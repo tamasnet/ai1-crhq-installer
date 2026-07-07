@@ -44,6 +44,7 @@ import { spawnSync } from 'node:child_process';
 import { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
 import { safeName, writeIfChanged, removeTree, moveTree, ensureSymlink, pathExistsOrLink } from './fs.mjs';
 import { validateManifest, readWebAppConfig } from './manifest.mjs';
+import { assertSafeSegment } from './validate.mjs';
 import { makeFilter, hasFilter } from './filter.mjs';
 import { VERDICT } from './log.mjs';
 import { exportSkill } from './core/skill.mjs';
@@ -55,6 +56,14 @@ import { resolveUserProjectsBase } from './paths.mjs';
 
 export class SyncError extends Error {
   constructor(msg) { super(msg); this.name = 'SyncError'; }
+}
+
+function validateProjectSegment(name) {
+  try {
+    assertSafeSegment('project name', name);
+  } catch (e) {
+    throw new SyncError(e.message);
+  }
 }
 
 // True iff `dir` is inside a git working tree (D-49). sync edits the package IN PLACE — git is the
@@ -281,6 +290,9 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
 
   const explicitAdds = [...SYNC_TYPES, 'projects'].some((t) => (additions[t]?.length ?? 0) > 0);
   const explicitRemoves = [...SYNC_TYPES, 'projects'].some((t) => (removals[t]?.length ?? 0) > 0);
+  for (const name of [...(additions.projects ?? []), ...(removals.projects ?? [])]) {
+    validateProjectSegment(name);
+  }
   // Plain sync with --add-* / --remove-* performs only those mutations; skip Phase 2.
   const mutationOnly = !isMirror && (explicitAdds || explicitRemoves);
 

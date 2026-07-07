@@ -43,7 +43,7 @@ node scripts/sync.mjs <package-dir> --dry-run
 node scripts/sync.mjs <package-dir> --mirror --dry-run
 ```
 
-Dry-run performs validation and planning with zero DB or package filesystem writes. Service/project build commands still run during install dry-run so build failures surface before a live deploy.
+Dry-run performs validation and planning with zero DB or package filesystem writes. Service/project build commands are skipped by default during install dry-run (pass `--run-build` to execute them); nginx/PM2 apply is always skipped.
 
 ## Test suite
 

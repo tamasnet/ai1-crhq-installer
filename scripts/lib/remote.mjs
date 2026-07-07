@@ -15,6 +15,7 @@ import { homedir, hostname, tmpdir } from 'os';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { spawnSync } from 'child_process';
+import { createHash } from 'node:crypto';
 import { UsageError } from './flags.mjs';
 import { readInstallState } from './install-log.mjs';
 
@@ -78,8 +79,9 @@ function firstNonEmpty(...vals) {
 }
 
 // Normalize a hub base URL to an absolute origin with no trailing slash, so endpoint paths can be
-// appended cleanly. Rejects anything that isn't an http(s) URL.
-function normalizeHubUrl(raw) {
+// appended cleanly. Remote hubs must use https; cleartext http is allowed only for localhost dev
+// stubs (127.0.0.1 / localhost).
+export function normalizeHubUrl(raw) {
   let u;
   try {
     u = new URL(raw);
@@ -88,6 +90,12 @@ function normalizeHubUrl(raw) {
   }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') {
     throw new UsageError(`hub URL must be http(s): ${raw}`);
+  }
+  const host = u.hostname;
+  const isLocalDev = host === 'localhost' || host === '127.0.0.1';
+  if (u.protocol === 'http:' && !isLocalDev) {
+    throw new UsageError(
+      `hub URL must use https (cleartext http is allowed only for localhost): ${raw}`);
   }
   return u.toString().replace(/\/+$/, '');
 }
@@ -588,8 +596,10 @@ export async function fetchGithubToken(_flags, { log } = {}) {
 //
 // `GET {hub}/remote/package?name=<n>&version=<v>&format=json` (see ai1-platform-hub apps/api
 // routes/remote.ts): a per-remote-token authenticated resolver. With `format=json` the hub returns
-// `{ url, expires_at }` — a short-lived, pre-signed GCS GET URL carrying its own auth in its query
-// string (the default response is a 302 to that URL; we ask for JSON so we own the download). The hub
+// `{ url, expires_at }` and may include an optional `digest` — lowercase sha256 hex of the archive
+// bytes. When present, get-package verifies the downloaded file before extract. A short-lived,
+// pre-signed GCS GET URL carries its own auth in its query string (the default response is a 302
+// to that URL; we ask for JSON so we own the download). The hub
 // signs *blindly* off the registration, so a returned `url` whose object is missing surfaces as a GCS
 // 404 at download time, not here. A `404` from the hub is the legitimate "(name, version) isn't
 // registered" answer; 401/403 mirror the other subcommands.
@@ -635,11 +645,74 @@ async function downloadArchive(url, dest) {
   await pipeline(Readable.fromWeb(res.body), createWriteStream(dest, { mode: 0o600 }));
 }
 
+// Reject archive member paths that could escape the destination (path traversal, absolute paths,
+// Windows drive prefixes). Applied to tar/zip listings before extract.
+export function isUnsafeArchiveMember(member) {
+  if (!member || member.trim() === '') return true;
+  const m = member.replace(/\\/g, '/');
+  if (m.startsWith('/') || /^[A-Za-z]:\//.test(m)) return true;
+  for (const part of m.split('/')) {
+    if (part === '..') return true;
+  }
+  return false;
+}
+
+export function validateArchiveMembers(members) {
+  for (const member of members) {
+    if (isUnsafeArchiveMember(member)) {
+      throw new RemoteError(`unsafe archive member path rejected: ${member}`);
+    }
+  }
+}
+
+function listTarMembers(file) {
+  const r = spawnSync('tar', ['-tzf', file], { encoding: 'utf8' });
+  if (r.error) throw new RemoteError(`could not run tar: ${r.error.message}`);
+  if (r.status !== 0) {
+    throw new RemoteError(`could not list archive members (tar exit ${r.status})`);
+  }
+  return r.stdout.split('\n').map((l) => l.replace(/\/$/, '')).filter(Boolean);
+}
+
+function listZipMembers(file) {
+  let r = spawnSync('unzip', ['-Z1', file], { encoding: 'utf8' });
+  if (!r.error && r.status === 0) return r.stdout.split('\n').filter(Boolean);
+  r = spawnSync('unzip', ['-l', file], { encoding: 'utf8' });
+  if (r.error) throw new RemoteError(`could not run unzip: ${r.error.message}`);
+  if (r.status !== 0) {
+    throw new RemoteError(`could not list archive members (unzip exit ${r.status})`);
+  }
+  const members = [];
+  for (const line of r.stdout.split('\n')) {
+    const m = line.match(/^\s*\d+\s+\d{2,4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(.+)$/);
+    if (m) members.push(m[1].trim());
+  }
+  return members;
+}
+
+function tarSupportsNoAbsoluteNames() {
+  const r = spawnSync('tar', ['--no-absolute-names', '--version'], { encoding: 'utf8', stdio: 'pipe' });
+  return !r.error && r.status === 0;
+}
+
+function sha256File(path) {
+  const hash = createHash('sha256');
+  hash.update(readFileSync(path));
+  return hash.digest('hex');
+}
+
 // Extract `file` into `dest` by shelling out to the platform archiver (tar/unzip), the same
-// shell-out approach service.mjs uses for builds. Throws RemoteError on a missing tool or non-zero exit.
-function extractArchive(kind, file, dest) {
+// shell-out approach service.mjs uses for builds. Member paths are listed and validated first;
+// GNU tar gets --no-absolute-names when available. Throws RemoteError on unsafe paths, a missing
+// tool, or non-zero exit.
+export function extractArchive(kind, file, dest) {
+  const members = kind === 'tar' ? listTarMembers(file) : listZipMembers(file);
+  validateArchiveMembers(members);
   const [cmd, args] = kind === 'tar'
-    ? ['tar', ['-xzf', file, '-C', dest]]
+    ? ['tar', [
+        ...(tarSupportsNoAbsoluteNames() ? ['--no-absolute-names'] : []),
+        '-xzf', file, '-C', dest,
+      ]]
     : ['unzip', ['-q', '-o', file, '-d', dest]];
   const r = spawnSync(cmd, args, { stdio: 'inherit' });
   if (r.error) throw new RemoteError(`could not run ${cmd}: ${r.error.message}`);
@@ -750,6 +823,9 @@ export async function fetchRemotePackage(flags, { log } = {}) {
   }
   const signedUrl = data.url;
   const expiresAt = typeof data.expires_at === 'string' ? data.expires_at : null;
+  const expectedDigest = typeof data.digest === 'string' && /^[a-f0-9]{64}$/i.test(data.digest.trim())
+    ? data.digest.trim().toLowerCase()
+    : null;
 
   // 2. Decide the archive format from the object name baked into the signed URL's path.
   const objectName = basename(new URL(signedUrl).pathname);
@@ -764,6 +840,17 @@ export async function fetchRemotePackage(flags, { log } = {}) {
   const downloadPath = join(downloadBase, `${inputs.name}@${inputs.version}${archive.ext}`);
   log?.info(`downloading archive → ${downloadPath} …`);
   await downloadArchive(signedUrl, downloadPath);
+
+  if (expectedDigest) {
+    const actual = sha256File(downloadPath);
+    if (actual !== expectedDigest) {
+      throw new RemoteError(
+        `package digest mismatch — expected sha256 ${expectedDigest}, got ${actual}`);
+    }
+    log?.info('package digest verified (sha256)');
+  } else {
+    log?.info('hub did not provide a package digest — skipping integrity check');
+  }
 
   // 4. Extract into PACKAGE_BASE_DIR/<name>@<version>, overwrite-in-place via stage→swap so a failed
   //    extract never leaves a half-written package where install.mjs would pick it up.

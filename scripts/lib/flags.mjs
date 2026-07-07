@@ -21,7 +21,7 @@ export const FLAG_SPEC = {
   install: {
     bool: ['--dry-run', '--status', '--uninstall', '--respect-locks', '--install-skills-as-user',
       '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available',
-      '--prune-installed', '--copy-projects', '--removed', '--optional'],
+      '--prune-installed', '--copy-projects', '--removed', '--optional', '--run-build'],
     value: ['--type', '--include', '--exclude'],
   },
 };
@@ -90,7 +90,8 @@ Usage: node scripts/install.mjs [<package>] [options]
   <package>  directory containing ai1-package.yaml (or the file itself); default '.'
 
 Options:
-  --dry-run                  preview only; zero DB/fs writes (services/projects: build only)
+  --dry-run                  preview only; zero DB/fs writes (services/projects: no build or apply)
+  --run-build                with --dry-run: run service/project build commands (default: skipped)
   --status                   report per-component install state
   --uninstall                remove the package's components (reverse order)
   --list-installed           print the install log (sorted by type, then name) and exit; standalone

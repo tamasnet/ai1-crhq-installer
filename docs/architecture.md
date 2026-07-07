@@ -11,7 +11,7 @@ Five CLIs sit on a shared library in `scripts/lib/`:
 | `scripts/install.mjs` | Install/status/uninstall packages; dry-run; sandbox lifecycle; package availability reports. | satellite DB for skills/recipes/agents/jobs; filesystem/nginx/PM2 for services/projects. |
 | `scripts/sync.mjs` | Export live satellite state back into a package; `--mirror` creates restorable backups. | satellite DB and installed skill/agent files. |
 | `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, install-state push, GitHub token, package download. | Network only. |
-| `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; currently `pull-config`, `push-install`, and `install-package`. | Network only through remote client calls; `install-package` then invokes the local installer. |
+| `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; `pull-config`, `push-install`, `install-package`, and `drift-report`. | Network only through remote client calls; `install-package` then invokes the local installer. |
 | `scripts/drift.mjs` | Read-only drift report: compare install-log components against source packages; list orphans. | satellite DB, filesystem, local package stores. |
 | `scripts/polaris.mjs` | GitHub Client Repository clone helper. | Network + local `git`; uses hub-provided GitHub token. |
 
@@ -46,7 +46,7 @@ install.mjs <package> [flags]
   -> report and close DB
 ```
 
-Uninstall uses the reverse component order. Status is read-only. Dry-run records intended changes without DB/filesystem writes, except that service/project build commands are executed to surface build failures while nginx/PM2 apply is skipped.
+Uninstall uses the reverse component order. Status is read-only. Dry-run records intended changes without DB/filesystem writes; service/project build commands are skipped unless `--run-build` is passed, and nginx/PM2 apply is always skipped.
 
 ## Sync flow
 
@@ -150,6 +150,9 @@ scripts/
 
 `remote.mjs heartbeat` refreshes `${REMOTE_BASE_DIR}/state.json` with `install_version` and `install_changed_at` from `${PACKAGES_DIR}/install.json` before it reports state to the hub.
 
+The optional cron helper `scripts/heartbeat-actions.sh` chains heartbeat with `action.mjs` when
+`actions.json` has queued items; it requires `jq` on `PATH`.
+
 `remote.mjs push-install` sends the full normalized `${PACKAGES_DIR}/install.json` state to the hub with `PUT /remote/install`.
 
 `action.mjs` reads `${REMOTE_BASE_DIR}/actions.json`, processes actions in order, and writes the
@@ -177,7 +180,7 @@ Services and projects are deployed inline by `core/service.mjs`:
 Safety constraints:
 
 - Services/projects are never modeled in sandbox mode.
-- Dry-run never applies nginx/PM2 changes.
+- Dry-run never applies nginx/PM2 changes; build commands run only when `--run-build` is passed.
 - A service/project named the satellite core service name is refused.
 - Secrets are written only to `.env` and never into PM2 config or logs.
 

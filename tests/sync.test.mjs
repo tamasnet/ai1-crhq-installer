@@ -453,6 +453,17 @@ try {
     assert.equal(pplan.projects[0].name, 'bare-project');
   });
 
+  await test('--add-project rejects invalid project names', async () => {
+    await assert.rejects(
+      () => runSync(sctx(), { packageDir: pkgDir('pkg-bad-name'), additions: { projects: ['../evil'] } }),
+      (e) => e.name === 'SyncError' && /invalid project name/.test(e.message),
+    );
+    await assert.rejects(
+      () => runSync(sctx(), { packageDir: pkgDir('pkg-bad-remove'), removals: { projects: ['..'] } }),
+      (e) => e.name === 'SyncError' && /invalid project name/.test(e.message),
+    );
+  });
+
   await test('--add-project rejects a live project that is its own git repository', async () => {
     const liveBase = pkgDir('live-git-project');
     const liveDir = join(liveBase, 'git-project');

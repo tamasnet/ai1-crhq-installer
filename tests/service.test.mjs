@@ -87,6 +87,32 @@ await test('dry-run: built, no live writes', async () => {
   assert.equal(existsSync(vhost), false, 'no nginx vhost written');
 });
 
+await test('dry-run: skips build commands by default', async () => {
+  const marker = join(tmpdir(), `ai1-build-skip-${Date.now()}`);
+  const buildDef = { ...def, build: [`touch ${marker}`] };
+  const logs = [];
+  const log = makeLogger({ dryRun: true });
+  const origWarn = log.warn.bind(log);
+  log.warn = (m) => { logs.push(m); origWarn(m); };
+  await installService({ ...svcCtx({ DRY_RUN: true }), log }, buildDef);
+  assert.equal(existsSync(marker), false, 'build command must not run');
+  assert.ok(logs.some((m) => /build commands skipped under --dry-run/.test(m)));
+  rmSync(marker, { force: true });
+});
+
+await test('dry-run --run-build: executes build commands', async () => {
+  const marker = join(tmpdir(), `ai1-build-run-${Date.now()}`);
+  const buildDef = { ...def, build: [`touch ${marker}`] };
+  const logs = [];
+  const log = makeLogger({ dryRun: true });
+  const origWarn = log.warn.bind(log);
+  log.warn = (m) => { logs.push(m); origWarn(m); };
+  await installService({ ...svcCtx({ DRY_RUN: true, RUN_BUILD: true }), log }, buildDef);
+  assert.equal(existsSync(marker), true, 'build command should run');
+  assert.ok(logs.some((m) => /--run-build/.test(m)));
+  rmSync(marker, { force: true });
+});
+
 await test('--sandbox: skipped cleanly (services not modelled)', async () => {
   const r = await installService(svcCtx({ SANDBOX: true }), def);
   assert.equal(r.verdict, 'ALREADY-INSTALLED');
