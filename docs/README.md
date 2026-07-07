@@ -21,8 +21,8 @@ Current v1.0 reference for `ai1-satellite-tools`, a satellite management skill t
 | Recipe | `recipes` | `install.mjs`, `sync.mjs` | Full DB coverage |
 | Agent | `agents`, joins, brain files under `AGENT_BRAINS_DIR/<key>` | `install.mjs`, `sync.mjs` | Full DB/filesystem coverage |
 | Job | `background_jobs` | `install.mjs`, `sync.mjs` | Full DB coverage |
-| Service | `${SERVICES_BASE_DIR:-~/services}/<name>`, nginx, PM2 | `install.mjs` only | Skipped in sandbox; dry-run builds but does not apply |
-| Project | `/opt/projects/user/<name>` symlink/copy, nginx, PM2 | `install.mjs`; initial `sync.mjs --add-project` | Skipped in sandbox; dry-run builds but does not apply |
+| Service | `${SERVICES_BASE_DIR:-~/services}/<name>`, nginx, PM2 | `install.mjs` only | Skipped in sandbox; dry-run skips nginx/PM2 apply (build skipped unless `--run-build`) |
+| Project | `/opt/projects/user/<name>` symlink/copy, nginx, PM2 | `install.mjs`; initial `sync.mjs --add-project` | Skipped in sandbox; dry-run skips nginx/PM2 apply (build skipped unless `--run-build`) |
 
 ## Validation commands
 
@@ -31,3 +31,5 @@ npm test
 node scripts/install.mjs examples/bundle --sandbox --lifecycle
 node scripts/install.mjs examples/bundle --dry-run
 ```
+
+`--dry-run` skips service/project build commands; add `--run-build` to execute them during the preview.

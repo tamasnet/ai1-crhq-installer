@@ -1,5 +1,5 @@
 // index.mjs — public API barrel. The stable import surface for the CLI runner, package
-// install_entry scripts, and standalone installers. Canonical absolute import (OQ-U1):
+// install_entry scripts, and standalone installers. Canonical absolute import:
 //   import { createContext, upsertSkill, … } from
 //     '/opt/projects/crhq-satellite/user-skills/ai1-satellite-tools/scripts/lib/index.mjs';
 export { createContext, parseFlags, resolveSkillsBase, resolveBrains, resolveSchema } from './context.mjs';

@@ -81,4 +81,4 @@ npm test
 node scripts/install.mjs examples/bundle --sandbox --lifecycle
 ```
 
-Services and projects are skipped in sandbox mode because nginx and PM2 are live host resources. Use `--dry-run` first for any web-app package; a real service install mutates nginx, PM2, and `$SERVICES_BASE_DIR/<service>`, while a real project install mutates nginx, PM2, and `/opt/projects/user/<project>`.
+Services and projects are skipped in sandbox mode because nginx and PM2 are live host resources. A real service install mutates nginx, PM2, and `$SERVICES_BASE_DIR/<service>`; a real project install mutates nginx, PM2, and `/opt/projects/user/<project>`.

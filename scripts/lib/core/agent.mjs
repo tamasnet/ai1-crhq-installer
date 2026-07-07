@@ -1,4 +1,4 @@
-// core/agent.mjs — agents table (PK key) + agent_skills / agent_recipes join sync (C6).
+// core/agent.mjs — agents table (PK key) + agent_skills / agent_recipes join sync.
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { writeIfChanged, copyTree } from '../fs.mjs';

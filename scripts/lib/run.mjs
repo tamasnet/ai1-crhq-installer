@@ -1,6 +1,6 @@
 // run.mjs — the shared plan dispatcher used by both the CLI runner (install.mjs) and the sandbox
 // lifecycle suite, so they exercise identical code paths. Order = skills → recipes → agents →
-// jobs → services → projects (D-4); uninstall reverses (C13). Continue-and-report: one failing component is
+// jobs → services → projects; uninstall reverses. Continue-and-report: one failing component is
 // recorded but doesn't abort the rest.
 import * as skill from './core/skill.mjs';
 import * as recipe from './core/recipe.mjs';
@@ -13,14 +13,14 @@ import { makeFilter, hasFilter } from './filter.mjs';
 export const ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services', 'projects'];
 
 // The canonical identifier a --include/--exclude filter is tested against — the same value the run
-// summary prints. Every component type carries `name` (for agents it maps to agents.key — D-23).
+// summary prints. Every component type carries `name` (for agents it maps to agents.key).
 const nameOf = (type, def) => def.name;
 
 // Resolve the effective operation for a component given its `handling` mode, the run mode, and the
 // --removed/--optional activation flags. Returns the DISPATCH verb to apply ('upsert' | 'remove' |
 // 'status') or null to SKIP the component entirely.
 //
-//   normal   — install→upsert, uninstall→remove, status→status (the historical behavior).
+//   normal   — install→upsert, uninstall→remove, status→status (the default behavior).
 //   removed  — tombstone for a component dropped from the package. Inert unless --removed; with
 //              --removed it REMOVES the component on BOTH install and uninstall (and reports its live
 //              state under --status). Files may be gone, so it is only ever removed, never upserted.

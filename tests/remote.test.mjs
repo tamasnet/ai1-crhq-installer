@@ -22,7 +22,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 // event loop, so an in-process HTTP server could never answer the child's request (deadlock). The
 // stub replicates the register contract enough to exercise the success + error paths: bootstrap
 // 'good-secret' (else 401); remote_id 'taken' is a 409; else 201 + a minted token.
-// The GET /remote/config half mirrors apps/api routes/remote.ts enough to exercise the client's
+// The GET /remote/config half mirrors the hub contract enough to exercise the client's
 // success / conditional / auth paths: Bearer '<id>.SECRETvalue' is valid; remote_id 'sat-403' is a
 // valid token on a not-yet-active remote (403); config is version 5 with an ETag, and an
 // If-None-Match of '5' takes a bodyless 304.

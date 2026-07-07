@@ -10,12 +10,12 @@
 //
 //   mode 'sync' (default): the MANIFEST is the authority. With no --add-* / --remove-* flags, export
 //     each component the manifest lists. When any --add-* or --remove-* is present, only those
-//     mutations run (Phase 2 is skipped — run plain sync afterward to export the rest). --add-project
+//     mutations run (Step 2 is skipped — run plain sync afterward to export the rest). --add-project
 //     moves the live project into the package and leaves a symlink. Nothing is removed unless
 //     --remove-*; package-level version is left untouched; DB additions are normalized to the
 //     distributable default (org/locked skills).
 //
-//   mode 'mirror' (`--mirror`, the former `backup`): the LIVE SATELLITE is the authority. Make the
+//   mode 'mirror' (`--mirror`): the LIVE SATELLITE is the authority. Make the
 //     package mirror it — within the --type/--include/--exclude scope:
 //       • new live components (curated: org/user skills, active recipes, non-system active
 //         agents/jobs) not yet in the manifest are added, preserving fidelity (a user skill keeps
@@ -30,7 +30,7 @@
 //       • the run returns an `installLog` delta (components it included vs. removed) so the CLI can
 //         reconcile the global install log (${PACKAGES_DIR}/install.json) to the live satellite for
 //         exactly the components this mirror carries — installed slots upserted (attributed to this
-//         package), removed ones dropped (D-48). Plain sync returns an empty delta.
+//         package), removed ones dropped. Plain sync returns an empty delta.
 //
 // Manifest is updated in place when needed (versions, new/removed entries, package version). The
 // package-level `version` is auto-incremented ONLY in mirror mode; plain sync never touches it.
@@ -40,7 +40,7 @@ import { join, basename, extname, dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 // Import siblings directly (not the index barrel) so sync.mjs can itself be re-exported from index
-// without an import cycle — the same convention the former backup.mjs followed.
+// without an import cycle.
 import { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
 import { safeName, writeIfChanged, removeTree, moveTree, ensureSymlink, pathExistsOrLink } from './fs.mjs';
 import { validateManifest, readWebAppConfig } from './manifest.mjs';
@@ -66,7 +66,7 @@ function validateProjectSegment(name) {
   }
 }
 
-// True iff `dir` is inside a git working tree (D-49). sync edits the package IN PLACE — git is the
+// True iff `dir` is inside a git working tree. sync edits the package IN PLACE — git is the
 // recovery net for a bad run — so the CLI refuses a non-git destination unless --force. For a
 // not-yet-created bootstrap dir (`<repo>/user` that mirror will create) the check walks up to the
 // nearest existing ancestor, so a new subdir inside a repo still counts as git-safe. Shells out to
@@ -278,7 +278,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
   const isMirror = mode === 'mirror';
   const preserveFidelity = isMirror && !normalize;
 
-  // Scope: --type / --include / --exclude apply in both plain sync (Phase 2) and mirror (all phases).
+  // Scope: --type / --include / --exclude apply in both plain sync (Step 2) and mirror (all steps).
   const scoped = Array.isArray(typeScope) || hasFilter(filterSpec);
   const typeSet = Array.isArray(typeScope) ? new Set(typeScope) : null;
   const nameMatch = makeFilter(filterSpec);
@@ -293,7 +293,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
   for (const name of [...(additions.projects ?? []), ...(removals.projects ?? [])]) {
     validateProjectSegment(name);
   }
-  // Plain sync with --add-* / --remove-* performs only those mutations; skip Phase 2.
+  // Plain sync with --add-* / --remove-* performs only those mutations; skip Step 2.
   const mutationOnly = !isMirror && (explicitAdds || explicitRemoves);
 
   if (!manifestExists && !isMirror && !explicitAdds) {
@@ -327,7 +327,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
   let manifestDirty = !manifestExists;   // bootstrapped manifests must always be written
   let contentChanged = false;            // any byte actually written/removed → drives the mirror version bump
   const results = [];
-  // Mirror-only: the delta the CLI applies to the global install log (D-48). `logInstalled` = the
+  // Mirror-only: the delta the CLI applies to the global install log. `logInstalled` = the
   // components this run faithfully exported into the package (so install.json marks them installed,
   // attributed to this mirror package); `logRemoved` = ones gone from the satellite (slot dropped).
   // Populated only in mirror mode; skips/failures (not faithfully captured) are excluded.
@@ -358,10 +358,10 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
     }
   }
 
-  // (type:name) handled as an addition — Phase 2 must not re-export/re-count them.
+  // (type:name) handled as an addition — Step 2 must not re-export/re-count them.
   const handled = new Set();
 
-  // ── Phase 0: explicit removals (--remove-* in plain sync) ─────────────────────────────────────
+  // ── Step 0: explicit removals (--remove-* in plain sync) ─────────────────────────────────────
   if (!isMirror) {
     for (const type of [...SYNC_TYPES, 'projects']) {
       for (const name of (removals[type] ?? [])) {
@@ -394,7 +394,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
     for (const e of (manifest.components.skills ?? [])) skillNamesInManifest.add(basename(e.path));
   }
 
-  // ── Phase 1: additions ────────────────────────────────────────────────────────────────────────
+  // ── Step 1: additions ────────────────────────────────────────────────────────────────────────
   for (const name of addQueue.projects) {
     const type = 'projects';
     const existing = manifest.components.projects ?? [];
@@ -483,7 +483,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
     }
   }
 
-  // ── Phase 2: sync existing manifest entries (mirror also removes the dead ones) ────────────────
+  // ── Step 2: sync existing manifest entries (mirror also removes the dead ones) ────────────────
   if (!mutationOnly) for (const type of SYNC_TYPES) {
     const list = manifest.components[type] ?? [];
     const kept = [];
@@ -494,7 +494,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
 
       const name = deriveName(packageDir, type, entry.path);
 
-      if (handled.has(`${type}:${name}`)) { kept.push(entry); continue; }   // already exported in Phase 1
+      if (handled.has(`${type}:${name}`)) { kept.push(entry); continue; }   // already exported in Step 1
       if (scoped && !inScope(type, name)) { kept.push(entry); continue; } // out of scope → untouched
 
       const row = await findRow(db, type, name);
@@ -584,7 +584,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
     }
   }
 
-  // ── Phase 3: mirror package-version bump (only when content actually changed) ──────────────────
+  // ── Step 3: mirror package-version bump (only when content actually changed) ──────────────────
   if (isMirror && manifestExists && contentChanged) {
     const cur = manifest.version;
     const next = Number.isInteger(cur) ? cur + 1 : 1;   // non-integer/legacy date label → reset to 1
@@ -599,7 +599,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
     }
   }
 
-  // ── Phase 4: write the updated manifest if anything changed ────────────────────────────────────
+  // ── Step 4: write the updated manifest if anything changed ────────────────────────────────────
   if (manifestDirty) {
     if (dry) {
       log.dry(`write ai1-package.yaml → ${manifestPath}`);
@@ -622,7 +622,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
     { added: 0, synced: 0, unchanged: 0, removed: 0, skipped: 0, failed: 0 },
   );
 
-  // Mirror's effect on the global install log, for the CLI to apply (D-48). Empty in plain sync.
+  // Mirror's effect on the global install log, for the CLI to apply. Empty in plain sync.
   const installLog = { installed: logInstalled, removed: logRemoved };
 
   return { results, counts, manifest, manifestPath, installLog };

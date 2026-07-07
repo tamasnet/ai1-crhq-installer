@@ -137,7 +137,7 @@ try {
     assert.deepEqual(job.requires, ['ai1-sample-skill'], 'requires re-derived from the script skill segment');
   });
 
-  await test('agent brain round-trips into the package; runtime dirs are excluded (D-50)', async () => {
+  await test('agent brain round-trips into the package; runtime dirs are excluded', async () => {
     const brainDir = join(process.env.AGENT_BRAINS_DIR, 'ai1-sample-agent');
     assert.ok(existsSync(join(brainDir, 'identity.md')), 'install copied the brain (sibling file) to AGENT_BRAINS_DIR/<key>');
     // Simulate runtime state the agent wrote into its own brain after install.
@@ -290,7 +290,7 @@ try {
     assert.ok(existsSync(join(dirE, 'recipes', 'ghost.md')), 'ghost file retained');
   });
 
-  await test('plain sync --type scopes Phase 2 to one component type', async () => {
+  await test('plain sync --type scopes existing-entry export to one component type', async () => {
     const dirT = pkgDir('pkg-type-plain');
     await mirror(dirT);
 
@@ -308,7 +308,7 @@ try {
     assert.match(readFileSync(recipePath, 'utf8'), /stale recipe/, 'recipe out of --type scope left untouched');
   });
 
-  await test('plain sync --include scopes Phase 2 by component name', async () => {
+  await test('plain sync --include scopes existing-entry export by component name', async () => {
     const dirI = pkgDir('pkg-include-plain');
     await mirror(dirI);
 
@@ -522,7 +522,7 @@ try {
     assert.equal(readFileSync(join(dirG, 'ai1-package.yaml'), 'utf8'), before, 'manifest byte-identical');
   });
 
-  // ── install.json reconciliation (D-48): the delta runSync returns, applied like the CLI does ────
+  // ── install.json reconciliation: the delta runSync returns, applied like the CLI does ────
   console.log('\nmirror → install.json:');
 
   await test('mirror records its components in install.json, attributed to the mirror package', async () => {

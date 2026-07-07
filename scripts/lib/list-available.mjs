@@ -1,4 +1,4 @@
-// list-available.mjs — a discovery view across the satellite's LOCAL package stores (D-47). It
+// list-available.mjs — a discovery view across the satellite's LOCAL package stores. It
 // answers "what can I install, and what's the state of what I already installed?" without touching
 // the DB. It scans the two places install-ready packages land on a satellite —
 //   • PACKAGE_BASE_DIR (default ~/packages) — where `remote.mjs get-package` extracts downloaded
@@ -6,7 +6,7 @@
 //   • REPOS_BASE_DIR   (default ~/repos)    — where `polaris.mjs init` clones Client Repositories,
 //     each pairing a `platform/` and a `user/` Ai1 Package (resolveReposBase, lib/polaris.mjs)
 // — enumerates every component each discovered package declares, then cross-references
-// ${PACKAGES_DIR}/install.json (the D-24 install log) to label each component AT EACH VERSION (a
+// ${PACKAGES_DIR}/install.json (the install log) to label each component AT EACH VERSION (a
 // component found at multiple versions across packages is listed once per version):
 //   available — declared by a local package at this version, not the version in the install log
 //   installed — the version recorded in the install log, still declared by a local package
@@ -90,7 +90,7 @@ export function sortAvailable(rows) {
 // AND version (`type:name@version`) — so a component that exists at multiple versions across packages
 // shows as one row PER version (each with its own providers/status), while same-version copies from
 // different packages stay one row with multiple providers (the genuine duplicate case). `stores` =
-// [{ label, base }] (duplicate/empty bases are ignored). `installLog` = the parsed D-24 log. Returns
+// [{ label, base }] (duplicate/empty bases are ignored). `installLog` = the parsed install log. Returns
 // { rows, warnings, scanned }:
 //   rows     — sorted; each { type, name, version, status, providers[], log } where providers lists
 //              every package that declares the component at THIS version (so duplicate sources are

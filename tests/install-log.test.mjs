@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// install-log verification (D-24) — ${PACKAGES_DIR}/install.json bookkeeping. DB-free: drives
+// install-log verification — ${PACKAGES_DIR}/install.json bookkeeping. DB-free: drives
 // updateInstallLog directly with a real parsed plan (examples/bundle) and synthetic results.
 // The log wraps a FLAT list of component entries in install-level metadata. There is one component
 // slot per `type:name`; provenance (package + package_version) rides on each entry, so re-install
@@ -210,7 +210,7 @@ try {
     assert.ok(out.indexOf('my-skill') < out.indexOf('nightly'), 'skill (type rank 0) before job');
   });
 
-  // ── updateInstallLogForMirror (D-48): sync --mirror reconciles install.json ──────────────────
+  // ── updateInstallLogForMirror: sync --mirror reconciles install.json ──────────────────
 
   await test('mirror: upserts included components (attributed to the mirror pkg), drops removed ones', () => {
     const dir = freshDir();

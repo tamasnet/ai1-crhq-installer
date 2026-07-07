@@ -1,4 +1,4 @@
-// log.mjs — prefixed logging, dry-run markers, canon completion strings (C7), verdict taxonomy.
+// log.mjs — prefixed logging, dry-run markers, canonical completion strings, verdict taxonomy.
 
 const PREFIX = '[ai1]';
 
@@ -14,11 +14,11 @@ export const VERDICT = {
   SKIPPED: 'SKIPPED',        // handling: removed/optional entry not acted on this run (exit-neutral)
   // Export verdicts — returned by the core export* fns and consumed by sync (incl. --mirror).
   BACKUP_OK: 'BACKUP-OK',    // export: component written to the package
-  BACKUP_SKIP: 'BACKUP-SKIP',// export: component not representable in the manifest — skipped (D-28)
+  BACKUP_SKIP: 'BACKUP-SKIP',// export: component not representable in the manifest — skipped
   BACKUP_FAIL: 'BACKUP-FAIL',// export: component export failed
 };
 
-// Severity → exit-code contribution (api-design §13). 0 = success/already; 1 = failure class.
+// Severity → exit-code contribution. 0 = success/already; 1 = failure class.
 export const SEVERITY = {
   [VERDICT.OK]: 0,
   [VERDICT.ALREADY]: 0,
@@ -42,9 +42,9 @@ export function makeLogger({ dryRun = false, quiet = false } = {}) {
     ok: (m) => out(`${PREFIX} ✓ ${m}`),
     warn: (m) => out(`${PREFIX} ⚠ ${m}`),
     error: (m) => out(`${PREFIX} ❌ ${m}`),
-    // C7: dry-run output must contain "would" / "dry".
+    // Dry-run output must contain "would" / "dry".
     dry: (m) => out(`${PREFIX} [dry-run] would ${m}`),
-    // C7: completion strings the harness greps — do not paraphrase.
+    // Completion strings the harness greps — do not paraphrase.
     installComplete: () => out('✅ Package installed successfully.'),
     uninstallComplete: () => out('Uninstall complete.'),
     summary(results) {

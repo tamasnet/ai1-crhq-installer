@@ -95,14 +95,20 @@ Component versions are positive integers.
 
 The package-level `version` is separate. `sync.mjs --mirror` increments it only when package content changes.
 
+### Component names
+
+Names are used directly as database keys and filesystem path segments, so they are validated at manifest load and a violation rejects the whole package before any write. The package `name` and every component `name` (skill/recipe/agent/job/service/project, plus a `handling: removed` tombstone name) must contain only letters, digits, `.`, `_`, and `-`, and may not be `.` or `..`. This prevents path traversal (a name can never contain `/`).
+
+A service/project `app_name` (the nginx vhost subdomain) is stricter still — a DNS label: letters, digits, and `-` only. When `app_name` is omitted it defaults to `name`.
+
 ### Component handling
 
 Every component entry may carry an optional `handling` field that controls whether and how the installer acts on it. It applies to all six component types.
 
 | Value | Install | Uninstall | Notes |
 |-------|---------|-----------|-------|
-| `normal` (default) | install/update | remove | The historical behavior; assumed when `handling` is omitted. |
-| `removed` | no-op, unless `--removed` → **remove** | no-op, unless `--removed` → **remove** | Tombstone for a component that used to ship in the package and has since been dropped. |
+| `normal` (default) | install/update | remove | Assumed when `handling` is omitted. |
+| `removed` | no-op, unless `--removed` → **remove** | no-op, unless `--removed` → **remove** | Tombstone for a component no longer shipped in the package. |
 | `optional` | skipped, unless `--optional` → install | remove (no flag required) | Opt-in component. Uninstall and status treat it like a normal component. |
 
 ```yaml
@@ -236,7 +242,7 @@ build:
   - npm run build
 ```
 
-A real install copies the service source to `${SERVICES_BASE_DIR:-~/services}/<name>`, writes `.env` at mode `0640`, writes `ecosystem.config.cjs`, writes nginx config under `/etc/nginx/projects.d`, starts/saves PM2, and reloads nginx. Sandbox mode skips services. Dry-run runs the build command and renders the plan but skips nginx/PM2 apply.
+A real install copies the service source to `${SERVICES_BASE_DIR:-~/services}/<name>`, writes `.env` at mode `0640`, writes `ecosystem.config.cjs`, writes nginx config under `/etc/nginx/projects.d`, starts/saves PM2, and reloads nginx. Sandbox mode skips services. Dry-run renders the plan but skips nginx/PM2 apply; build commands are skipped by default (pass `--run-build` to execute them).
 
 ### Project: `projects/<name>/project.yaml`
 
@@ -252,7 +258,7 @@ app_name: my-project
 ssl: true
 ```
 
-Projects use the same nginx/PM2 schema as services, including the `build` field (a single shell command string or a YAML list run sequentially). A real install creates or updates `/opt/projects/user/<name>` as a symlink to the project directory inside the package, then writes `.env`, `ecosystem.config.cjs`, nginx config, and PM2 state the same way services do. Pass `--copy-projects` to copy the project source into `/opt/projects/user/<name>` instead of symlinking. Sandbox mode skips projects. Dry-run runs the build command and renders the plan but skips nginx/PM2 apply.
+Projects use the same nginx/PM2 schema as services, including the `build` field (a single shell command string or a YAML list run sequentially). A real install creates or updates `/opt/projects/user/<name>` as a symlink to the project directory inside the package, then writes `.env`, `ecosystem.config.cjs`, nginx config, and PM2 state the same way services do. Pass `--copy-projects` to copy the project source into `/opt/projects/user/<name>` instead of symlinking. Sandbox mode skips projects. Dry-run renders the plan but skips nginx/PM2 apply; build commands are skipped by default (pass `--run-build` to execute them).
 
 `sync.mjs --add-project=<name>` moves `/opt/projects/user/<name>` into `projects/<name>` inside the package, adds the manifest entry, and replaces the live directory with a symlink. If the live project has no `project.yaml`, a minimal valid default (`name`, `version: 1`, `start: node server.js`) is generated inside the package for the author to edit. Mirror mode never auto-adds projects, and later sync/mirror runs do not export project content; git is the source of truth after the initial add.
 

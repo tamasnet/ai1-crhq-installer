@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Phase 5 verification — generic runner (install.mjs): preflight + install_entry hook + flag
+// Generic runner (install.mjs) verification: preflight + install_entry hook + flag
 // forwarding, driven through the real CLI via spawnSync against tests/fixtures/entry-pkg.
 // Run from the project root:  node tests/runner.test.mjs
 import assert from 'node:assert/strict';

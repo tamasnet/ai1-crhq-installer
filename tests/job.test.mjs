@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Phase 4 verification — background_jobs install. Self-contained: provisions a sandbox, runs a
+// background_jobs install verification. Self-contained: provisions a sandbox, runs a
 // focused skill+job lifecycle, then exercises upsertJob/removeJob/statusJob with row assertions
-// (id minting, script_args resolution, schedule-alias expansion, C12 requires prereq, dry-run).
+// (id minting, script_args resolution, schedule-alias expansion, requires-prereq guard, dry-run).
 // Tears down. Run from the project root:  node tests/job.test.mjs
 import assert from 'node:assert/strict';
 import { rmSync, mkdirSync, readFileSync } from 'node:fs';
@@ -31,7 +31,7 @@ try {
   const skillDir = join(sb.baseDir, skillDef.key);
   const expectedScript = join(sb.baseDir, 'ai1-sample-skill', 'scripts', 'hello.js');
 
-  // ── A. Focused lifecycle FIRST on a pristine schema (Phase 4 acceptance test) ────────────
+  // ── A. Focused lifecycle FIRST on a pristine schema ────────────
   console.log('job lifecycle (skill + job):');
   await test('full lifecycle → ALL PASS (job present post-install, gone post-uninstall)', async () => {
     const lplan = { skills: [skillDef], recipes: [], agents: [], jobs: [jobDef], services: [] };
@@ -45,7 +45,7 @@ try {
 
   console.log('\njob install:');
 
-  await test('C12 prereq: missing required skill dir → PrereqError', async () => {
+  await test('prereq: missing required skill dir → PrereqError', async () => {
     await assert.rejects(
       () => upsertJob(ctx, jobDef),
       (e) => e.name === 'PrereqError' && e.missing.includes('ai1-sample-skill'),

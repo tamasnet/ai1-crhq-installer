@@ -1,4 +1,4 @@
-// parse.mjs — frontmatter splitting (hand-rolled, D-6) + YAML parsing. YAML uses a vendored
+// parse.mjs — frontmatter splitting (hand-rolled) + YAML parsing. YAML uses a vendored
 // single-file bundle of `yaml` (scripts/lib/vendor/yaml.mjs) so the skill installs with ZERO
 // `npm install` — no runtime dependencies. knex/pg are resolved from the satellite at runtime.
 import { parse as parseYaml } from './vendor/yaml.mjs';
@@ -19,7 +19,7 @@ export function parseFrontmatter(md) {
 }
 
 // ── YAML emission (the backup path) ──────────────────────────────────────────────────────────
-// Hand-rolled like parseFrontmatter (D-6/D-29): the vendored bundle only exports `parse`.
+// Hand-rolled like parseFrontmatter: the vendored bundle only exports `parse`.
 // Correct by construction: a scalar is emitted plain only when it provably can't be misread;
 // everything else becomes a JSON double-quoted string, which is valid YAML (JSON escapes are a
 // subset of YAML double-quote escapes). Round-trip safety is asserted in tests against the

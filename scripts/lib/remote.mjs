@@ -1,10 +1,10 @@
 // remote.mjs — the Ai1 Platform Hub client used by the `remote.mjs` CLI. The satellite's side of
-// the hub contract: it registers the satellite as a *remote*, and (in later subcommands) will poll
-// config, report state, and pull management instructions. DB-free and network-only — the hub is
-// reached over HTTPS with Node's built-in `fetch` (no runtime deps), and the resulting identity is
-// persisted to ${REMOTE_BASE_DIR}/id.json.
+// the hub contract: it registers the satellite as a *remote*, polls config, reports state, pushes
+// install state, resolves GitHub tokens, and downloads packages. DB-free and network-only — the hub
+// is reached over HTTPS with Node's built-in `fetch` (no runtime deps), and the resulting identity
+// is persisted to ${REMOTE_BASE_DIR}/id.json.
 //
-// Registration (`POST /remote/register`, see ai1-platform-hub apps/api): a satellite presents a
+// Registration (`POST /remote/register`): a satellite presents a
 // shared *bootstrap token* plus the `remote_id` it claims and receives a per-remote *token* in
 // return — `<remote_id>.<secret>`, surfaced exactly once. That token is the credential for every
 // later authenticated call, so it is the one thing id.json must not lose; we therefore refuse to
@@ -50,7 +50,7 @@ export function statePath(base = resolveRemoteBase()) {
 }
 
 // Where heartbeat caches the advisory actions the hub returns in its state-report response. Acting
-// on them is out of scope here (a later subcommand/consumer does that); remote.mjs only records the
+// on them is out of scope here (action.mjs does that); remote.mjs only records the
 // array, wrapped with the time it was fetched.
 export function actionsPath(base = resolveRemoteBase()) {
   return join(base, 'actions.json');
@@ -68,7 +68,7 @@ export function resolveDownloadBase() {
   return process.env.DOWNLOAD_BASE_DIR || tmpdir();
 }
 
-// remote_id: explicit flag wins, else the SATELLITE_ID convention (D-27/D-37)
+// remote_id: explicit flag wins, else the SATELLITE_ID convention
 // (SATELLITE_ID env, else hostname minus its conventional `crhq-` prefix).
 export function resolveRemoteId(flag) {
   return flag || process.env.SATELLITE_ID || hostname().replace(/^crhq-/, '');
@@ -267,7 +267,7 @@ export function unregisterRemote(flags, { log } = {}) {
 
 // --- pull-config: poll the hub for this remote's configuration ---------------------------------
 //
-// `GET {hub}/remote/config` (see ai1-platform-hub apps/api routes/remote.ts): a per-remote-token
+// `GET {hub}/remote/config`: a per-remote-token
 // authenticated poll. The opaque config payload is the body; its monotonic `config_version` rides in
 // the `ETag` header, not the body. We write the raw payload to config.json (what the satellite
 // consumes) and the version to a state.json sidecar, so the *next* poll can echo the version in
@@ -398,16 +398,16 @@ export async function pullRemoteConfig(_flags, { now = new Date(), log } = {}) {
 
 // --- heartbeat: report this remote's state to the hub -----------------------------------------
 //
-// `PUT {hub}/remote/state` (see ai1-platform-hub apps/api routes/remote.ts): a per-remote-token
+// `PUT {hub}/remote/state`: a per-remote-token
 // authenticated full-replace report. The body is the opaque state object; the hub stamps it with a
 // server `reported_at` and echoes that back, along with an `actions` array — advisory instructions
 // the hub wants the remote to perform. The report is the local state.json sidecar (the
 // config_version / config_fetched_at pull-config maintains) plus the install log's install_version /
-// install_changed_at. The payload must not carry server-managed keys (the hub 400s those); none of
+// install_changed_at. The payload must not carry server-managed keys (the hub 400s those).
 //
 // remote.mjs's sole responsibility for the actions is to record them: on success it writes the array
-// to actions.json (wrapped with `actions_fetched_at`). *Acting* on them is out of scope here — a
-// later consumer reads actions.json and performs/clears them.
+// to actions.json (wrapped with `actions_fetched_at`). *Acting* on them is out of scope here —
+// action.mjs reads actions.json and performs/clears them.
 
 function installStateSummary() {
   const state = readInstallState();
@@ -458,7 +458,7 @@ export async function reportRemoteState(_flags, { now = new Date(), log } = {}) 
         || !Array.isArray(data.actions)) {
       throw new RemoteError('hub returned 200 but an unrecognized state-report body');
     }
-    // Record the advisory actions for a later consumer to act on; remote.mjs does not perform them.
+    // Record the advisory actions for action.mjs to act on; remote.mjs does not perform them.
     const dest = writeJsonFile(actionsPath(base), {
       actions: data.actions,
       actions_fetched_at: now.toISOString(),
@@ -543,7 +543,7 @@ export async function pushRemoteInstall(_flags, { log } = {}) {
 
 // --- github-token: resolve the GitHub token this remote should use ----------------------------
 //
-// `GET {hub}/remote/github-token` (see ai1-platform-hub apps/api routes/remote.ts): a per-remote-token
+// `GET {hub}/remote/github-token`: a per-remote-token
 // authenticated resolver. The raw token *is* the 200 body (text/plain, no JSON wrapping, no trailing
 // newline); the response is `no-store` since it carries a live secret. A `404` is a legitimate answer
 // — "no token for this remote right now" — not a transient error. Nothing is persisted locally; the
@@ -597,8 +597,8 @@ export async function fetchGithubToken(_flags, { log } = {}) {
 
 // --- get-package: resolve, download, and extract a registered package -------------------------
 //
-// `GET {hub}/remote/package?name=<n>&version=<v>&format=json` (see ai1-platform-hub apps/api
-// routes/remote.ts): a per-remote-token authenticated resolver. With `format=json` the hub returns
+// `GET {hub}/remote/package?name=<n>&version=<v>&format=json`: a per-remote-token authenticated
+// resolver. With `format=json` the hub returns
 // `{ url, expires_at }` and may include an optional `digest` — lowercase sha256 hex of the archive
 // bytes. When present, get-package verifies the downloaded file before extract. A short-lived,
 // pre-signed GCS GET URL carries its own auth in its query string (the default response is a 302
@@ -740,7 +740,7 @@ export function extractArchive(file, dest) {
 
 // --- complete-action: report a queued action's outcome back to the hub -----------------------
 //
-// `POST {hub}/remote/actions/{key}` (see ai1-platform-hub apps/api routes/remote.ts): a
+// `POST {hub}/remote/actions/{key}`: a
 // per-remote-token authenticated partial-merge patch on the caller's own action. `status` is the
 // only required and interpreted field; everything else is flat verbatim outcome passenger data
 // (e.g. `error_message`, `error_at`, `attempts`). Last-writer-wins / idempotent: re-POSTing an

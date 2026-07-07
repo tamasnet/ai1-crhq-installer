@@ -1,4 +1,4 @@
-// core/job.mjs — background_jobs table (PK id varchar). Coarse prereq guard (C12): each required
+// core/job.mjs — background_jobs table (PK id varchar). Coarse prereq guard: each required
 // skill's install dir must exist before we register the job. script resolves under SKILLS_BASE_DIR.
 import { join } from 'path';
 import { writeIfChanged } from '../fs.mjs';

@@ -1,4 +1,4 @@
-// context.mjs — the single place flags are parsed and env resolved (D-12). createContext() returns
+// context.mjs — the single place flags are parsed and env resolved. createContext() returns
 // a bound context shared by the CLI runner and any package install_entry hook, so both exercise
 // identical code paths.
 import { join } from 'path';
@@ -9,16 +9,16 @@ import { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
 import { UsageError } from './flags.mjs';
 import { formatCliTypeError, normalizeCliTypeScope } from './component-types.mjs';
 
-// SKILLS_BASE_DIR = the parent dir under which each skill's <key> folder is created (C2/D-19).
+// SKILLS_BASE_DIR = the parent dir under which each skill's <key> folder is created.
 export function resolveSkillsBase() {
   return process.env.SKILLS_BASE_DIR
     || (process.env.CRHQ_BASE_DIR && join(process.env.CRHQ_BASE_DIR, 'user-skills'))
     || '/opt/projects/crhq-satellite/user-skills';
 }
 
-// AGENT_BRAINS_DIR = the parent dir under which each agent's <key> brain folder is created (D-50) —
-// the agent-side analog of SKILLS_BASE_DIR. An agent component is now a directory (agents/<key>/
-// with AGENTS.md, like a skill's SKILL.md); install copies that whole tree to join(AGENT_BRAINS_DIR,
+// AGENT_BRAINS_DIR = the parent dir under which each agent's <key> brain folder is created — the
+// agent-side analog of SKILLS_BASE_DIR. An agent component is a directory (agents/<key>/ with
+// AGENTS.md, like a skill's SKILL.md); install copies that whole tree to join(AGENT_BRAINS_DIR,
 // key). Same vendor-neutral / CRHQ_BASE_DIR-relative / default shape as resolveSkillsBase() so the sandbox
 // can redirect it to a temp dir. The `documents/agent-brains` literal lives ONLY in the fallback +
 // default, never in core logic.

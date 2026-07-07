@@ -1,5 +1,5 @@
-// fs.mjs — filesystem helpers. Callers pass absolute paths rooted at ctx.SKILLS_BASE (C2). Every helper
-// honors dry-run (zero writes) and is idempotent (skips byte-identical content, GAP 5).
+// fs.mjs — filesystem helpers. Callers pass absolute paths rooted at ctx.SKILLS_BASE. Every helper
+// honors dry-run (zero writes) and is idempotent (skips byte-identical content).
 import {
   existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync,
   lstatSync, readlinkSync, symlinkSync, unlinkSync, renameSync,

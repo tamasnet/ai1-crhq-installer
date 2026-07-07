@@ -3,8 +3,8 @@
 // else load + validate the manifest and validate the CLI options (unsupported option / missing value
 // → usage exit 2) BEFORE any side effect; provision the sandbox (if asked) BEFORE building context
 // so the env redirect takes effect; preflight; run the plan (or the --sandbox --lifecycle suite);
-// invoke the package install_entry; report; tear down. Control flow per api-design §11. Lifecycle
-// hygiene (C8): db destroyed on every exit path.
+// invoke the package install_entry; report; tear down. Lifecycle hygiene: the db is destroyed on
+// every exit path.
 import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { spawnSync } from 'child_process';
@@ -16,7 +16,7 @@ import {
   runPruneInstalled, formatPruneReport,
 } from './lib/index.mjs';
 
-const stamp = () => `${Date.now()}${Math.floor(Math.random() * 1000)}`;  // C10
+const stamp = () => `${Date.now()}${Math.floor(Math.random() * 1000)}`;  // unique sandbox suffix
 const has = (argv, f) => argv.includes(f);
 // The package path is the (last) positional — same rule parseFlags uses. Needed up front so the
 // manifest's declared install_flags can be read before flags are validated.
@@ -46,7 +46,7 @@ try {
   }
 
   const ctx = await createContext(argv);
-  ctx.PACKAGE = { name: meta.name, version: meta.version };   // provenance for version-history change summaries (D-34)
+  ctx.PACKAGE = { name: meta.name, version: meta.version };   // provenance for version-history change summaries
   if (sb) ctx.log.info(`sandbox: schema=${sb.schema} baseDir=${sb.baseDir}`);
 
   await preflight(ctx);   // DB reachable + (write modes) SKILLS_BASE writable — else transport exit 2
@@ -58,8 +58,8 @@ try {
     process.exitCode = res.passed ? 0 : 1;
   } else {
     await runPlan(ctx, plan);
-    recordInstallLog(ctx, meta, plan, packageRoot);  // D-24 — skipped in dry-run/status
-    runInstallEntry(ctx, meta, packageRoot, argv);   // A4 / OQ-U2 — runs for install/uninstall/status
+    recordInstallLog(ctx, meta, plan, packageRoot);  // skipped in dry-run/status
+    runInstallEntry(ctx, meta, packageRoot, argv);   // runs for install/uninstall/status
     ctx.report();
   }
 } catch (e) {

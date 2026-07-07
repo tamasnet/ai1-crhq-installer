@@ -1,4 +1,4 @@
-// prereq.mjs — dependency guards that run BEFORE any write (C12). A failure throws PrereqError,
+// prereq.mjs — dependency guards that run BEFORE any write. A failure throws PrereqError,
 // which the runner maps to verdict PREREQ-MISSING (exit 1) so we never register a broken job.
 import { existsSync } from 'fs';
 import { isAbsolute, join } from 'path';

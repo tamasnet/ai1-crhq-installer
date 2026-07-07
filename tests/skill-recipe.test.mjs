@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Phase 2 verification — skill + recipe install paths. Self-contained: provisions a sandbox
+// Skill + recipe install-path verification. Self-contained: provisions a sandbox
 // schema + temp dir, exercises the primitives directly with row-level assertions, and tears down.
 // Run from the project root:  node tests/skill-recipe.test.mjs
 //
@@ -39,7 +39,7 @@ try {
     assert.equal(r.action, 'created');
     assert.equal(r.files, 2, 'SKILL.md + scripts/hello.js copied');
     const row = await skillRow();
-    assert.equal(row.skill_type, 'org', 'default registration is org (D-22)');
+    assert.equal(row.skill_type, 'org', 'default registration is org');
     assert.equal(row.locked, true, 'org skills install locked');
     assert.equal(row.skill_path, `db://skills/${skillDef.name}`);
     assert.equal(row.skill_dir, skillDir, 'still under SKILLS_BASE_DIR');
@@ -51,7 +51,7 @@ try {
     assert.ok(existsSync(join(skillDir, 'scripts', 'hello.js')));
   });
 
-  await test('version history: skill_versions row at version_num = package version (D-34)', async () => {
+  await test('version history: skill_versions row at version_num = package version', async () => {
     const rows = await ctx.db('skill_versions').where({ skill_name: skillDef.name });
     assert.equal(rows.length, 1, 'one snapshot recorded');
     assert.equal(rows[0].version_num, skillDef.version, 'version_num matches the integer package version');
@@ -159,7 +159,7 @@ try {
     assert.ok(row.description.length > 0);
   });
 
-  await test('version history: recipe_versions row at version_num = package version (D-34)', async () => {
+  await test('version history: recipe_versions row at version_num = package version', async () => {
     const id = (await recipeRow()).id;
     const rows = await ctx.db('recipe_versions').where({ recipe_id: id });
     assert.equal(rows.length, 1, 'one snapshot recorded');
@@ -228,7 +228,7 @@ try {
     assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /install_type/.test(e.message));
   });
 
-  await test('installer: plain integer ≤ current → ok; too-new → ManifestError (D-35)', () => {
+  await test('installer: plain integer ≤ current → ok; too-new → ManifestError', () => {
     const base = { name: 'p', version: 1, description: 'x', components: {} };
     validateManifest({ ...base, installer: INSTALLER_VERSION });   // requires this version → must not throw
     assert.throws(() => validateManifest({ ...base, installer: INSTALLER_VERSION + 1 }),
@@ -240,7 +240,7 @@ try {
       (e) => e instanceof ManifestError && /positive integer/.test(e.message));
   });
 
-  console.log('\nversion history (D-34):');
+  console.log('\nversion history:');
   await test('bump records each version; downgrade warns but records; current = MAX', async () => {
     const vctx = makeCtx();
     const d = (v) => ({ ...skillDef, key: 'ver-skill', name: 'ver-skill', version: v });

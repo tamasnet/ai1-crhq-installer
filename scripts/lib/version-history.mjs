@@ -1,5 +1,5 @@
-// version-history.mjs — round-trip a component's integer version through its CRHQ *_versions table
-// (D-34). skill_versions / recipe_versions / agent_versions are parallel: a per-entity integer
+// version-history.mjs — round-trip a component's integer version through its CRHQ *_versions table.
+// skill_versions / recipe_versions / agent_versions are parallel: a per-entity integer
 // `version_num` (UNIQUE per entity), where the live ("current") version is MAX(version_num). The FK
 // to the main table is ON DELETE CASCADE, so a real uninstall drops history automatically; the
 // FK-less --sandbox needs the explicit cleanup removeVersions() provides.
@@ -31,8 +31,8 @@ export async function currentVersion(db, type, fkValue) {
 }
 
 // Upsert the version_num row for an installed component, snapshotting its current body. Idempotent:
-// re-recording the same version merges the snapshot, never duplicates. Warns (warn-and-continue,
-// D-34) when the version is strictly lower than what's already recorded. No DB write in dry-run —
+// re-recording the same version merges the snapshot, never duplicates. Warns (warn-and-continue)
+// when the version is strictly lower than what's already recorded. No DB write in dry-run —
 // just logs the intent. The caller resolves fkValue (recipes need the row uuid).
 export async function recordVersion(ctx, type, { fkValue, version, name, description, body }) {
   const s = SPEC[type];

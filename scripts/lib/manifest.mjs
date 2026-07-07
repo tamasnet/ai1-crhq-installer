@@ -1,5 +1,5 @@
-// manifest.mjs — load + validate ai1-package.yaml and resolve it to an ordered install plan (A1).
-// Component sources are parsed into the def shapes consumed by lib/core/* (api-design §7).
+// manifest.mjs — load + validate ai1-package.yaml and resolve it to an ordered install plan.
+// Component sources are parsed into the def shapes consumed by lib/core/*.
 import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname, isAbsolute, resolve, basename, extname } from 'path';
 import { loadYaml, parseFrontmatter } from './parse.mjs';
@@ -15,8 +15,8 @@ const TYPE_ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services', 'projects
 // Per-component `handling` (optional, applies to EVERY component type) — how the installer treats a
 // manifest entry. The actual install/uninstall/skip decision lives in run.mjs (resolveHandling); the
 // manifest layer only validates the value and shapes the def.
-//   normal   — default; install on install, remove on uninstall (the historical behavior).
-//   removed  — a tombstone for a component that USED TO ship in the package but has been dropped.
+//   normal   — default; install on install, remove on uninstall.
+//   removed  — a tombstone for a component that no longer ships in the package.
 //              Inert by default; with the --removed flag it removes the component on BOTH install and
 //              uninstall. Its files may be gone, so a 'removed' entry is never loaded from disk.
 //   optional — not installed unless the --optional flag is given; uninstall (and status) behave
@@ -27,12 +27,12 @@ export const HANDLING_VALUES = new Set(['normal', 'removed', 'optional']);
 // directories. Used when deriving a tombstone's name from its path.
 const FILE_TYPES = new Set(['recipes', 'jobs']);
 
-// The installer's own integer version (D-35). A package's optional `installer` field is the minimum
+// The installer's own integer version. A package's optional `installer` field is the minimum
 // version it requires — a plain positive integer with an implicit ">=" — and a package that needs a
 // newer installer than this one is rejected at manifest load.
 export const INSTALLER_VERSION = 1;
 
-// varchar limits from the live schema (integration-reference §6) — validated here so a too-long
+// varchar limits mirrored from the live CRHQ schema — validated here so a too-long
 // value fails fast with a clear message instead of a Postgres error mid-install.
 const LIMITS = {
   skillName: 100, recipeName: 200, agentName: 50, agentMode: 10, agentModel: 20, agentType: 20,
@@ -81,7 +81,7 @@ export function validateManifest(meta) {
       }
     }
   }
-  // installer (optional, D-35): the minimum installer version the package needs — a plain positive
+  // installer (optional): the minimum installer version the package needs — a plain positive
   // integer, implicitly ">=". A package that requires a newer installer than this one is rejected.
   if (meta.installer != null) {
     const need = intVersion('installer (minimum installer version)', meta.installer);
@@ -160,7 +160,7 @@ function loadSkillDef(entry, root) {
     throw new ManifestError(`Skill ${meta.name}: SKILL.md version ${version} != manifest pin ${pin}`);
   }
   checkLen('skill name', meta.name, LIMITS.skillName);
-  // install_type (manifest entry, D-22): how the skill registers. Default 'org' (locked); 'user'
+  // install_type (manifest entry): how the skill registers. Default 'org' (locked); 'user'
   // installs it unlocked as a user skill. Either way assets land in SKILLS_BASE_DIR.
   const installType = entry.install_type;
   if (installType != null && installType !== 'user' && installType !== 'org') {
@@ -185,22 +185,21 @@ function loadRecipeDef(entry, root) {
 
 function loadAgentDef(entry, root) {
   const srcDir = join(root, entry.path);
-  // Agents are now a DIRECTORY with an AGENTS.md (the agent's "brain"), exactly like a skill's
-  // <key>/SKILL.md (D-50). Clean break (D-50): a flat agents/<name>.md is no longer accepted —
-  // point the author at the directory form.
+  // An agent is a DIRECTORY with an AGENTS.md (the agent's "brain"), exactly like a skill's
+  // <key>/SKILL.md. A flat agents/<name>.md file is not accepted — use the directory form.
   if (entry.path.endsWith('.md') || (existsSync(srcDir) && statSync(srcDir).isFile())) {
-    throw new ManifestError(`Agent '${entry.path}': agents are now a directory with an AGENTS.md — use agents/<key>/ (a folder), not a flat .md file`);
+    throw new ManifestError(`Agent '${entry.path}': an agent must be a directory with an AGENTS.md — use agents/<key>/ (a folder), not a flat .md file`);
   }
   const mdPath = join(srcDir, 'AGENTS.md');
   if (!existsSync(mdPath)) throw new ManifestError(`Agent missing AGENTS.md: ${entry.path}`);
   // Content-bearing component (like skills/recipes): YAML frontmatter for the scalar/list fields +
-  // a Markdown body that becomes the agent's `instructions` (D-32). The rest of the directory is the
-  // brain — copied to AGENT_BRAINS_DIR/<key> on install (D-50).
+  // a Markdown body that becomes the agent's `instructions`. The rest of the directory is the
+  // brain — copied to AGENT_BRAINS_DIR/<key> on install.
   const { meta: a, body } = parseFrontmatter(readFileSync(mdPath, 'utf8'));
   // Agents follow the same name/description pattern as every other component type: `name` is the
   // canonical identifier (stored as CRHQ agents.key), `display_name` the human label (stored as
-  // agents.name) — D-23.
-  if (a.key) throw new ManifestError(`Agent '${entry.path}': 'key' was renamed — use 'name' (the agent identifier) and 'display_name' (the human label)`);
+  // agents.name).
+  if (a.key) throw new ManifestError(`Agent '${entry.path}': use 'name' (the agent identifier) and 'display_name' (the human label), not 'key'`);
   if (!a.name) throw new ManifestError(`Agent missing 'name': ${entry.path}`);
   assertManifestSegment('agent name', a.name);
   if (!a.display_name) throw new ManifestError(`Agent missing 'display_name': ${entry.path}`);
@@ -210,7 +209,7 @@ function loadAgentDef(entry, root) {
   if (a.agent_type) checkLen('agent agent_type', a.agent_type, LIMITS.agentType);
   // Body → instructions (leading blank lines trimmed); an empty body rides the DB default.
   const instructions = body && body.trim() ? body.replace(/^\n+/, '') : undefined;
-  // Version is optional for agents; when present it round-trips through agent_versions (D-34).
+  // Version is optional for agents; when present it round-trips through agent_versions.
   const version = resolveOptionalVersion(`Agent ${a.name}`, a.version, entry.version, entry.path);
   return {
     name: a.name, display_name: a.display_name, description: a.description || '', mode: a.mode || 'cli',
@@ -349,7 +348,7 @@ function assertManifestDnsLabel(label, val) {
   }
 }
 
-// Component versions are positive integers (D-34) — they round-trip through CRHQ's *_versions
+// Component versions are positive integers — they round-trip through CRHQ's *_versions
 // tables (skill_versions/recipe_versions/agent_versions). Accept a YAML number or a numeric string;
 // reject anything else (incl. the old semver form like 0.1.0). The package-level `version` is a
 // separate free-form label (backup mints a date) and is NOT constrained here.

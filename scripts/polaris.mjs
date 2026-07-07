@@ -4,7 +4,7 @@
 // subtree) with a `user/` Ai1 Package (this satellite's own customer/user content). polaris bridges
 // the repo and the live satellite — `install.mjs <repo>/platform` and `install.mjs <repo>/user` load
 // content in; `sync.mjs --mirror <repo>/user` pushes live user edits back out. Subcommand CLI, like
-// remote.mjs; DB-free. The first verb is `init` (clone the repo from GitHub).
+// remote.mjs; DB-free. The only subcommand is `init` (clone the repo from GitHub).
 //
 // Usage: polaris.mjs <subcommand> [options]
 //   init   clone this satellite's Client Repository into ${REPOS_BASE_DIR}/<repo> (default ~/repos)

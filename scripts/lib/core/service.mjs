@@ -1,10 +1,10 @@
-// core/service.mjs — services/projects are nginx + PM2 web apps (NOT DB-resident). D-2b RESOLVED: inline
-// templates (deploy-project ships no callable scripts — it's a runbook), so we emit the artifacts
-// here and drive pm2/nginx directly, honoring its security rules (127.0.0.1 binding, chmod 640 .env,
-// never touch crhq-satellite).
+// core/service.mjs — services/projects are nginx + PM2 web apps (NOT DB-resident). Deployment
+// follows the conventions of the CRHQ `deploy-project` skill: templates are inline — we emit the
+// artifacts here and drive pm2/nginx directly — and its security rules are honored (127.0.0.1
+// binding, chmod 640 .env, never touch crhq-satellite).
 //
 // Safety model:
-//   • dry-run (D-2a)     → render artifacts, SKIP build + apply (no nginx/PM2/port) unless --run-build.
+//   • dry-run            → render artifacts, SKIP build + apply (no nginx/PM2/port) unless --run-build.
 //   • --sandbox          → web apps aren't modelled by the sandbox → SKIP entirely (build + apply).
 //   • real install       → applyWebApp(): copy/symlink source, write .env/ecosystem/vhost,
 //                          alloc port, pm2 start+save, nginx reload. This MUTATES THE LIVE VPS.
@@ -66,8 +66,8 @@ const PROXY = (port, indent = '    ') => [
   `${indent}}`,
 ].join('\n');
 
-// Generate the nginx vhost for /etc/nginx/projects.d/<name>.conf following deploy-project's
-// conventions. Standard satellite → 80→443 redirect + crhq.ai TLS block; white-label → org domain
+// Generate the nginx vhost for /etc/nginx/projects.d/<name>.conf, following the CRHQ
+// deploy-project skill's conventions. Standard satellite → 80→443 redirect + crhq.ai TLS block; white-label → org domain
 // (primary) + crhq.ai (fallback) blocks. ssl:false → plain :80 proxy.
 export function renderNginx(def, port, env = process.env) {
   const sub = def.app_name || def.name;
@@ -234,7 +234,7 @@ async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
     const content = type === 'project'
       ? (contentMode === 'copy' ? 'copy project files' : `symlink to ${def.srcDir}`)
       : 'copy service files';
-    log.dry(`deploy ${type} ${def.name} → ${projectDir} on port ${port} (${content}; nginx vhost + PM2 — apply skipped, D-2a)`);
+    log.dry(`deploy ${type} ${def.name} → ${projectDir} on port ${port} (${content}; nginx vhost + PM2 — apply skipped)`);
     const verdict = plan.verdict === VERDICT.ALREADY ? VERDICT.ALREADY : VERDICT.OK;
     const action = plan.verdict === VERDICT.ALREADY ? 'unchanged' : `built (port ${port})`;
     return out(type, def.name, verdict, action);
@@ -248,8 +248,8 @@ async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
   return out(type, def.name, VERDICT.OK, `deployed (port ${port})`);
 }
 
-// Live apply — gated to real (non-dry-run, non-sandbox) installs. Faithful to deploy-project;
-// verified by tests/service-live.test.mjs when AI1_LIVE_SERVICE_TEST=1.
+// Live apply — gated to real (non-dry-run, non-sandbox) installs; follows the deploy-project
+// skill's deployment steps. Verified by tests/service-live.test.mjs when AI1_LIVE_SERVICE_TEST=1.
 function applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode }) {
   if (def.name === 'crhq-satellite') throw new Error(`refusing to deploy a ${type} named crhq-satellite`);
   if (contentMode === 'symlink') {

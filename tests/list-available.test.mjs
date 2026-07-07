@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// --list-available verification (D-47) — the local-package-store discovery view. DB-free: it drives
+// --list-available verification — the local-package-store discovery view. DB-free: it drives
 // the pure functions directly (discoverPackages / collectAvailable / sortAvailable /
 // formatAvailableList) and the CLI end-to-end via spawnSync, using the real test fixtures as a
 // package store (tests/fixtures/{entry-pkg → skill 'entry-skill', service-pkg → service

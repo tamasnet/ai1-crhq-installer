@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Phase 6 verification — service (nginx + PM2) render + build + dry-run + sandbox-skip. Live
+// Service (nginx + PM2) verification — render + build + dry-run + sandbox-skip. Live
 // apply/remove is gated in tests/service-live.test.mjs (AI1_LIVE_SERVICE_TEST=1). No DB needed.
 //   node tests/service.test.mjs
 import assert from 'node:assert/strict';
@@ -56,7 +56,7 @@ await test('renderNginx: 127.0.0.1 proxy, crhq host, TLS, no 0.0.0.0', () => {
   assert.match(conf, /proxy_pass http:\/\/127\.0\.0\.1:4399;/);
   assert.match(conf, /ssl_certificate \/etc\/ssl\/crhq\.ai\/fullchain\.pem;/);
   assert.match(conf, /return 301 https:\/\/\$host\$request_uri;/);
-  assert.doesNotMatch(conf, /0\.0\.0\.0/, 'never bind 0.0.0.0 (deploy-project Rule 1)');
+  assert.doesNotMatch(conf, /0\.0\.0\.0/, 'never bind 0.0.0.0');
 });
 
 await test('renderNginx: ssl:false → plain :80 proxy only', () => {
@@ -120,7 +120,7 @@ await test('--sandbox: skipped cleanly (services not modelled)', async () => {
   assert.equal(existsSync(projectDir), false);
 });
 
-await test('secret hygiene: env secret never logged (GAP 9)', async () => {
+await test('secret hygiene: env secret never logged', async () => {
   const orig = console.log;
   let buf = '';
   console.log = (...a) => { buf += `${a.join(' ')}\n`; };

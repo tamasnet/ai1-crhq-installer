@@ -1,4 +1,4 @@
-// polaris.mjs — the Polaris client (D-45): manage a satellite from its GitHub *Client Repository*.
+// polaris.mjs — the Polaris client: manage a satellite from its GitHub *Client Repository*.
 // The satellite's repo follows the parent–client model (see docs/repo-methodology.md): a
 // `platform/` directory (an Ai1 Package fed from the shared platform *parent* repo via git subtree)
 // and a `user/` directory (an Ai1 Package holding THIS satellite's own customer/user content). Both
@@ -6,7 +6,7 @@
 // satellite edits back into. polaris bridges that repository and the live satellite.
 //
 // This module is the logic behind the `polaris.mjs` CLI. It is **DB-free**: it shells out to `git`
-// and reuses the hub client's github-token resolver (lib/remote.mjs). The first verb is `init`.
+// and reuses the hub client's github-token resolver (lib/remote.mjs). The only subcommand is `init`.
 //
 // init: clone the satellite's Client Repository from GitHub into ${REPOS_BASE_DIR}/<repo> (default
 // ~/repos). The repo is `<owner>/<repo>` on github.com — owner defaults to MyZone-AI (overridable
@@ -90,7 +90,7 @@ function defaultRunGit(args, { env } = {}) {
 }
 
 // Clone `remoteUrl` into `dest`, authenticating with `token` via git's ENVIRONMENT-based config
-// (GIT_CONFIG_COUNT/KEY/VALUE, git >= 2.31) rather than the URL or argv (D-46). The credential is supplied
+// (GIT_CONFIG_COUNT/KEY/VALUE, git >= 2.31) rather than the URL or argv. The credential is supplied
 // as a scoped `http.https://github.com/.extraheader` Basic header (`x-access-token:<token>`); because
 // it's command-scoped env config it is NOT written to the cloned repo's `.git/config`, so `origin`
 // is left as the clean, tokenless URL — and it never appears in `ps`/argv. GIT_TERMINAL_PROMPT=0

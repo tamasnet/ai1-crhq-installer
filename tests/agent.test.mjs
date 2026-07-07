@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Phase 3 verification — agent install + join sync (agent_skills / agent_recipes). Self-contained:
+// Agent install + join-sync verification (agent_skills / agent_recipes). Self-contained:
 // provisions a sandbox, exercises upsertAgent/removeAgent/statusAgent with row + join assertions,
 // then runs a full lifecycle with an agent referencing the sample skill + recipe. Tears down.
 // Run from the project root:  node tests/agent.test.mjs
@@ -36,7 +36,7 @@ try {
   const recipeDef = plan.recipes[0];   // ai1-sample-recipe
   const agentDef = plan.agents[0];     // ai1-sample-agent → skills:[sample], recipes:[sample]
 
-  // ── A. Focused lifecycle FIRST on a clean schema (Phase 3 acceptance test) ──────────────
+  // ── A. Focused lifecycle FIRST on a clean schema ──────────────
   console.log('agent lifecycle (skill + recipe + agent):');
   await test('full lifecycle → ALL PASS (agent has skill + recipe; clean uninstall)', async () => {
     const lplan = { skills: [skillDef], recipes: [recipeDef], agents: [agentDef], jobs: [], services: [] };
@@ -73,7 +73,7 @@ try {
     assert.equal(row.instructions, agentDef.instructions, 'instructions persisted from the Markdown body');
     assert.deepEqual(await skillsOf(agentDef.name), ['ai1-sample-skill']);
     assert.deepEqual(await recipeIdsOf(agentDef.name), [sampleRecipeId], 'recipe name resolved to uuid');
-    // Brain (D-50): the whole agent directory is copied to AGENT_BRAINS_DIR/<key>.
+    // Brain: the whole agent directory is copied to AGENT_BRAINS_DIR/<key>.
     const brainDir = join(ctx.BRAINS, agentDef.name);
     assert.ok(existsSync(join(brainDir, 'AGENTS.md')), 'brain AGENTS.md copied to AGENT_BRAINS_DIR/<key>');
     assert.ok(existsSync(join(brainDir, 'identity.md')), 'sibling brain file copied alongside AGENTS.md');
@@ -165,7 +165,7 @@ try {
     assert.equal(await agentRow(agentDef.name), undefined);
     assert.deepEqual(await skillsOf(agentDef.name), []);
     assert.deepEqual(await recipeIdsOf(agentDef.name), []);
-    assert.ok(existsSync(join(ctx.BRAINS, agentDef.name)), 'brain folder PRESERVED on uninstall (D-50)');
+    assert.ok(existsSync(join(ctx.BRAINS, agentDef.name)), 'brain folder PRESERVED on uninstall');
     assert.equal((await removeAgent(ctx, agentDef)).verdict, 'ALREADY-INSTALLED', 'absent → ALREADY');
   });
 
@@ -184,7 +184,7 @@ try {
     }
   });
 
-  await test('clean break: a flat agents/<name>.md is rejected by the manifest loader', async () => {
+  await test('a flat agents/<name>.md is rejected by the manifest loader', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'ai1-agent-fmt-'));
     try {
       mkdirSync(join(tmp, 'agents'), { recursive: true });

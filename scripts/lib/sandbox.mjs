@@ -1,6 +1,6 @@
-// sandbox.mjs — built-in --sandbox (D-17/D-18). Provisions an isolated schema cloned from live
+// sandbox.mjs — built-in --sandbox. Provisions an isolated schema cloned from live
 // (CREATE TABLE … LIKE … INCLUDING ALL), seeds live skills so agent-attach + dep checks mirror
-// reality (OQ-14), redirects INSTALL_SCHEMA/SKILLS_BASE_DIR, then tears down. --lifecycle runs the
+// reality, redirects INSTALL_SCHEMA/SKILLS_BASE_DIR, then tears down. --lifecycle runs the
 // full install → status → idempotency → uninstall → reinstall assertion suite.
 import { mkdirSync, rmSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -15,14 +15,14 @@ export async function provisionSandbox({ ts, seed = true } = {}) {
   const admin = getAdminDb();
   const schema = `sandbox_${ts}`;
   const baseDir = join(tmpdir(), `ai1-sandbox-${ts}`);
-  const brainsDir = join(tmpdir(), `ai1-sandbox-${ts}-brains`);      // agent brains land here, not in the real AGENT_BRAINS_DIR (D-50)
-  const packagesDir = join(tmpdir(), `ai1-sandbox-${ts}-packages`);  // install log lands here, not in the real PACKAGES_DIR (D-24)
+  const brainsDir = join(tmpdir(), `ai1-sandbox-${ts}-brains`);      // agent brains land here, not in the real AGENT_BRAINS_DIR
+  const packagesDir = join(tmpdir(), `ai1-sandbox-${ts}-packages`);  // install log lands here, not in the real PACKAGES_DIR
 
   await admin.raw('CREATE SCHEMA ??', [schema]);
   for (const t of TABLES) {
-    await admin.raw('CREATE TABLE ??.?? (LIKE public.?? INCLUDING ALL)', [schema, t, t]);  // D-18
+    await admin.raw('CREATE TABLE ??.?? (LIKE public.?? INCLUDING ALL)', [schema, t, t]);
   }
-  // OQ-14: LIKE omits foreign keys. We deliberately do NOT re-create them — join inserts are
+  // LIKE omits foreign keys. We deliberately do NOT re-create them — join inserts are
   // guarded (only existing skills/recipes attach) and removeAgent deletes joins explicitly, so
   // intra-schema FKs aren't needed for lifecycle fidelity. We DO seed live skills so agent-attach
   // and prereq checks behave like the real satellite.
@@ -34,7 +34,7 @@ export async function provisionSandbox({ ts, seed = true } = {}) {
     );
   }
 
-  process.env.INSTALL_SCHEMA = schema;       // redirect BEFORE createContext/getDb (§2/§8)
+  process.env.INSTALL_SCHEMA = schema;       // redirect BEFORE createContext/getDb
   process.env.SKILLS_BASE_DIR = baseDir;
   process.env.AGENT_BRAINS_DIR = brainsDir;
   process.env.PACKAGES_DIR = packagesDir;

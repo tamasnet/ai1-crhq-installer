@@ -1,4 +1,4 @@
-// core/skill.mjs — skills table (PK name) + assets under SKILLS_BASE_DIR/<key> (C3/C5/C6).
+// core/skill.mjs — skills table (PK name) + assets under SKILLS_BASE_DIR/<key>.
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { copyTree, removeTree, writeIfChanged } from '../fs.mjs';

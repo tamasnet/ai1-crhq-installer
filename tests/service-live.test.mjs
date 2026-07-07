@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Live service smoke test — exercises nginx + PM2 apply/remove paths (Phase 1).
+// Live service smoke test — exercises nginx + PM2 apply/remove paths.
 // Gated: only runs when AI1_LIVE_SERVICE_TEST=1 (needs sudo, nginx, pm2 on the host).
 // Run from the project root:
 //   AI1_LIVE_SERVICE_TEST=1 node tests/service-live.test.mjs

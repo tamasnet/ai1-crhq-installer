@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// validate.test.mjs — reject-at-load name/DNS/env validation (Phase 1).
+// validate.test.mjs — reject-at-load name/DNS/env validation.
 // Run from the project root:  node tests/validate.test.mjs
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';

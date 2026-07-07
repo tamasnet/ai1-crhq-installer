@@ -4,7 +4,7 @@
 import { hostname } from 'node:os';
 
 // The satellite's id: `SATELLITE_ID` env when set, else the host name minus its conventional `crhq-`
-// prefix (the D-27/D-37 convention).
+// prefix.
 export function resolveSatelliteId() {
   return process.env.SATELLITE_ID || hostname().replace(/^crhq-/, '');
 }

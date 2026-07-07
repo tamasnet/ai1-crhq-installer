@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ai1-satellite-tools — remote runner (CLI entry): the satellite's client for the Ai1 Platform Hub.
-// Registers a satellite as a *remote*, and (in later subcommands) will receive/send config and
-// state, take management instructions, and download packages for installation. Network-only and
+// Registers a satellite as a *remote*, pulls config, reports state, pushes install state, resolves
+// GitHub tokens, and downloads packages for installation. Network-only and
 // DB-free; the resulting identity is written to ${REMOTE_BASE_DIR}/id.json (default ~/remote).
 //
 // Usage: remote.mjs <subcommand> [options]

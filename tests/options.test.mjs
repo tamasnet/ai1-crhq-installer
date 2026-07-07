@@ -239,7 +239,7 @@ await test('--add-project is listed in sync help', () => {
   assert.match(sync(['--help']).stdout, /--add-project/);
 });
 
-// ── sync.mjs git-safety guard (D-49) ────────────────────────────────────────────────────────────
+// ── sync.mjs git-safety guard ────────────────────────────────────────────────────────────
 // sync edits the package in place and leans on git to recover a bad run, so a non-git destination is
 // refused unless --force. The guard runs before any DB work; the post-guard "No ai1-package.yaml"
 // error (a real empty-dir run) is what proves the guard PASSED without reaching a DB query.

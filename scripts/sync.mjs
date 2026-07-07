@@ -202,7 +202,7 @@ try {
   const lastOf = (key) => (flags[key]?.length ? flags[key][flags[key].length - 1] : undefined);
   const filterSpec = { include: lastOf('include') ?? null, exclude: lastOf('exclude') ?? null };
 
-  // Git-safety guard (D-49): sync edits the package IN PLACE and relies on git to recover a bad run,
+  // Git-safety guard: sync edits the package IN PLACE and relies on git to recover a bad run,
   // so refuse a destination that isn't inside a git work tree unless --force. Checked before any DB
   // work; --dry-run is held to the same rule (a preview here is the moment to catch a missing repo).
   if (!flags['force'] && !isInsideGitRepo(packageDir)) {
@@ -220,7 +220,7 @@ try {
     log,
     DRY_RUN: dryRun,
     SKILLS_BASE: resolveSkillsBase(),   // needed by exportJob for script-path resolution
-    BRAINS: resolveBrains(),            // needed by exportAgent for brain-tree capture (D-50)
+    BRAINS: resolveBrains(),            // needed by exportAgent for brain-tree capture
   };
 
   const { results, counts, manifest, installLog } = await runSync(ctx, {
@@ -236,7 +236,7 @@ try {
 
   // --mirror reconciles the global install log (${PACKAGES_DIR}/install.json) so it reflects the live
   // satellite for the components THIS mirror now carries — installed slots upserted, removed ones
-  // dropped (D-48). Bookkeeping only: a write failure warns, it never fails the mirror. Dry-run skips.
+  // dropped. Bookkeeping only: a write failure warns, it never fails the mirror. Dry-run skips.
   let installLogUpdated = null;
   if (mirror) {
     const nIn = installLog?.installed?.length ?? 0;

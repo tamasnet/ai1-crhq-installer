@@ -2,6 +2,8 @@
 
 This document maps Ai1 Package components to satellite storage. The installer writes satellite resources directly through knex so sandbox mode can redirect writes to an isolated schema.
 
+Package and component names are validated at manifest load before any of the writes below happen — see "Component names" in [`package-manifest-spec.md`](./package-manifest-spec.md) for the allowed character set.
+
 ## Database access
 
 All DB work goes through `scripts/lib/db.mjs`, which imports the satellite knex accessor at runtime and applies `INSTALL_SCHEMA` as an optional search path. Do not read or modify satellite core application source files; the import path is a runtime dependency only.
@@ -97,7 +99,7 @@ Source: `services/<name>/service.yaml` and service source tree.
 Install behavior:
 
 - Required fields: `name`, `version`, `start`.
-- Optional `build` runs before apply, including during dry-run. It is a single shell command string or a YAML list of commands run sequentially (fail-fast on the first non-zero exit).
+- Optional `build` runs before apply. It is a single shell command string or a YAML list of commands run sequentially (fail-fast on the first non-zero exit). During dry-run, build commands are skipped by default (pass `--run-build` to execute them).
 - Copy source to `${SERVICES_BASE_DIR:-~/services}/<name>`.
 - Write `.env`, `ecosystem.config.cjs`, and nginx vhost.
 - Bind nginx upstream to `127.0.0.1:<port>`.
@@ -112,7 +114,7 @@ Source: `projects/<name>/project.yaml` and project source tree.
 Install behavior:
 
 - Required fields: `name`, `version`, `start`.
-- Optional `build` runs before apply, including during dry-run. It is a single shell command string or a YAML list of commands run sequentially (fail-fast on the first non-zero exit).
+- Optional `build` runs before apply. It is a single shell command string or a YAML list of commands run sequentially (fail-fast on the first non-zero exit). During dry-run, build commands are skipped by default (pass `--run-build` to execute them).
 - By default, create/update `/opt/projects/user/<name>` as a symlink to the package project directory.
 - With `--copy-projects`, copy source to `/opt/projects/user/<name>` instead.
 - Write `.env`, `ecosystem.config.cjs`, and nginx vhost.

@@ -1,5 +1,5 @@
 // install-log.mjs — persistent record of what's installed: ${PACKAGES_DIR}/install.json
-// (default ~/packages) — D-24. The on-disk log is an object with installation-level metadata plus a
+// (default ~/packages). The on-disk log is an object with installation-level metadata plus a
 // FLAT list of installed components under `installed_components`, one entry per component identity
 // (`type:name`). This mirrors the DB, which allows exactly one row per component name, so the log
 // holds exactly one slot per component. Each entry carries the component's own version (when it has
@@ -35,7 +35,7 @@ function emptyInstallState() {
 }
 
 function normalizeInstallState(data, p) {
-  // Legacy D-24 format: a flat array. Treat it as version 0 so the next real mutation writes
+  // Legacy format: a flat array. Treat it as version 0 so the next real mutation writes
   // version 1 in the new wrapper format.
   if (Array.isArray(data)) {
     return { ...emptyInstallState(), installed_components: data };
@@ -159,7 +159,7 @@ export function updateInstallLog(ctx, meta, plan, packageRoot) {
     const entry = {
       type: r.type,
       name: r.name,
-      ...(def?.version != null ? { version: def.version } : {}),   // integer component version (D-34)
+      ...(def?.version != null ? { version: def.version } : {}),   // integer component version
       package: meta.name,
       package_version: String(meta.version),
       ...(def ? { source: sourceOf(r.type, def, packageRoot) } : {}),
@@ -173,11 +173,11 @@ export function updateInstallLog(ctx, meta, plan, packageRoot) {
   return writeInstallState(packagesDir, state, nextEntries, now);
 }
 
-// Apply a finished `sync --mirror` run to the install log (D-48) so it reflects the live satellite
+// Apply a finished `sync --mirror` run to the install log so it reflects the live satellite
 // for the components THIS mirror package now carries — and ONLY those. A mirror exports live
 // components out of the satellite into the package, so each component it included (added/synced/
 // unchanged) UPSERTS its slot, attributed to the mirror package: ownership transfers in place under
-// the same one-slot-per-`type:name` rule a real install from this package would follow (D-24). Each
+// the same one-slot-per-`type:name` rule a real install from this package would follow. Each
 // component the mirror REMOVED (gone from the satellite) drops its slot. Components this run did not
 // touch — out-of-scope entries, other packages' components — are left exactly as they were. No-op in
 // dry-run or when there's nothing to apply; write-if-changed, so a no-op mirror never rewrites the
