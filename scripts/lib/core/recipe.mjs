@@ -4,30 +4,59 @@ import { writeIfChanged } from '../fs.mjs';
 import { dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
+import { planResult } from './plan-result.mjs';
+
+function recipeFields(def) {
+  return { description: def.description || '', content: def.content || '', is_active: true };
+}
+
+function recipeChanged(row, fields) {
+  return !row || row.description !== fields.description || row.content !== fields.content || row.is_active !== true;
+}
+
+export async function planRecipe(ctx, def) {
+  const { name } = def;
+  const row = await ctx.db('recipes').where({ name }).first();
+  const fields = recipeFields(def);
+  if (!row) return planResult('recipe', name, { verdict: VERDICT.ABSENT, action: 'absent' });
+  if (!recipeChanged(row, fields)) {
+    return planResult('recipe', name, { verdict: VERDICT.ALREADY, action: 'updated' });
+  }
+  return planResult('recipe', name, { verdict: VERDICT.OK, action: 'updated', dimensions: { db: true } });
+}
 
 export async function upsertRecipe(ctx, def) {
   const { db, log, DRY_RUN } = ctx;
   const { name } = def;
   const row = await db('recipes').where({ name }).first();
-  const fields = { description: def.description || '', content: def.content || '', is_active: true };
-  const changed = !row || row.description !== fields.description || row.content !== fields.content || row.is_active !== true;
-  // Version snapshot args (D-34) — optional for recipes; recorded only when the package declares one.
-  // recipe_versions is keyed by the row uuid, resolved after the upsert.
+  const fields = recipeFields(def);
+  const changed = recipeChanged(row, fields);
   const ver = (id) => ({ fkValue: id, version: def.version, name: def.name, description: def.description, body: def.content });
 
+  if (!row) {
+    if (DRY_RUN) {
+      log.dry(`create recipe ${name}`);
+      await recordVersion(ctx, 'recipe', ver(null));
+      return res(name, VERDICT.OK, 'created');
+    }
+    const now = new Date();
+    await db('recipes').insert({ name, ...fields, created_at: now, updated_at: now });
+    const id = (await db('recipes').where({ name }).select('id').first())?.id;
+    await recordVersion(ctx, 'recipe', ver(id));
+    return res(name, VERDICT.OK, 'created');
+  }
+
+  const plan = await planRecipe(ctx, def);
   if (DRY_RUN) {
-    log.dry(`${row ? 'update' : 'create'} recipe ${name}`);
-    await recordVersion(ctx, 'recipe', ver(row?.id ?? null));
-    return res(name, changed ? VERDICT.OK : VERDICT.ALREADY, row ? 'updated' : 'created');
+    log.dry(`${changed ? 'update' : 'noop'} recipe ${name}`);
+    await recordVersion(ctx, 'recipe', ver(row.id));
+    return res(name, plan.verdict, 'updated');
   }
 
   const now = new Date();
-  if (!row) await db('recipes').insert({ name, ...fields, created_at: now, updated_at: now });  // id uuid auto
-  else if (changed) await db('recipes').where({ name }).update({ ...fields, updated_at: now });
-
-  const id = row?.id ?? (await db('recipes').where({ name }).select('id').first())?.id;
-  await recordVersion(ctx, 'recipe', ver(id));
-  return res(name, changed ? VERDICT.OK : VERDICT.ALREADY, row ? 'updated' : 'created');
+  if (changed) await db('recipes').where({ name }).update({ ...fields, updated_at: now });
+  await recordVersion(ctx, 'recipe', ver(row.id));
+  return res(name, plan.verdict, 'updated');
 }
 
 export async function removeRecipe(ctx, nameOrDef) {
@@ -37,13 +66,10 @@ export async function removeRecipe(ctx, nameOrDef) {
   if (!row) return res(name, VERDICT.ALREADY, 'absent');
   if (DRY_RUN) { log.dry(`delete recipe ${name}`); return res(name, VERDICT.OK, 'removed'); }
   await db('recipes').where({ name }).del();
-  await removeVersions(ctx, 'recipe', row.id);   // mirror the ON DELETE CASCADE in the FK-less sandbox
+  await removeVersions(ctx, 'recipe', row.id);
   return res(name, VERDICT.OK, 'removed');
 }
 
-// exportRecipe — backup: write the row back to package form (frontmatter + body .md). The integer
-// version is the live CRHQ number = MAX(recipe_versions.version_num) (D-34), emitted only when the
-// recipe has version history (it's optional for recipes).
 export async function exportRecipe(ctx, row, { outRoot, relPath }) {
   const version = await currentVersion(ctx.db, 'recipe', row.id);
   const fm = { name: row.name, description: row.description || '', ...(version != null ? { version } : {}) };

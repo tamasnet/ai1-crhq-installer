@@ -12,12 +12,13 @@
 // ⚠️ The live apply/remove paths are implemented per deploy-project conventions but are NOT yet
 // exercised — the plan's "one explicit live service smoke test" (Phase 6) validates them. Render +
 // build + dry-run + symlink helpers + the sandbox skip ARE covered by tests/service.test.mjs.
-import { existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync, readFileSync, lstatSync } from 'fs';
-import { join } from 'path';
+import { existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync, readFileSync, lstatSync, readlinkSync } from 'fs';
+import { join, resolve, dirname } from 'path';
 import { spawnSync } from 'child_process';
 import { copyTree, removeTree, ensureSymlink } from '../fs.mjs';
 import { VERDICT } from '../log.mjs';
 import { resolveServicesBase, resolveUserProjectsBase } from '../paths.mjs';
+import { planResult } from './plan-result.mjs';
 
 const NGINX_DIR = '/etc/nginx/projects.d';
 const PORT_BASE = 4300;
@@ -122,6 +123,55 @@ function renderArtifacts(def, port, projectDir, env) {
   return { env: renderEnv(def, port), ecosystem: renderEcosystem(def, port, projectDir), nginx: renderNginx(def, port, env) };
 }
 
+async function planWebApp(ctx, def, { type, baseDir, contentMode }) {
+  const name = def.name;
+  const st = statusWebApp(ctx, def, { type, baseDir });
+  if (st.verdict === VERDICT.ABSENT) return planResult(type, name, { verdict: VERDICT.ABSENT, action: 'absent' });
+
+  const deployDir = join(baseDir, name);
+  let fileDrift = false;
+  if (type === 'project' && contentMode === 'symlink') {
+    try {
+      const stLink = lstatSync(deployDir);
+      if (stLink.isSymbolicLink()) {
+        const target = resolve(dirname(deployDir), readlinkSync(deployDir));
+        fileDrift = target !== resolve(def.srcDir);
+      } else if (existsSync(deployDir)) {
+        fileDrift = true;
+      }
+    } catch { /* ENOENT → absent handled above */ }
+  } else if (def.srcDir && existsSync(def.srcDir)) {
+    fileDrift = copyTree(def.srcDir, deployDir, { dryRun: true }) > 0;
+  }
+
+  const nginxDrift = !st.vhostPresent;
+  const pm2Drift = !st.pm2Present;
+  if (!fileDrift && !nginxDrift && !pm2Drift) {
+    return planResult(type, name, { verdict: VERDICT.ALREADY, action: 'updated' });
+  }
+  return planResult(type, name, {
+    verdict: VERDICT.OK,
+    action: 'updated',
+    dimensions: { files: fileDrift, nginx: nginxDrift, pm2: pm2Drift },
+  });
+}
+
+export function planService(ctx, def) {
+  return planWebApp(ctx, def, {
+    type: 'service',
+    baseDir: ctx.SERVICES_BASE || resolveServicesBase(),
+    contentMode: 'copy',
+  });
+}
+
+export function planProject(ctx, def) {
+  return planWebApp(ctx, def, {
+    type: 'project',
+    baseDir: ctx.USER_PROJECTS_BASE || resolveUserProjectsBase(),
+    contentMode: ctx.COPY_PROJECTS ? 'copy' : 'symlink',
+  });
+}
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────────────────────
 
 export function installService(ctx, def) {
@@ -140,7 +190,7 @@ export function installProject(ctx, def) {
   });
 }
 
-function installWebApp(ctx, def, { type, baseDir, contentMode }) {
+async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
   const { log, DRY_RUN, SANDBOX } = ctx;
 
   if (SANDBOX) {                                  // nginx/PM2 aren't sandbox-modelled (skip cleanly)
@@ -166,16 +216,23 @@ function installWebApp(ctx, def, { type, baseDir, contentMode }) {
   const projectDir = join(baseDir, def.name);
   const port = def.port || nextFreePort(DRY_RUN ? [] : scanUsedPorts());
   const artifacts = renderArtifacts(def, port, projectDir, process.env);
+  const plan = await planWebApp(ctx, def, { type, baseDir, contentMode });
 
   if (DRY_RUN) {
     const content = type === 'project'
       ? (contentMode === 'copy' ? 'copy project files' : `symlink to ${def.srcDir}`)
       : 'copy service files';
     log.dry(`deploy ${type} ${def.name} → ${projectDir} on port ${port} (${content}; nginx vhost + PM2 — apply skipped, D-2a)`);
-    return out(type, def.name, VERDICT.OK, `built (port ${port})`);
+    const verdict = plan.verdict === VERDICT.ALREADY ? VERDICT.ALREADY : VERDICT.OK;
+    const action = plan.verdict === VERDICT.ALREADY ? 'unchanged' : `built (port ${port})`;
+    return out(type, def.name, verdict, action);
   }
 
-  applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode });   // ⚠️ live VPS mutation
+  if (plan.verdict === VERDICT.ALREADY) {
+    return out(type, def.name, VERDICT.ALREADY, 'unchanged');
+  }
+
+  applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode });
   return out(type, def.name, VERDICT.OK, `deployed (port ${port})`);
 }
 

@@ -5,13 +5,14 @@ import { writeIfChanged } from '../fs.mjs';
 import { dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 import { requireFiles } from '../prereq.mjs';
+import { planResult } from './plan-result.mjs';
 
 const SCHEDULE_ALIASES = {
   hourly: '0 * * * *', daily: '0 0 * * *',
   'every-15-min': '*/15 * * * *', 'every-30-min': '*/30 * * * *',
 };
 const resolveSchedule = (s) => SCHEDULE_ALIASES[s] || s;
-const mintJobId = () => `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;  // C10
+const mintJobId = () => `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const COMMON_DEFAULTS = {
   timeout_minutes: 30,
@@ -107,29 +108,62 @@ function rowChanged(row, fields) {
   return keys.some((k) => row[k] !== fields[k]);
 }
 
+function checkPrereqs(ctx, def) {
+  const reqs = def.requires || [];
+  const external = reqs.filter((k) => !ctx.plannedSkills?.has(k));
+  try {
+    requireFiles(ctx, external);
+    return null;
+  } catch (e) {
+    if (e.name === 'PrereqError') return 'missing prerequisite';
+    throw e;
+  }
+}
+
+export async function planJob(ctx, def) {
+  const { name } = def;
+  const prereq = checkPrereqs(ctx, def);
+  if (prereq) {
+    return planResult('job', name, { verdict: VERDICT.OK, action: 'updated', detail: prereq, dimensions: { prereq: true } });
+  }
+  const fields = fieldsForDef(ctx, def);
+  const row = await ctx.db('background_jobs').where({ name }).first();
+  if (!row) return planResult('job', name, { verdict: VERDICT.ABSENT, action: 'absent' });
+  const changed = row.job_type !== fields.job_type || rowChanged(row, fields);
+  if (!changed) return planResult('job', name, { verdict: VERDICT.ALREADY, action: 'updated' });
+  return planResult('job', name, { verdict: VERDICT.OK, action: 'updated', dimensions: { db: true } });
+}
+
 export async function upsertJob(ctx, def) {
   const { db, log, DRY_RUN } = ctx;
   const { name } = def;
 
-  // C12: required skill install dirs must exist. In dry-run nothing is written, so only enforce
-  // genuinely-external deps (bundle-mates being installed this run are assumed present).
   const reqs = def.requires || [];
   requireFiles(ctx, DRY_RUN ? reqs.filter((k) => !ctx.plannedSkills?.has(k)) : reqs);
 
   const fields = fieldsForDef(ctx, def);
   const row = await db('background_jobs').where({ name }).first();
-  const changed = !row || row.job_type !== fields.job_type || rowChanged(row, fields);
 
-  if (DRY_RUN) {
-    log.dry(`${row ? 'update' : 'create'} job ${name} (${fields.schedule})`);
-    return res(name, changed ? VERDICT.OK : VERDICT.ALREADY, row ? 'updated' : 'created');
+  if (!row) {
+    if (DRY_RUN) {
+      log.dry(`create job ${name} (${fields.schedule})`);
+      return res(name, VERDICT.OK, 'created');
+    }
+    const now = new Date();
+    await db('background_jobs').insert({ id: mintJobId(), name, ...fields, run_count: 0, created_at: now, updated_at: now });
+    return res(name, VERDICT.OK, 'created');
   }
 
-  const now = new Date();
-  if (!row) await db('background_jobs').insert({ id: mintJobId(), name, ...fields, run_count: 0, created_at: now, updated_at: now });
-  else if (changed) await db('background_jobs').where({ name }).update({ ...fields, updated_at: now });
+  const plan = await planJob(ctx, def);
+  if (DRY_RUN) {
+    log.dry(`${plan.verdict === VERDICT.ALREADY ? 'noop' : 'update'} job ${name} (${fields.schedule})`);
+    return res(name, plan.verdict, 'updated');
+  }
 
-  return res(name, changed ? VERDICT.OK : VERDICT.ALREADY, row ? 'updated' : 'created');
+  const changed = row.job_type !== fields.job_type || rowChanged(row, fields);
+  const now = new Date();
+  if (changed) await db('background_jobs').where({ name }).update({ ...fields, updated_at: now });
+  return res(name, plan.verdict, 'updated');
 }
 
 export async function removeJob(ctx, nameOrDef) {
@@ -221,8 +255,6 @@ function exportMessageSessionJob(ctx, row, { outRoot, relPath }) {
   return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath }, changed };
 }
 
-// exportJob — backup: reverse upsertJob's mapping for script, new_session, and message_session jobs.
-// Script jobs must use `job_type:'script'` + `script_path:'node'` with script_args under SKILLS_BASE_DIR.
 export async function exportJob(ctx, row, opts) {
   if (row.job_type === 'new_session') return exportNewSessionJob(ctx, row, opts);
   if (row.job_type === 'message_session') return exportMessageSessionJob(ctx, row, opts);

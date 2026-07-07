@@ -80,35 +80,35 @@ await test('nextFreePort: skips used, defaults to base', () => {
 
 console.log('\ninstall (no live apply):');
 
-await test('dry-run: built, no live writes', () => {
-  const r = installService(svcCtx({ DRY_RUN: true }), def);
+await test('dry-run: built, no live writes', async () => {
+  const r = await installService(svcCtx({ DRY_RUN: true }), def);
   assert.equal(r.verdict, 'INSTALL-OK');
   assert.match(r.action, /^built/);
   assert.equal(existsSync(projectDir), false, 'no project dir created');
   assert.equal(existsSync(vhost), false, 'no nginx vhost written');
 });
 
-await test('--sandbox: skipped cleanly (services not modelled)', () => {
-  const r = installService(svcCtx({ SANDBOX: true }), def);
+await test('--sandbox: skipped cleanly (services not modelled)', async () => {
+  const r = await installService(svcCtx({ SANDBOX: true }), def);
   assert.equal(r.verdict, 'ALREADY-INSTALLED');
   assert.equal(r.action, 'sandbox-skipped');
   assert.equal(existsSync(projectDir), false);
 });
 
-await test('secret hygiene: env secret never logged (GAP 9)', () => {
+await test('secret hygiene: env secret never logged (GAP 9)', async () => {
   const orig = console.log;
   let buf = '';
   console.log = (...a) => { buf += `${a.join(' ')}\n`; };
-  try { installService(svcCtx({ DRY_RUN: true }), def); } finally { console.log = orig; }
+  try { await installService(svcCtx({ DRY_RUN: true }), def); } finally { console.log = orig; }
   assert.doesNotMatch(buf, /super-secret-value/, 'secret must not appear in logs');
 });
 
 console.log('\nprojects (no live apply):');
 
-await test('project dry-run: deploys under /opt/projects/user and defaults to symlink mode', () => {
+await test('project dry-run: deploys under /opt/projects/user and defaults to symlink mode', async () => {
   const base = mkdtempSync(join(tmpdir(), 'ai1-project-base-'));
   cleanups.push(base);
-  const r = installProject(svcCtx({ DRY_RUN: true, USER_PROJECTS_BASE: base }), projectDef);
+  const r = await installProject(svcCtx({ DRY_RUN: true, USER_PROJECTS_BASE: base }), projectDef);
   assert.equal(r.type, 'project');
   assert.equal(r.verdict, 'INSTALL-OK');
   assert.equal(existsSync(join(base, projectDef.name)), false, 'dry-run creates no project symlink');

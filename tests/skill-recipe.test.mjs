@@ -12,8 +12,8 @@ import { join } from 'node:path';
 import { provisionSandbox, runLifecycle } from '../scripts/lib/sandbox.mjs';
 import { closeDb } from '../scripts/lib/db.mjs';
 import { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION } from '../scripts/lib/manifest.mjs';
-import { upsertSkill, removeSkill, statusSkill } from '../scripts/lib/core/skill.mjs';
-import { upsertRecipe, removeRecipe, statusRecipe } from '../scripts/lib/core/recipe.mjs';
+import { upsertSkill, removeSkill, statusSkill, planSkill } from '../scripts/lib/core/skill.mjs';
+import { upsertRecipe, removeRecipe, statusRecipe, planRecipe } from '../scripts/lib/core/recipe.mjs';
 import { currentVersion } from '../scripts/lib/version-history.mjs';
 import { makeCtx, harness } from './_helpers.mjs';
 
@@ -64,6 +64,7 @@ try {
     const r = await upsertSkill(ctx, skillDef);
     assert.equal(r.verdict, 'ALREADY-INSTALLED');
     assert.equal(r.files, 0);
+    assert.equal((await planSkill(ctx, skillDef)).verdict, 'ALREADY-INSTALLED');
     assert.equal((await skillRow()).locked, true, 'org skill remains locked across re-install');
     assert.equal((await ctx.db('skill_versions').where({ skill_name: skillDef.name })).length, 1, 're-install merges, no duplicate version row');
   });
@@ -170,6 +171,7 @@ try {
     const before = (await recipeRow()).id;
     const r = await upsertRecipe(ctx, recipeDef);
     assert.equal(r.verdict, 'ALREADY-INSTALLED');
+    assert.equal((await planRecipe(ctx, recipeDef)).verdict, 'ALREADY-INSTALLED');
     assert.equal((await recipeRow()).id, before);
   });
 

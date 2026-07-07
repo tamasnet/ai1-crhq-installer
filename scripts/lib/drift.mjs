@@ -1,8 +1,8 @@
 // drift.mjs — read-only satellite drift report. Compares install-log components against their
 // source packages (DB rows, asset trees, joins, deployed web apps) and lists live orphans the
 // mirror would auto-add but that are not attributed in install.json.
-import { existsSync, readdirSync, lstatSync, readlinkSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { discoverPackages } from './list-available.mjs';
 import { loadManifest } from './manifest.mjs';
@@ -11,15 +11,14 @@ import { resolvePackageBase } from './remote.mjs';
 import { resolveReposBase } from './polaris.mjs';
 import { discoverLiveComponents } from './sync.mjs';
 import { makeFilter } from './filter.mjs';
-import { makeLogger, VERDICT } from './log.mjs';
+import { VERDICT } from './log.mjs';
 import { currentVersion } from './version-history.mjs';
-import { copyTree } from './fs.mjs';
 import { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
-import * as skill from './core/skill.mjs';
-import * as recipe from './core/recipe.mjs';
-import * as agent from './core/agent.mjs';
-import * as job from './core/job.mjs';
-import * as service from './core/service.mjs';
+import { planSkill } from './core/skill.mjs';
+import { planRecipe } from './core/recipe.mjs';
+import { planAgent } from './core/agent.mjs';
+import { planJob } from './core/job.mjs';
+import { planService, planProject } from './core/service.mjs';
 
 export const DRIFT_STATES = ['in-sync', 'modified', 'absent', 'source-missing', 'orphan'];
 
@@ -31,29 +30,19 @@ const ROW_NAME = {
   skills: (r) => r.name, recipes: (r) => r.name, agents: (r) => r.key, jobs: (r) => r.name,
 };
 
-const STATUS_FN = {
-  skill: (ctx, e) => skill.statusSkill(ctx, e),
-  recipe: (ctx, e) => recipe.statusRecipe(ctx, e),
-  agent: (ctx, e) => agent.statusAgent(ctx, e),
-  job: (ctx, e) => job.statusJob(ctx, e),
-  service: (ctx, e) => service.statusService(ctx, e),
-  project: (ctx, e) => service.statusProject(ctx, e),
-};
-
-const UPSERT_FN = {
-  skill: (ctx, def) => skill.upsertSkill(ctx, def),
-  recipe: (ctx, def) => recipe.upsertRecipe(ctx, def),
-  agent: (ctx, def) => agent.upsertAgent(ctx, def),
-  job: (ctx, def) => job.upsertJob(ctx, def),
-  service: (ctx, def) => service.installService(ctx, def),
-  project: (ctx, def) => service.installProject(ctx, def),
+const PLAN_FN = {
+  skill: (ctx, def) => planSkill(ctx, def),
+  recipe: (ctx, def) => planRecipe(ctx, def),
+  agent: (ctx, def) => planAgent(ctx, def),
+  job: (ctx, def) => planJob(ctx, { ...def, requires: def.requires || [] }),
+  service: (ctx, def) => planService(ctx, def),
+  project: (ctx, def) => planProject(ctx, def),
 };
 
 function pkgKey(name, version) {
   return `${name}@${version == null ? '' : version}`;
 }
 
-// Index local package stores by package name + version → { dir, meta }.
 export function indexPackageStores(stores = []) {
   const byKey = new Map();
   const warnings = [];
@@ -92,140 +81,30 @@ async function liveVersion(ctx, type, def) {
   return def.version ?? null;
 }
 
-async function diffWebApp(ctx, def, entry) {
-  const type = entry.type;
-  const st = await STATUS_FN[type](ctx, def);
-  if (st.verdict === VERDICT.ABSENT) return { state: 'absent' };
-
-  const deployDir = join(
-    type === 'service' ? (ctx.SERVICES_BASE || resolveServicesBase()) : (ctx.USER_PROJECTS_BASE || resolveUserProjectsBase()),
-    def.name,
-  );
-  let fileChanges = 0;
-  if (type === 'project' && !ctx.COPY_PROJECTS) {
-    try {
-      const stLink = lstatSync(deployDir);
-      if (stLink.isSymbolicLink()) {
-        const target = resolve(dirname(deployDir), readlinkSync(deployDir));
-        if (target !== resolve(def.srcDir)) fileChanges = 1;
-      } else if (existsSync(deployDir)) {
-        fileChanges = 1;
-      }
-    } catch { /* ENOENT handled above */ }
-  } else if (existsSync(def.srcDir)) {
-    fileChanges = copyTree(def.srcDir, deployDir, { dryRun: true });
+function planToDrift(plan, { liveVer, versionNote } = {}) {
+  if (plan.verdict === VERDICT.ABSENT) return { state: 'absent' };
+  if (plan.verdict === VERDICT.LOCKED) return { state: 'modified', detail: 'locked', live_version: liveVer };
+  if (plan.verdict === VERDICT.ALREADY) {
+    if (versionNote) return { state: 'modified', detail: versionNote, live_version: liveVer };
+    return { state: 'in-sync', live_version: liveVer };
   }
-
-  const infraDrift = !st.vhostPresent || !st.pm2Present;
-  if (fileChanges > 0 || infraDrift) {
-    const parts = [];
-    if (fileChanges > 0) parts.push('files');
-    if (!st.vhostPresent) parts.push('nginx');
-    if (!st.pm2Present) parts.push('pm2');
-    return { state: 'modified', detail: parts.join(', ') };
-  }
-  return { state: 'in-sync' };
+  const detail = [plan.detail, versionNote].filter(Boolean).join('; ') || plan.action || 'would change';
+  return { state: 'modified', detail, live_version: liveVer };
 }
 
-async function diffAgent(ctx, def) {
-  const { db, BRAINS } = ctx;
-  const key = def.name;
-  const row = await db('agents').where({ key }).first();
-  if (!row) return { state: 'absent' };
-
-  const fields = {
-    name: def.display_name,
-    description: def.description || '',
-    mode: def.mode || 'cli',
-    is_active: true,
-  };
-  if (def.default_model) fields.default_model = def.default_model;
-  if (def.agent_type) fields.agent_type = def.agent_type;
-  if (def.icon) fields.icon = def.icon;
-  if (def.instructions != null) fields.instructions = def.instructions;
-  if (def.system_prompt_path != null) fields.system_prompt_path = def.system_prompt_path;
-  if (def.provider != null) fields.provider = def.provider;
-  if (def.capabilities != null) fields.capabilities = JSON.stringify(def.capabilities);
-
-  const fieldsSame = row.name === fields.name
-    && (row.description || '') === fields.description
-    && row.mode === fields.mode
-    && row.is_active === true
-    && (def.default_model == null || row.default_model === def.default_model)
-    && (def.agent_type == null || row.agent_type === def.agent_type)
-    && (def.icon == null || row.icon === def.icon)
-    && (def.instructions == null || (row.instructions || '') === def.instructions)
-    && (def.system_prompt_path == null || (row.system_prompt_path || '') === def.system_prompt_path)
-    && (def.provider == null || row.provider === def.provider)
-    && (def.capabilities == null || JSON.stringify(row.capabilities ?? []) === JSON.stringify(def.capabilities));
-
-  const desiredSkills = [];
-  for (const sn of def.skills || []) {
-    const s = await db('skills').where({ name: sn }).first();
-    if (s && s.is_active !== false) desiredSkills.push(sn);
-  }
-  const desiredRecipes = [];
-  for (const rn of def.recipes || []) {
-    const r = await db('recipes').where({ name: rn }).first();
-    if (r) desiredRecipes.push(r.id);
-  }
-
-  const curSkills = (await db('agent_skills').where({ agent_key: key }).select('skill_name')).map((r) => r.skill_name);
-  const curRecipes = (await db('agent_recipes').where({ agent_key: key }).select('recipe_id')).map((r) => r.recipe_id);
-  const linksDrift = desiredSkills.some((s) => !curSkills.includes(s))
-    || curSkills.some((s) => !desiredSkills.includes(s))
-    || desiredRecipes.some((id) => !curRecipes.includes(id))
-    || curRecipes.some((id) => !desiredRecipes.includes(id));
-
-  const brainDir = BRAINS ? join(BRAINS, key) : null;
-  const hasBrain = !!(def.srcDir && brainDir && existsSync(def.srcDir));
-  const brainFiles = hasBrain ? copyTree(def.srcDir, brainDir, { dryRun: true }) : 0;
-
-  const liveVer = await currentVersion(db, 'agent', key);
-  if (!fieldsSame || linksDrift || brainFiles > 0) {
-    const parts = [];
-    if (!fieldsSame) parts.push('fields');
-    if (linksDrift) parts.push('links');
-    if (brainFiles > 0) parts.push('brain');
-    return { state: 'modified', detail: parts.join(', '), live_version: liveVer };
-  }
-  return { state: 'in-sync', live_version: liveVer };
-}
-
-async function diffDbComponent(ctx, entry, def) {
+async function diffComponent(ctx, entry, def) {
   const type = entry.type;
-  const st = await STATUS_FN[type](ctx, def);
-  if (st.verdict === VERDICT.ABSENT) return { state: 'absent' };
-
-  if (type === 'agent') return diffAgent(ctx, def);
-
-  const dryCtx = {
+  const planCtx = {
     ...ctx,
-    DRY_RUN: true,
-    log: makeLogger({ dryRun: true, quiet: true }),
     plannedSkills: new Set(def.requires || []),
     plannedRecipes: new Set(),
   };
-  let r;
-  try {
-    r = await UPSERT_FN[type](dryCtx, def);
-  } catch (e) {
-    if (e.name === 'PrereqError') return { state: 'modified', detail: 'missing prerequisite' };
-    throw e;
-  }
+  const plan = await PLAN_FN[type](planCtx, def);
   const liveVer = await liveVersion(ctx, type, def);
   const versionNote = (entry.version != null && liveVer != null && liveVer !== entry.version)
     ? `live v${liveVer} vs log v${entry.version}`
     : null;
-
-  if (r.verdict === VERDICT.ALREADY) {
-    return versionNote ? { state: 'modified', detail: versionNote, live_version: liveVer } : { state: 'in-sync', live_version: liveVer };
-  }
-  if (r.verdict === VERDICT.LOCKED) {
-    return { state: 'modified', detail: 'locked', live_version: liveVer };
-  }
-  const detail = [r.action, versionNote].filter(Boolean).join('; ') || 'would change';
-  return { state: 'modified', detail, live_version: liveVer };
+  return planToDrift(plan, { liveVer, versionNote });
 }
 
 async function diffManagedEntry(ctx, entry, packageIndex) {
@@ -256,9 +135,7 @@ async function diffManagedEntry(ctx, entry, packageIndex) {
   }
   if (def.handling === 'removed') return { ...base, state: 'in-sync', package_location: loc.dir, detail: 'tombstone' };
 
-  const diff = (entry.type === 'service' || entry.type === 'project')
-    ? await diffWebApp(ctx, def, entry)
-    : await diffDbComponent(ctx, entry, def);
+  const diff = await diffComponent(ctx, entry, def);
   return { ...base, ...diff, package_location: loc.dir };
 }
 

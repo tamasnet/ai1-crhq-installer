@@ -12,7 +12,7 @@ import { closeDb } from '../scripts/lib/db.mjs';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
 import { upsertSkill } from '../scripts/lib/core/skill.mjs';
 import { upsertRecipe } from '../scripts/lib/core/recipe.mjs';
-import { upsertAgent, removeAgent, statusAgent } from '../scripts/lib/core/agent.mjs';
+import { upsertAgent, removeAgent, statusAgent, planAgent } from '../scripts/lib/core/agent.mjs';
 import { makeCtx, harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -108,6 +108,7 @@ try {
   await test('idempotent: re-run → ALREADY, no link drift', async () => {
     const r = await upsertAgent(ctx, agentDef);
     assert.equal(r.verdict, 'ALREADY-INSTALLED');
+    assert.equal((await planAgent(ctx, agentDef)).verdict, 'ALREADY-INSTALLED');
     assert.deepEqual(await skillsOf(agentDef.name), ['ai1-sample-skill']);
     assert.deepEqual(await recipeIdsOf(agentDef.name), [sampleRecipeId]);
   });

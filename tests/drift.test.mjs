@@ -8,11 +8,12 @@ import { loadManifest } from '../scripts/lib/manifest.mjs';
 import { updateInstallLog } from '../scripts/lib/install-log.mjs';
 import { provisionSandbox } from '../scripts/lib/sandbox.mjs';
 import { closeDb } from '../scripts/lib/db.mjs';
-import { upsertSkill, removeSkill } from '../scripts/lib/core/skill.mjs';
+import { writeFileSync } from 'node:fs';
+import { upsertSkill, removeSkill, planSkill } from '../scripts/lib/core/skill.mjs';
 import { upsertRecipe } from '../scripts/lib/core/recipe.mjs';
 import { upsertAgent } from '../scripts/lib/core/agent.mjs';
 import { upsertJob } from '../scripts/lib/core/job.mjs';
-import { makeLogger } from '../scripts/lib/log.mjs';
+import { makeLogger, VERDICT } from '../scripts/lib/log.mjs';
 import { indexPackageStores, runDrift, formatDriftReport } from '../scripts/lib/drift.mjs';
 import { makeCtx, harness } from './_helpers.mjs';
 
@@ -80,6 +81,29 @@ try {
     assert.ok(row?.package_location);
     assert.equal(result.outOfSync.length, 1);
     assert.equal(result.summary.drift, 1);
+  });
+
+  await test('modified when live skill script diverges from package (DB unchanged)', async () => {
+    await recordInstall();
+    const ctx = makeCtx({ PACKAGES_DIR: sb.packagesDir });
+    const skillDir = join(sb.baseDir, skillDef.key);
+    writeFileSync(join(skillDir, 'scripts', 'hello.js'), '// local edit\n', 'utf8');
+    const result = await runDrift(driftCtx(), { stores });
+    const row = result.managed.find((r) => r.type === 'skill' && r.name === skillDef.name);
+    assert.equal(row?.state, 'modified');
+    assert.match(row?.detail || '', /files/);
+    const plan = await planSkill(ctx, skillDef);
+    assert.equal(plan.verdict, VERDICT.OK);
+    assert.equal(plan.dimensions.files, true);
+  });
+
+  await test('plan ALREADY matches upsert ALREADY after install', async () => {
+    await recordInstall();
+    const ctx = makeCtx({ PACKAGES_DIR: sb.packagesDir, mode: 'install' });
+    const plan = await planSkill(ctx, skillDef);
+    const r = await upsertSkill(ctx, skillDef);
+    assert.equal(plan.verdict, VERDICT.ALREADY);
+    assert.equal(r.verdict, VERDICT.ALREADY);
   });
 
   await test('absent when a logged component is removed from the satellite', async () => {
