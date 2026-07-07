@@ -66,7 +66,7 @@ Development/testing flags:
 
 | Flag | Meaning |
 |------|---------|
-| `--dry-run` | Preview with zero DB/filesystem writes. Service/project build commands run; nginx/PM2 apply is skipped. |
+| `--dry-run` | Preview with no DB writes and no nginx/PM2 apply. Service/project **build shell commands still run**; only live deploy artifacts (copied/symlinked files, vhost, pm2 start) are skipped. |
 | `--sandbox` | Provision an isolated DB schema and temp install dirs, then tear them down. For package/installer testing, not normal satellite installs. |
 | `--lifecycle` | With `--sandbox`, assert install/status/idempotency/uninstall/reinstall. |
 | `--keep` | With `--sandbox`, leave the schema and dirs for inspection. |

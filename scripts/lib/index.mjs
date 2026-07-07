@@ -14,6 +14,7 @@ export { preflight, PreflightError } from './preflight.mjs';
 export { resolvePackagesDir, installLogPath, readInstallState, readInstallLog, updateInstallLog, updateInstallLogForMirror, pruneInstallLog, sortInstalled, formatInstalledList, COMPONENT_TYPES } from './install-log.mjs';
 export { discoverPackages, collectAvailable, sortAvailable, formatAvailableList, buildAvailableReport } from './list-available.mjs';
 export { currentVersion, recordVersion, removeVersions, versionTable } from './version-history.mjs';
+export { assertSafeSegment, assertDnsLabel, assertSafeEnvValue, formatEnvValue } from './validate.mjs';
 export { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION, HANDLING_VALUES } from './manifest.mjs';
 export { makeFilter, compileMatcher, hasFilter, FilterError } from './filter.mjs';
 export { CLI_TYPE_TO_COLLECTION, COLLECTION_TO_CLI_TYPE, CLI_TYPE_VALUES, COLLECTION_TYPE_VALUES, splitCliTypeValues, normalizeCliTypeScope, formatCliTypeError } from './component-types.mjs';

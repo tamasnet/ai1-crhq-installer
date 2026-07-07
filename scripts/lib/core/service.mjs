@@ -9,13 +9,14 @@
 //   • real install       → applyWebApp(): copy/symlink source, write .env/ecosystem/vhost,
 //                          alloc port, pm2 start+save, nginx reload. This MUTATES THE LIVE VPS.
 //
-// ⚠️ The live apply/remove paths are implemented per deploy-project conventions but are NOT yet
-// exercised — the plan's "one explicit live service smoke test" (Phase 6) validates them. Render +
+// ⚠️ The live apply/remove paths mutate nginx + PM2 on the VPS. Run tests/service-live.test.mjs
+// with AI1_LIVE_SERVICE_TEST=1 on a machine with sudo/nginx/pm2 to exercise them end-to-end. Render +
 // build + dry-run + symlink helpers + the sandbox skip ARE covered by tests/service.test.mjs.
 import { existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync, readFileSync, lstatSync, readlinkSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { spawnSync } from 'child_process';
 import { copyTree, removeTree, ensureSymlink } from '../fs.mjs';
+import { assertSafeEnvValue, formatEnvValue } from '../validate.mjs';
 import { VERDICT } from '../log.mjs';
 import { resolveServicesBase, resolveUserProjectsBase } from '../paths.mjs';
 import { planResult } from './plan-result.mjs';
@@ -29,7 +30,8 @@ export function renderEnv(def, port) {
   // PORT + NODE_ENV defaults, overridden by the service's declared env. Secrets live ONLY here
   // (chmod 640 by applyWebApp) — never echoed to logs, never duplicated into the PM2 config.
   const merged = { PORT: port, NODE_ENV: 'production', ...(def.env || {}) };
-  return `${Object.entries(merged).map(([k, v]) => `${k}=${v}`).join('\n')}\n`;
+  for (const [k, v] of Object.entries(merged)) assertSafeEnvValue(k, v);
+  return `${Object.entries(merged).map(([k, v]) => `${k}=${formatEnvValue(v)}`).join('\n')}\n`;
 }
 
 export function renderEcosystem(def, port, projectDir) {
@@ -237,7 +239,7 @@ async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
 }
 
 // Live apply — gated to real (non-dry-run, non-sandbox) installs. Faithful to deploy-project;
-// pending the explicit live smoke test for verification.
+// verified by tests/service-live.test.mjs when AI1_LIVE_SERVICE_TEST=1.
 function applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode }) {
   if (def.name === 'crhq-satellite') throw new Error(`refusing to deploy a ${type} named crhq-satellite`);
   if (contentMode === 'symlink') {

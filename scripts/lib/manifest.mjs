@@ -4,6 +4,7 @@ import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname, isAbsolute, resolve, basename, extname } from 'path';
 import { loadYaml, parseFrontmatter } from './parse.mjs';
 import { STANDARD_FLAG_NAMES } from './flags.mjs';
+import { assertSafeSegment, assertDnsLabel } from './validate.mjs';
 
 export class ManifestError extends Error {
   constructor(message) { super(message); this.name = 'ManifestError'; }
@@ -59,6 +60,7 @@ export function validateManifest(meta) {
   for (const f of ['name', 'version', 'description', 'components']) {
     if (meta[f] == null) throw new ManifestError(`Manifest missing required field: ${f}`);
   }
+  assertManifestSegment('package name', meta.name);
   if (typeof meta.components !== 'object' || Array.isArray(meta.components)) {
     throw new ManifestError('components must be a mapping of type → list');
   }
@@ -137,8 +139,11 @@ function loadRemovedDef(type, entry, root) {
 }
 
 function removedName(type, entry) {
-  if (entry.name != null && String(entry.name).trim() !== '') return String(entry.name).trim();
-  return FILE_TYPES.has(type) ? basename(entry.path, extname(entry.path)) : basename(entry.path);
+  const name = entry.name != null && String(entry.name).trim() !== ''
+    ? String(entry.name).trim()
+    : (FILE_TYPES.has(type) ? basename(entry.path, extname(entry.path)) : basename(entry.path));
+  assertManifestSegment(`${type} removed name`, name);
+  return name;
 }
 
 function loadSkillDef(entry, root) {
@@ -147,6 +152,7 @@ function loadSkillDef(entry, root) {
   if (!existsSync(mdPath)) throw new ManifestError(`Skill missing SKILL.md: ${entry.path}`);
   const { meta, body } = parseFrontmatter(readFileSync(mdPath, 'utf8'));
   if (!meta.name) throw new ManifestError(`SKILL.md missing 'name': ${entry.path}`);
+  assertManifestSegment('skill name', meta.name);
   if (meta.version == null) throw new ManifestError(`SKILL.md missing 'version': ${entry.path}`);
   const version = intVersion(`Skill ${meta.name} version`, meta.version);
   const pin = intVersion(`Skill ${entry.path} manifest version`, entry.version);
@@ -169,6 +175,7 @@ function loadRecipeDef(entry, root) {
   if (!existsSync(srcFile)) throw new ManifestError(`Recipe not found: ${entry.path}`);
   const { meta, body } = parseFrontmatter(readFileSync(srcFile, 'utf8'));
   if (!meta.name) throw new ManifestError(`Recipe missing 'name': ${entry.path}`);
+  assertManifestSegment('recipe name', meta.name);
   checkLen('recipe name', meta.name, LIMITS.recipeName);
   // Version is optional for recipes; when present (frontmatter and/or manifest pin) it's an integer
   // and the two must agree.
@@ -195,6 +202,7 @@ function loadAgentDef(entry, root) {
   // agents.name) — D-23.
   if (a.key) throw new ManifestError(`Agent '${entry.path}': 'key' was renamed — use 'name' (the agent identifier) and 'display_name' (the human label)`);
   if (!a.name) throw new ManifestError(`Agent missing 'name': ${entry.path}`);
+  assertManifestSegment('agent name', a.name);
   if (!a.display_name) throw new ManifestError(`Agent missing 'display_name': ${entry.path}`);
   checkLen('agent name', a.name, LIMITS.agentName);
   if (a.mode) checkLen('agent mode', a.mode, LIMITS.agentMode);
@@ -219,6 +227,7 @@ function loadJobDef(entry, root) {
   if (!existsSync(srcFile)) throw new ManifestError(`Job not found: ${entry.path}`);
   const j = loadYaml(readFileSync(srcFile, 'utf8'));
   if (!j.name) throw new ManifestError(`Job missing 'name': ${entry.path}`);
+  assertManifestSegment('job name', j.name);
   if (!j.schedule) throw new ManifestError(`Job missing 'schedule': ${entry.path}`);
   checkLen('job name', j.name, LIMITS.jobName);
 
@@ -278,16 +287,22 @@ export function readWebAppConfig(srcDir, { kind = 'service', pathLabel = srcDir 
   if (!existsSync(yPath)) throw new ManifestError(`${cap} missing ${fileName}: ${pathLabel}`);
   const s = loadYaml(readFileSync(yPath, 'utf8'));
   if (!s.name) throw new ManifestError(`${fileName} missing 'name': ${pathLabel}`);
+  assertManifestSegment(`${kind} name`, s.name);
   if (s.version == null) throw new ManifestError(`${fileName} missing 'version': ${pathLabel}`);
   const version = intVersion(`${cap} ${s.name} version`, s.version);
   if (!s.start) throw new ManifestError(`${fileName} missing 'start': ${pathLabel}`);
   checkLen(`${kind} name`, s.name, kind === 'project' ? LIMITS.projectName : LIMITS.serviceName);
-  return { config: s, version, srcFile: yPath };
+  let app_name = s.name;
+  if (s.app_name != null && String(s.app_name).trim() !== '') {
+    app_name = String(s.app_name).trim();
+    assertManifestDnsLabel('app_name', app_name);
+  }
+  return { config: s, version, srcFile: yPath, app_name };
 }
 
 function loadWebAppDef(entry, root, kind) {
   const srcDir = join(root, entry.path);
-  const { config: s, version, srcFile } = readWebAppConfig(srcDir, { kind, pathLabel: entry.path });
+  const { config: s, version, srcFile, app_name } = readWebAppConfig(srcDir, { kind, pathLabel: entry.path });
   const cap = kind === 'project' ? 'Project' : 'Service';
   const fileName = kind === 'project' ? 'project.yaml' : 'service.yaml';
   const pin = intVersion(`${cap} ${entry.path} manifest version`, entry.version);
@@ -296,7 +311,7 @@ function loadWebAppDef(entry, root, kind) {
   }
   return {
     name: s.name, version, start: s.start, port: s.port, cwd: s.cwd || './',
-    build: normalizeBuild(`${cap} ${s.name} build`, s.build), env: s.env || {}, app_name: s.app_name, ssl: s.ssl, srcDir, srcFile,
+    build: normalizeBuild(`${cap} ${s.name} build`, s.build), env: s.env || {}, app_name, ssl: s.ssl, srcDir, srcFile,
   };
 }
 
@@ -316,6 +331,22 @@ export function normalizeBuild(label, build) {
 
 function checkLen(label, val, max) {
   if (String(val).length > max) throw new ManifestError(`${label} exceeds ${max} chars: ${val}`);
+}
+
+function assertManifestSegment(label, val) {
+  try {
+    assertSafeSegment(label, val);
+  } catch (e) {
+    throw new ManifestError(e.message);
+  }
+}
+
+function assertManifestDnsLabel(label, val) {
+  try {
+    assertDnsLabel(label, val);
+  } catch (e) {
+    throw new ManifestError(e.message);
+  }
 }
 
 // Component versions are positive integers (D-34) — they round-trip through CRHQ's *_versions

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// Phase 6 verification — service (nginx + PM2) render + build + dry-run + sandbox-skip. The live
-// apply/remove paths mutate the VPS and are intentionally NOT exercised here (they're covered by the
-// plan's explicit live smoke test). No DB needed. Run from the project root:
+// Phase 6 verification — service (nginx + PM2) render + build + dry-run + sandbox-skip. Live
+// apply/remove is gated in tests/service-live.test.mjs (AI1_LIVE_SERVICE_TEST=1). No DB needed.
 //   node tests/service.test.mjs
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, lstatSync, readlinkSync, rmSync } from 'node:fs';
