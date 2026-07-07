@@ -623,12 +623,10 @@ export function resolveGetPackageInputs(flags) {
   return { name, version: flags.version };
 }
 
-// Map an archive filename to its canonical extension + extractor kind. The hub serves gzipped
-// tarballs; a plain .zip is also accepted. Anything else is unsupported (null) — we won't guess.
-function archiveKind(name) {
-  if (/\.tar\.gz$/i.test(name)) return { ext: '.tar.gz', kind: 'tar' };
-  if (/\.tgz$/i.test(name)) return { ext: '.tgz', kind: 'tar' };
-  if (/\.zip$/i.test(name)) return { ext: '.zip', kind: 'zip' };
+// Map an archive filename to its canonical extension. Hub packages are gzipped tarballs only.
+function archiveExtension(name) {
+  if (/\.tar\.gz$/i.test(name)) return '.tar.gz';
+  if (/\.tgz$/i.test(name)) return '.tgz';
   return null;
 }
 
@@ -649,7 +647,7 @@ async function downloadArchive(url, dest) {
 }
 
 // Reject archive member paths that could escape the destination (path traversal, absolute paths,
-// Windows drive prefixes). Applied to tar/zip listings before extract.
+// Windows drive prefixes). Applied to tar listings before extract.
 export function isUnsafeArchiveMember(member) {
   if (!member || member.trim() === '') return true;
   const m = member.replace(/\\/g, '/');
@@ -678,20 +676,6 @@ function extractTarVerboseName(line) {
   return name.replace(/\/$/, '');
 }
 
-// Parse a zipinfo -l entry line into the member path.
-function extractZipinfoName(line) {
-  const m = line.match(/\d{2}:\d{2}\s+(.+)$/);
-  return m ? m[1].trim() : null;
-}
-
-function isZipinfoHeaderLine(line) {
-  return !line
-    || line.startsWith('Archive:')
-    || line.startsWith('Zip file size')
-    || line.startsWith('-')
-    || /^\d+ files?/.test(line);
-}
-
 // List tar members via verbose listing so symlink (`l`) and hardlink (`h`) entries are visible.
 // Package archives must be plain files/dirs only (copyTree also drops symlinks).
 function listTarMembers(file) {
@@ -713,39 +697,7 @@ function listTarMembers(file) {
   return members;
 }
 
-function listZipMembers(file) {
-  // zipinfo -l shows Unix permission bits (symlinks start with `l`); unzip -Z1 does not.
-  let r = spawnSync('zipinfo', ['-l', file], { encoding: 'utf8' });
-  if (!r.error && r.status === 0) {
-    const members = [];
-    for (const line of r.stdout.split('\n')) {
-      if (isZipinfoHeaderLine(line)) continue;
-      if (line[0] === 'l' || line[0] === 'h') {
-        const name = extractZipinfoName(line) || line.trim();
-        throw new RemoteError(`archive contains symlink/hardlink member rejected: ${name}`);
-      }
-      const name = extractZipinfoName(line);
-      if (name) members.push(name);
-    }
-    if (members.length > 0) return members;
-  }
-  r = spawnSync('unzip', ['-Z1', file], { encoding: 'utf8' });
-  if (!r.error && r.status === 0) return r.stdout.split('\n').filter(Boolean);
-  r = spawnSync('unzip', ['-l', file], { encoding: 'utf8' });
-  if (r.error) throw new RemoteError(`could not run unzip: ${r.error.message}`);
-  if (r.status !== 0) {
-    throw new RemoteError(`could not list archive members (unzip exit ${r.status})`);
-  }
-  const members = [];
-  for (const line of r.stdout.split('\n')) {
-    const m = line.match(/^\s*\d+\s+\d{2,4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(.+)$/);
-    if (m) members.push(m[1].trim());
-  }
-  return members;
-}
-
-// Belt-and-suspenders: reject any symlink left in the extracted tree (covers zip when zipinfo
-// is absent or listing omits link metadata).
+// Belt-and-suspenders: reject any symlink left in the extracted tree.
 function rejectSymlinksInTree(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
@@ -770,23 +722,19 @@ export async function sha256File(path) {
   return hash.digest('hex');
 }
 
-// Extract `file` into `dest` by shelling out to the platform archiver (tar/unzip), the same
-// shell-out approach service.mjs uses for builds. Member paths are listed and validated first
-// (including rejection of symlink/hardlink entries); GNU tar gets --no-absolute-names when
-// available. After extract, the tree is walked to reject any symlink. Throws RemoteError on
-// unsafe paths, link members, a missing tool, or non-zero exit.
-export function extractArchive(kind, file, dest) {
-  const members = kind === 'tar' ? listTarMembers(file) : listZipMembers(file);
-  validateArchiveMembers(members);
-  const [cmd, args] = kind === 'tar'
-    ? ['tar', [
-        ...(tarSupportsNoAbsoluteNames() ? ['--no-absolute-names'] : []),
-        '-xzf', file, '-C', dest,
-      ]]
-    : ['unzip', ['-q', '-o', file, '-d', dest]];
-  const r = spawnSync(cmd, args, { stdio: 'inherit' });
-  if (r.error) throw new RemoteError(`could not run ${cmd}: ${r.error.message}`);
-  if (r.status !== 0) throw new RemoteError(`extracting ${basename(file)} failed (${cmd} exit ${r.status})`);
+// Extract a .tar.gz/.tgz `file` into `dest` via GNU/BSD tar. Member paths are listed and validated
+// first (including rejection of symlink/hardlink entries); GNU tar gets --no-absolute-names when
+// available. After extract, the tree is walked to reject any symlink. Throws RemoteError on unsafe
+// paths, link members, a missing tool, or non-zero exit.
+export function extractArchive(file, dest) {
+  validateArchiveMembers(listTarMembers(file));
+  const args = [
+    ...(tarSupportsNoAbsoluteNames() ? ['--no-absolute-names'] : []),
+    '-xzf', file, '-C', dest,
+  ];
+  const r = spawnSync('tar', args, { stdio: 'inherit' });
+  if (r.error) throw new RemoteError(`could not run tar: ${r.error.message}`);
+  if (r.status !== 0) throw new RemoteError(`extracting ${basename(file)} failed (tar exit ${r.status})`);
   rejectSymlinksInTree(dest);
 }
 
@@ -900,15 +848,15 @@ export async function fetchRemotePackage(flags, { log } = {}) {
 
   // 2. Decide the archive format from the object name baked into the signed URL's path.
   const objectName = basename(new URL(signedUrl).pathname);
-  const archive = archiveKind(objectName);
-  if (!archive) {
-    throw new RemoteError(`unsupported package archive '${objectName}' (expected .tar.gz, .tgz, or .zip)`);
+  const ext = archiveExtension(objectName);
+  if (!ext) {
+    throw new RemoteError(`unsupported package archive '${objectName}' (expected .tar.gz or .tgz)`);
   }
 
   // 3. Download the archive to DOWNLOAD_BASE_DIR.
   const downloadBase = resolveDownloadBase();
   mkdirSync(downloadBase, { recursive: true });
-  const downloadPath = join(downloadBase, `${inputs.name}@${inputs.version}${archive.ext}`);
+  const downloadPath = join(downloadBase, `${inputs.name}@${inputs.version}${ext}`);
   log?.info(`downloading archive → ${downloadPath} …`);
   await downloadArchive(signedUrl, downloadPath);
 
@@ -933,7 +881,7 @@ export async function fetchRemotePackage(flags, { log } = {}) {
   rmSync(stageDir, { recursive: true, force: true });
   mkdirSync(stageDir, { recursive: true });
   try {
-    extractArchive(archive.kind, downloadPath, stageDir);
+    extractArchive(downloadPath, stageDir);
   } catch (e) {
     // Leave the download in place on failure (for inspection/retry); just clear the partial stage.
     rmSync(stageDir, { recursive: true, force: true });

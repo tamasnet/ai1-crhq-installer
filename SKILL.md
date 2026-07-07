@@ -158,7 +158,7 @@ node scripts/remote.mjs get-package --name=<name> --version=<n>
 node scripts/remote.mjs get-package --name=<name> --version=<n> --keep-download
 ```
 
-`get-package` downloads a registered package archive, verifies an optional hub-provided `digest`
+`get-package` downloads a registered package archive (`.tar.gz` or `.tgz`), verifies an optional hub-provided `digest`
 (sha256 hex) when present, extracts to `${PACKAGE_BASE_DIR:-~/packages}/<name>@<version>`, and
 deletes the download by default. Pass `--keep-download` to retain the archive in
 `${DOWNLOAD_BASE_DIR:-$TMPDIR}`.
