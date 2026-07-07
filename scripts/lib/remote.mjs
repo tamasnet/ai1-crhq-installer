@@ -9,7 +9,10 @@
 // return — `<remote_id>.<secret>`, surfaced exactly once. That token is the credential for every
 // later authenticated call, so it is the one thing id.json must not lose; we therefore refuse to
 // overwrite an existing id.json unless --force is given (the hub also 409s a re-register).
-import { writeFileSync, renameSync, existsSync, readFileSync, mkdirSync, rmSync, createWriteStream } from 'fs';
+import {
+  writeFileSync, renameSync, existsSync, readFileSync, mkdirSync, rmSync,
+  createWriteStream, createReadStream, readdirSync,
+} from 'fs';
 import { join, basename } from 'path';
 import { homedir, hostname, tmpdir } from 'os';
 import { Readable } from 'stream';
@@ -665,17 +668,68 @@ export function validateArchiveMembers(members) {
   }
 }
 
+// Parse a GNU/BSD tar -tvzf line into the member path (strips trailing / on dirs).
+function extractTarVerboseName(line) {
+  const m = line.match(/^\S+\s+\S+\s+\d+\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(.+)$/);
+  if (!m) return null;
+  let name = m[1];
+  if (name.includes(' -> ')) name = name.split(' -> ')[0];
+  else if (name.includes(' link to ')) name = name.split(' link to ')[0];
+  return name.replace(/\/$/, '');
+}
+
+// Parse a zipinfo -l entry line into the member path.
+function extractZipinfoName(line) {
+  const m = line.match(/\d{2}:\d{2}\s+(.+)$/);
+  return m ? m[1].trim() : null;
+}
+
+function isZipinfoHeaderLine(line) {
+  return !line
+    || line.startsWith('Archive:')
+    || line.startsWith('Zip file size')
+    || line.startsWith('-')
+    || /^\d+ files?/.test(line);
+}
+
+// List tar members via verbose listing so symlink (`l`) and hardlink (`h`) entries are visible.
+// Package archives must be plain files/dirs only (copyTree also drops symlinks).
 function listTarMembers(file) {
-  const r = spawnSync('tar', ['-tzf', file], { encoding: 'utf8' });
+  const r = spawnSync('tar', ['-tvzf', file], { encoding: 'utf8' });
   if (r.error) throw new RemoteError(`could not run tar: ${r.error.message}`);
   if (r.status !== 0) {
     throw new RemoteError(`could not list archive members (tar exit ${r.status})`);
   }
-  return r.stdout.split('\n').map((l) => l.replace(/\/$/, '')).filter(Boolean);
+  const members = [];
+  for (const line of r.stdout.split('\n')) {
+    if (!line.trim()) continue;
+    if (line[0] === 'l' || line[0] === 'h') {
+      const name = extractTarVerboseName(line) || line.trim();
+      throw new RemoteError(`archive contains symlink/hardlink member rejected: ${name}`);
+    }
+    const name = extractTarVerboseName(line);
+    if (name) members.push(name);
+  }
+  return members;
 }
 
 function listZipMembers(file) {
-  let r = spawnSync('unzip', ['-Z1', file], { encoding: 'utf8' });
+  // zipinfo -l shows Unix permission bits (symlinks start with `l`); unzip -Z1 does not.
+  let r = spawnSync('zipinfo', ['-l', file], { encoding: 'utf8' });
+  if (!r.error && r.status === 0) {
+    const members = [];
+    for (const line of r.stdout.split('\n')) {
+      if (isZipinfoHeaderLine(line)) continue;
+      if (line[0] === 'l' || line[0] === 'h') {
+        const name = extractZipinfoName(line) || line.trim();
+        throw new RemoteError(`archive contains symlink/hardlink member rejected: ${name}`);
+      }
+      const name = extractZipinfoName(line);
+      if (name) members.push(name);
+    }
+    if (members.length > 0) return members;
+  }
+  r = spawnSync('unzip', ['-Z1', file], { encoding: 'utf8' });
   if (!r.error && r.status === 0) return r.stdout.split('\n').filter(Boolean);
   r = spawnSync('unzip', ['-l', file], { encoding: 'utf8' });
   if (r.error) throw new RemoteError(`could not run unzip: ${r.error.message}`);
@@ -690,21 +744,37 @@ function listZipMembers(file) {
   return members;
 }
 
+// Belt-and-suspenders: reject any symlink left in the extracted tree (covers zip when zipinfo
+// is absent or listing omits link metadata).
+function rejectSymlinksInTree(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isSymbolicLink()) {
+      throw new RemoteError(`extracted tree contains symlink rejected: ${p}`);
+    }
+    if (entry.isDirectory()) rejectSymlinksInTree(p);
+  }
+}
+
 function tarSupportsNoAbsoluteNames() {
   const r = spawnSync('tar', ['--no-absolute-names', '--version'], { encoding: 'utf8', stdio: 'pipe' });
   return !r.error && r.status === 0;
 }
 
-function sha256File(path) {
+// Stream the file through sha256 without buffering the whole archive in memory.
+export async function sha256File(path) {
   const hash = createHash('sha256');
-  hash.update(readFileSync(path));
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk);
+  }
   return hash.digest('hex');
 }
 
 // Extract `file` into `dest` by shelling out to the platform archiver (tar/unzip), the same
-// shell-out approach service.mjs uses for builds. Member paths are listed and validated first;
-// GNU tar gets --no-absolute-names when available. Throws RemoteError on unsafe paths, a missing
-// tool, or non-zero exit.
+// shell-out approach service.mjs uses for builds. Member paths are listed and validated first
+// (including rejection of symlink/hardlink entries); GNU tar gets --no-absolute-names when
+// available. After extract, the tree is walked to reject any symlink. Throws RemoteError on
+// unsafe paths, link members, a missing tool, or non-zero exit.
 export function extractArchive(kind, file, dest) {
   const members = kind === 'tar' ? listTarMembers(file) : listZipMembers(file);
   validateArchiveMembers(members);
@@ -717,6 +787,7 @@ export function extractArchive(kind, file, dest) {
   const r = spawnSync(cmd, args, { stdio: 'inherit' });
   if (r.error) throw new RemoteError(`could not run ${cmd}: ${r.error.message}`);
   if (r.status !== 0) throw new RemoteError(`extracting ${basename(file)} failed (${cmd} exit ${r.status})`);
+  rejectSymlinksInTree(dest);
 }
 
 // --- complete-action: report a queued action's outcome back to the hub -----------------------
@@ -842,7 +913,7 @@ export async function fetchRemotePackage(flags, { log } = {}) {
   await downloadArchive(signedUrl, downloadPath);
 
   if (expectedDigest) {
-    const actual = sha256File(downloadPath);
+    const actual = await sha256File(downloadPath);
     if (actual !== expectedDigest) {
       throw new RemoteError(
         `package digest mismatch — expected sha256 ${expectedDigest}, got ${actual}`);
