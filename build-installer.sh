@@ -40,7 +40,9 @@ STAGEDIR="$ROOT/dist/package"
 echo "build: staging package layout in $STAGEDIR ..." >&2
 rm -rf "$STAGEDIR"
 mkdir -p "$STAGEDIR"
-cp "$ROOT/ai1-package.yaml" "$STAGEDIR/"
+BUILD_DATE=$(date '+%Y%m%d')
+awk -v build="build: ${BUILD_DATE}.0" '/^version:/{print; print build; next}1' \
+  "$ROOT/ai1-package.yaml" > "$STAGEDIR/ai1-package.yaml"
 mkdir -p "$STAGEDIR/scripts"
 cp "$ROOT/install-satellite-tools.sh" "$STAGEDIR/scripts/"
 mkdir -p "$STAGEDIR/skills/ai1-satellite-tools"

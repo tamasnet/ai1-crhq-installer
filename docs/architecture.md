@@ -4,7 +4,7 @@
 
 ## Product shape
 
-Five CLIs sit on a shared library in `scripts/lib/`:
+Six CLIs sit on a shared library in `scripts/lib/`:
 
 | CLI | Role | Live dependencies |
 |-----|------|-------------------|
