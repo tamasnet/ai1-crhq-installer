@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // sync.mjs — satellite → package repo sync.
-// The author's "get my changes back" command, and (with --mirror) the satellite backup command.
+// The author's "get my changes back" command, and (with --mirror) the live-state mirroring command.
 // Reads the package's ai1-package.yaml and exports each listed component from the live satellite
 // (DB + SKILLS_BASE_DIR) to the package repo directory. Git-safe — unchanged files are never
 // written, so only genuine diffs appear.
 //
 // Two modes:
 //   (default)  manifest-driven: export the components the manifest lists; --add-* to register more.
-//   --mirror   satellite-driven backup: make the package mirror the live satellite within scope —
+//   --mirror   satellite-driven: make the package mirror the live satellite within scope —
 //              auto-add new components, sync existing, REMOVE manifest entries (and their files)
 //              whose component is gone, and bump the integer package version when content changed.
 //
@@ -64,7 +64,7 @@ never touched — run before git diff/add/commit.
                         (regex; a value with no regex metacharacter is an exact ^pat$ match)
   --exclude=<pat>       Skip components whose name matches <pat> (after --include)
 
-  --mirror              Backup mode: make the package mirror the live satellite. Auto-adds new
+  --mirror              Mirror mode: make the package match the live satellite. Auto-adds new
                         components, syncs existing ones, and REMOVES manifest entries (plus their
                         files) whose component no longer exists on the satellite. Bumps the integer
                         package version by 1 when the run changed package content.

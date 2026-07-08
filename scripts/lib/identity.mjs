@@ -9,7 +9,7 @@ export function resolveSatelliteId() {
   return process.env.SATELLITE_ID || hostname().replace(/^crhq-/, '');
 }
 
-// The package name a satellite publishes its OWN resources under (e.g. a mirror/backup package).
+// The package name a satellite publishes its OWN resources under (e.g. a mirror package).
 // Heuristic, applied in order to the satellite id:
 //   1. start from the satellite id,
 //   2. drop a leading `myzone-` if present,

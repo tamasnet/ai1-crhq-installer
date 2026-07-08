@@ -1,6 +1,6 @@
 // preflight.mjs — fail fast before any component work: confirm the DB is reachable and that the
 // install target dir (SKILLS_BASE_DIR) is writable. A failure is a transport-class error → exit 2.
-// (The sync/--mirror backup path does its own writability handling in lib/sync.mjs and does not go
+// (The sync path — including --mirror — does its own writability handling in lib/sync.mjs and does not go
 // through this install preflight.)
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';

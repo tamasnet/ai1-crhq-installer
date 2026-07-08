@@ -193,7 +193,7 @@ function exportScriptJob(ctx, row, { outRoot, relPath, skillNames }) {
   const { log, SKILLS_BASE } = ctx;
   const skip = (reason) => {
     log.warn(`job ${row.name}: ${reason} — skipped`);
-    return { type: 'job', name: row.name, verdict: VERDICT.BACKUP_SKIP, action: 'skipped', detail: reason };
+    return { type: 'job', name: row.name, verdict: VERDICT.SYNC_SKIP, action: 'skipped', detail: reason };
   };
   if (row.job_type !== 'script' || row.script_path !== 'node') {
     return skip(`not a script/node job (job_type=${row.job_type}, script_path=${row.script_path})`);
@@ -215,14 +215,14 @@ function exportScriptJob(ctx, row, { outRoot, relPath, skillNames }) {
     ...(skillNames?.has(skillKey) ? { requires: [skillKey] } : {}),
   };
   const changed = writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: !!ctx.DRY_RUN });
-  return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath }, changed };
+  return { ...res(row.name, VERDICT.SYNC_OK, 'exported'), entry: { path: relPath }, changed };
 }
 
 function exportNewSessionJob(ctx, row, { outRoot, relPath }) {
   const { log } = ctx;
   if (!row.agent || (!row.task && !row.recipe_id)) {
     log.warn(`job ${row.name}: new_session missing agent or task/recipe_id — skipped`);
-    return { type: 'job', name: row.name, verdict: VERDICT.BACKUP_SKIP, action: 'skipped', detail: 'incomplete new_session job' };
+    return { type: 'job', name: row.name, verdict: VERDICT.SYNC_SKIP, action: 'skipped', detail: 'incomplete new_session job' };
   }
   const def = {
     ...exportCommonJobFields(row),
@@ -234,14 +234,14 @@ function exportNewSessionJob(ctx, row, { outRoot, relPath }) {
     ...(row.model ? { model: row.model } : {}),
   };
   const changed = writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: !!ctx.DRY_RUN });
-  return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath }, changed };
+  return { ...res(row.name, VERDICT.SYNC_OK, 'exported'), entry: { path: relPath }, changed };
 }
 
 function exportMessageSessionJob(ctx, row, { outRoot, relPath }) {
   const { log } = ctx;
   if (!row.target_session_id || !row.message) {
     log.warn(`job ${row.name}: message_session missing target_session_id or message — skipped`);
-    return { type: 'job', name: row.name, verdict: VERDICT.BACKUP_SKIP, action: 'skipped', detail: 'incomplete message_session job' };
+    return { type: 'job', name: row.name, verdict: VERDICT.SYNC_SKIP, action: 'skipped', detail: 'incomplete message_session job' };
   }
   const def = {
     ...exportCommonJobFields(row),
@@ -252,7 +252,7 @@ function exportMessageSessionJob(ctx, row, { outRoot, relPath }) {
     ...(row.model ? { model: row.model } : {}),
   };
   const changed = writeIfChanged(join(outRoot, relPath), dumpYaml(def), { dryRun: !!ctx.DRY_RUN });
-  return { ...res(row.name, VERDICT.BACKUP_OK, 'exported'), entry: { path: relPath }, changed };
+  return { ...res(row.name, VERDICT.SYNC_OK, 'exported'), entry: { path: relPath }, changed };
 }
 
 export async function exportJob(ctx, row, opts) {

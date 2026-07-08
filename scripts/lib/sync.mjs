@@ -140,7 +140,7 @@ async function findRow(db, type, name) {
 }
 
 // The curated live inventory mirror auto-adds FROM: active `user` skills only (NOT `org`/`store`/
-// `system` — those come from their own source packages, not a satellite backup), active recipes,
+// `system` — those come from their own source packages, not a satellite mirror), active recipes,
 // non-system active agents, non-system jobs. Inactive/system rows are intentionally excluded — the
 // manifest can't express them and restoring one would misrepresent the satellite. (Removal is
 // deliberately more conservative — see findRow — so an org/store/system or already-listed component
@@ -453,7 +453,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
       }
 
       // Unrepresentable in the manifest (e.g. a non-node / out-of-base job) — not added.
-      if (result?.verdict === VERDICT.BACKUP_SKIP) {
+      if (result?.verdict === VERDICT.SYNC_SKIP) {
         log.warn(`${label(type, name)}: ${result.detail || 'not representable in a package'} — not added`);
         results.push({ type: singular(type), name, verdict: 'SYNC-SKIP', action: 'skipped', ...(result.detail ? { detail: result.detail } : {}) });
         continue;
@@ -529,7 +529,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
 
       // Unrepresentable now (e.g. a job whose script moved outside SKILLS_BASE_DIR) — keep the
       // manifest entry as-is, surface a skip, don't claim a clean sync.
-      if (result?.verdict === VERDICT.BACKUP_SKIP) {
+      if (result?.verdict === VERDICT.SYNC_SKIP) {
         log.warn(`${label(type, name)}: ${result.detail || 'not representable in a package'} — skipped`);
         results.push({ type: singular(type), name, verdict: 'SYNC-SKIP', action: 'skipped', ...(result.detail ? { detail: result.detail } : {}) });
         kept.push(entry);

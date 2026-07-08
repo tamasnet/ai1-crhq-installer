@@ -148,7 +148,7 @@ try {
     mkdirSync(outRoot, { recursive: true });
     const relPath = 'jobs/ai1-session-job.yaml';
     const r = await exportJob(ctx, row, { outRoot, relPath, skillNames: new Set() });
-    assert.equal(r.verdict, 'BACKUP-OK');
+    assert.equal(r.verdict, 'SYNC-OK');
     const j = loadYaml(readFileSync(join(outRoot, relPath), 'utf8'));
     assert.equal(j.job_type, 'new_session');
     assert.equal(j.agent, 'operator');

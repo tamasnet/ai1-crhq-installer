@@ -1,7 +1,7 @@
 ---
 name: ai1-satellite-tools
 version: 1
-description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, or status-check packaged skills, recipes, agents, background jobs, services, or projects from ai1-package.yaml; sync live satellite edits back into a package; create a restorable satellite backup with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, process queued hub actions, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's Polaris customer repository.
+description: Manage a satellite's resources with Ai1 Packages. Use when an agent needs to install, update, remove, or status-check packaged skills, recipes, agents, background jobs, services, or projects from ai1-package.yaml; sync live satellite edits back into a package; mirror live skill/agent/recipe/job definitions into a version-controllable package with sync --mirror; list installed or available local packages; register the satellite with the Ai1 Platform Hub; pull remote config, send heartbeats, process queued hub actions, download registered packages, resolve the hub-provided GitHub token; or clone the satellite's Polaris customer repository.
 ---
 
 # Ai1 Satellite Tools
@@ -25,7 +25,7 @@ Run commands from the skill/project root unless using an installed absolute path
 | List locally available components | `node scripts/install.mjs --list-available` |
 | Sync manifest-listed live edits into package | `node scripts/sync.mjs <package-dir>` |
 | Add a live component to a package | `node scripts/sync.mjs <package-dir> --add-skill=<name>` |
-| Back up satellite into restorable package | `node scripts/sync.mjs <package-dir> --mirror` |
+| Mirror live definitions into package | `node scripts/sync.mjs <package-dir> --mirror` |
 | Register with hub | `node scripts/remote.mjs register --hub=<url> --token=<bootstrap>` |
 | Unregister locally | `node scripts/remote.mjs unregister` |
 | Pull hub config | `node scripts/remote.mjs pull-config` |
@@ -91,7 +91,7 @@ node scripts/drift.mjs --type=skill,recipe --include='^acme-'
 
 Managed drift checks each `install.json` slot against the logged package@version in local package stores (`PACKAGE_BASE_DIR`, `REPOS_BASE_DIR`). States: `in-sync`, `modified`, `absent`, `source-missing`. Orphans are live components (same curation as `sync --mirror`) plus deployed services/projects not attributed in the install log. The report lists every out-of-sync row in one table with VERSION, PACKAGE, SOURCE (manifest path), LOCATION (local package dir), and DETAIL. Exit code 1 when any drift is found.
 
-## Sync and backup
+## Sync and mirror
 
 `sync.mjs` exports live satellite state back into a package directory. It edits the package in place and refuses destinations outside a git work tree unless `--force` is passed.
 
@@ -116,15 +116,15 @@ entries are not exported. Run plain sync with no mutation flags afterward to syn
 Use `--type`, `--include`, and `--exclude` to export a subset of manifest entries selectively.
 `--add-project=<name>` is special: it moves `/opt/projects/user/<name>` into `projects/<name>` inside the package, adds a project manifest entry, and replaces the live directory with a symlink. The live project must not be its own git repository — remove `.git` first so it is a plain directory. If the project has no `project.yaml`, a valid default is generated inside the package. After that, sync/mirror do not export project content; git owns it.
 
-### Mirror backup
+### Mirror sync
 
-Use `--mirror` when the live satellite is the authority and the package should become a restorable backup.
+Use `--mirror` when the live satellite is the authority and the package should match it exactly — a reinstallable snapshot of the live definitions.
 
 ```bash
 node scripts/sync.mjs <package-dir> --mirror
 node scripts/sync.mjs <package-dir> --mirror --dry-run
 node scripts/sync.mjs <package-dir> --mirror --type=skill,recipe --include='^acme-' --json
-node scripts/install.mjs <package-dir>   # restore
+node scripts/install.mjs <package-dir>   # reinstall the mirrored state
 ```
 
 Mirror mode:

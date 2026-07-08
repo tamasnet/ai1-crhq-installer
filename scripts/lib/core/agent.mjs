@@ -209,7 +209,7 @@ export async function exportAgent(ctx, row, { outRoot, relPath }) {
   const body = (row.instructions || '').replace(/^\n+/, '');
   const md = `---\n${dumpYaml(fm)}---\n${body ? `\n${body.endsWith('\n') ? body : `${body}\n`}` : ''}`;
   const mdChanged = writeIfChanged(join(destDir, 'AGENTS.md'), md, { dryRun: !!ctx.DRY_RUN });
-  return { ...res(key, VERDICT.BACKUP_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath, ...(version != null ? { version } : {}) }, changed: files > 0 || mdChanged };
+  return { ...res(key, VERDICT.SYNC_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath, ...(version != null ? { version } : {}) }, changed: files > 0 || mdChanged };
 }
 
 export async function statusAgent(ctx, nameOrDef) {

@@ -66,7 +66,7 @@ Coverage summary:
 | `options.test.mjs` | Strict option validation and installed/available list modes. |
 | `install-log.test.mjs` | Install log shape, ownership transfer, mirror reconciliation, formatting. |
 | `list-available.test.mjs` | Package store scanning and status classification. |
-| `sync.test.mjs` | Plain sync, mirror backup, manifest reconciliation, version handling, filters, dry-run. |
+| `sync.test.mjs` | Plain sync, mirror mode, manifest reconciliation, version handling, filters, dry-run. |
 | `remote.test.mjs` | Hub client protocol against a stub server. |
 | `action.test.mjs` | Queued hub action processing, per-action removal/error tracking, CLI options. |
 | `polaris.test.mjs` | GitHub Client Repository clone helper and token handling. |

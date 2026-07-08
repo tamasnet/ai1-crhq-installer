@@ -12,10 +12,10 @@ export const VERDICT = {
   STATUS: 'STATUS',          // informational (status mode); never affects exit code
   ABSENT: 'NOT-INSTALLED',   // status: component not present
   SKIPPED: 'SKIPPED',        // handling: removed/optional entry not acted on this run (exit-neutral)
-  // Export verdicts — returned by the core export* fns and consumed by sync (incl. --mirror).
-  BACKUP_OK: 'BACKUP-OK',    // export: component written to the package
-  BACKUP_SKIP: 'BACKUP-SKIP',// export: component not representable in the manifest — skipped
-  BACKUP_FAIL: 'BACKUP-FAIL',// export: component export failed
+  // Sync verdicts — returned by the core export* fns and consumed by sync (incl. --mirror).
+  SYNC_OK: 'SYNC-OK',    // sync: component written to the package
+  SYNC_SKIP: 'SYNC-SKIP',// sync: component not representable in the manifest — skipped
+  SYNC_FAIL: 'SYNC-FAIL',// sync: component export failed
 };
 
 // Severity → exit-code contribution. 0 = success/already; 1 = failure class.
@@ -29,9 +29,9 @@ export const SEVERITY = {
   [VERDICT.PREREQ]: 1,
   [VERDICT.PARTIAL]: 1,
   [VERDICT.FAIL]: 1,
-  [VERDICT.BACKUP_OK]: 0,
-  [VERDICT.BACKUP_SKIP]: 0,   // "can't be expressed in the format" is not a failure — it is warned
-  [VERDICT.BACKUP_FAIL]: 1,
+  [VERDICT.SYNC_OK]: 0,
+  [VERDICT.SYNC_SKIP]: 0,   // "can't be expressed in the format" is not a failure — it is warned
+  [VERDICT.SYNC_FAIL]: 1,
 };
 
 export function makeLogger({ dryRun = false, quiet = false } = {}) {

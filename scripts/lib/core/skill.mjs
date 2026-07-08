@@ -144,7 +144,7 @@ export async function exportSkill(ctx, row, { outRoot, relPath }) {
   const mdChanged = writeIfChanged(join(destDir, 'SKILL.md'), md, { dryRun: !!ctx.DRY_RUN });
 
   const entry = { path: relPath, version, ...(row.skill_type === 'user' ? { install_type: 'user' } : {}) };
-  return { ...result(row.name, VERDICT.BACKUP_OK, 'exported', files + (mdChanged ? 1 : 0)), entry, changed: files > 0 || mdChanged };
+  return { ...result(row.name, VERDICT.SYNC_OK, 'exported', files + (mdChanged ? 1 : 0)), entry, changed: files > 0 || mdChanged };
 }
 
 function tryFrontmatter(text) {

@@ -6,7 +6,7 @@
 //
 //   install  → recordVersion(): write the package's declared version as a version_num row so CRHQ's
 //              number matches the package (idempotent merge; warns on a non-incrementing version).
-//   backup   → currentVersion(): read MAX(version_num) as the live version to pin in the package.
+//   sync     → currentVersion(): read MAX(version_num) as the live version to pin in the package.
 //
 // Only DB-resident, versioned types participate (skills/recipes/agents). Jobs have no version table;
 // services/projects aren't DB-resident (their version lives in service.yaml/project.yaml + the install log).

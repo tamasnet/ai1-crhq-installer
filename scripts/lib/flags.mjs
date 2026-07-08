@@ -2,7 +2,7 @@
 // `--help` usage text. Kept DEPENDENCY-FREE (no db/log imports) so manifest.mjs can reuse the
 // standard-flag set without pulling in the knex layer. Parsing of accepted flags into a context
 // lives in context.mjs (parseFlags); this module only decides what is/ isn't a legal option.
-// (The `sync` CLI — including its --mirror backup mode — owns its own flag spec in scripts/sync.mjs.)
+// (The `sync` CLI — including its --mirror mode — owns its own flag spec in scripts/sync.mjs.)
 //
 // Two flag kinds:
 //   • boolean — present or absent; supplying `=value` is an error.
@@ -60,7 +60,7 @@ export function validateFlags(argv, { mode = 'install', declared = [] } = {}) {
   const value = new Set(spec.value);
   const pkg = new Set(declared);
   for (const token of argv) {
-    if (!token.startsWith('--')) continue;          // positional (package path / backup base dir)
+    if (!token.startsWith('--')) continue;          // positional (package path / sync base dir)
     if (token === '--help') continue;               // handled before validation
     const name = flagName(token);
     const hasEq = token.includes('=');

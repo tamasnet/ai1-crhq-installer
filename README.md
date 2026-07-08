@@ -1,13 +1,13 @@
 # ai1-satellite-tools
 
-`ai1-satellite-tools` is a satellite management skill. It installs, updates, removes, backs up, and restores satellite resources from a declarative Ai1 Package (`ai1-package.yaml`).
+`ai1-satellite-tools` is a satellite management skill. It installs, updates, removes, and syncs satellite resources from a declarative Ai1 Package (`ai1-package.yaml`).
 
 It manages:
 
 - Satellite **skills**, **recipes**, **agents**, and **background jobs** directly through the satellite database.
 - Standalone **services** as nginx + PM2 web apps under `$SERVICES_BASE_DIR/<service>`.
 - Git-managed **projects** as nginx + PM2 web apps under `/opt/projects/user/<project>` symlinked to their package source by default.
-- Satellite backups by syncing live DB/filesystem state back into an installable package.
+- Mirroring live skill/agent/recipe/job definitions back into a version-controllable package.
 - Ai1 Platform Hub registration/config/package download workflows.
 - Queued hub actions from `${REMOTE_BASE_DIR}/actions.json`.
 - GitHub Client Repository checkout flows for `platform/` + `user/` packages.
@@ -28,7 +28,7 @@ node scripts/install.mjs <package-dir>
 node scripts/install.mjs <package-dir> --status
 node scripts/install.mjs <package-dir> --uninstall
 
-# Back up the live satellite into an installable package
+# Mirror live satellite definitions into the package
 node scripts/sync.mjs <repo-or-package-dir> --mirror
 
 # Register with the Ai1 Platform Hub and fetch packages
@@ -46,7 +46,7 @@ node scripts/polaris.mjs init
 | CLI | Purpose |
 |-----|---------|
 | `scripts/install.mjs` | Install, uninstall, status-check, dry-run, sandbox-test, and list local package availability. |
-| `scripts/sync.mjs` | Export live satellite components back into a package; `--mirror` makes the package a restorable backup. |
+| `scripts/sync.mjs` | Export live satellite components back into a package; `--mirror` makes the package match the live satellite. |
 | `scripts/remote.mjs` | Register with the Ai1 Platform Hub, pull config, heartbeat, push install state, resolve GitHub tokens, and download registered packages. |
 | `scripts/action.mjs` | Process queued hub actions (`pull-config`, `push-install`, `install-package`, `drift-report`) from `${REMOTE_BASE_DIR}/actions.json`. |
 | `scripts/drift.mjs` | Read-only drift report: compare live satellite state against install-log source packages; list orphans. |

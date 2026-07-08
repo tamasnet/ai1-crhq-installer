@@ -93,7 +93,7 @@ get-package options:
   --help                     show this help and exit`;
 
 // Per-subcommand option contract: boolean flags and value flags (--flag=<value>). Mirrors the
-// strict validation install/backup use (flags.mjs): an unsupported option or a value flag with no
+// strict validation install/sync use (flags.mjs): an unsupported option or a value flag with no
 // value is a usage error (exit 2) before any side effect.
 const SPEC = {
   register: {

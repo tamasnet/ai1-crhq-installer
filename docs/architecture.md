@@ -9,7 +9,7 @@ Five CLIs sit on a shared library in `scripts/lib/`:
 | CLI | Role | Live dependencies |
 |-----|------|-------------------|
 | `scripts/install.mjs` | Install/status/uninstall packages; dry-run; sandbox lifecycle; package availability reports. | satellite DB for skills/recipes/agents/jobs; filesystem/nginx/PM2 for services/projects. |
-| `scripts/sync.mjs` | Export live satellite state back into a package; `--mirror` creates restorable backups. | satellite DB and installed skill/agent files. |
+| `scripts/sync.mjs` | Export live satellite state back into a package; `--mirror` makes the package match live state. | satellite DB and installed skill/agent files. |
 | `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, install-state push, GitHub token, package download. | Network only. |
 | `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; `pull-config`, `push-install`, `install-package`, and `drift-report`. | Network only through remote client calls; `install-package` then invokes the local installer. |
 | `scripts/drift.mjs` | Read-only drift report: compare install-log components against source packages; list orphans. | satellite DB, filesystem, local package stores. |

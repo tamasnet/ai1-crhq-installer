@@ -18,7 +18,7 @@ export function parseFrontmatter(md) {
   return { meta: loadYaml(m[1]) || {}, body: m[2] };
 }
 
-// ── YAML emission (the backup path) ──────────────────────────────────────────────────────────
+// ── YAML emission (the sync path) ────────────────────────────────────────────────────────────
 // Hand-rolled like parseFrontmatter: the vendored bundle only exports `parse`.
 // Correct by construction: a scalar is emitted plain only when it provably can't be misread;
 // everything else becomes a JSON double-quoted string, which is valid YAML (JSON escapes are a

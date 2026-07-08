@@ -351,7 +351,7 @@ function assertManifestDnsLabel(label, val) {
 // Component versions are positive integers — they round-trip through CRHQ's *_versions
 // tables (skill_versions/recipe_versions/agent_versions). Accept a YAML number or a numeric string;
 // reject anything else (incl. the old semver form like 0.1.0). The package-level `version` is a
-// separate free-form label (backup mints a date) and is NOT constrained here.
+// separate free-form label (sync --mirror auto-increments it as an integer) and is NOT constrained here.
 function intVersion(label, v) {
   const n = typeof v === 'number' ? v : (typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN);
   if (!Number.isInteger(n) || n < 1) throw new ManifestError(`${label} must be a positive integer (got ${JSON.stringify(v)})`);
