@@ -118,6 +118,44 @@ export function safeName(name) {
   return s || 'unnamed';
 }
 
+// Delete files/dirs in destDir that are absent from srcDir (rsync --delete). skip(relPath) keeps
+// matching dest entries even when not in src — used for agent-brain live-only dirs and deploy
+// artifacts (.env, ecosystem.config.cjs). Returns the count removed (or that would be).
+export function pruneTree(destDir, srcDir, { dryRun = false, skip = null } = {}) {
+  if (!existsSync(destDir) || !existsSync(srcDir)) return 0;
+  return pruneTreeRel(destDir, srcDir, '', dryRun, skip);
+}
+
+function pruneTreeRel(destDir, srcDir, rel, dryRun, skip) {
+  let removed = 0;
+  for (const entry of readdirSync(destDir, { withFileTypes: true })) {
+    const r = rel ? `${rel}/${entry.name}` : entry.name;
+    if (skip?.(r)) continue;
+    const destPath = join(destDir, entry.name);
+    const srcPath = join(srcDir, entry.name);
+    if (!existsSync(srcPath)) {
+      removed++;
+      if (!dryRun) rmSync(destPath, { recursive: true, force: true });
+      continue;
+    }
+    const srcStat = lstatSync(srcPath);
+    if (entry.isDirectory() && srcStat.isDirectory()) {
+      removed += pruneTreeRel(destPath, srcPath, r, dryRun, skip);
+    }
+  }
+  return removed;
+}
+
+// Copy package assets then optionally prune extras so dest matches src (--strict install).
+export function syncInstallTree(srcDir, destDir, { dryRun = false, strict = false, copySkip = null, pruneSkip = null } = {}) {
+  if (!srcDir || !existsSync(srcDir)) return { files: 0, pruned: 0 };
+  const files = copyTree(srcDir, destDir, { dryRun, skip: copySkip });
+  const pruned = strict && existsSync(destDir)
+    ? pruneTree(destDir, srcDir, { dryRun, skip: pruneSkip })
+    : 0;
+  return { files, pruned };
+}
+
 export function removeTree(path, { dryRun = false } = {}) {
   if (!path || !pathExistsOrLink(path)) return false;
   if (dryRun) return true;

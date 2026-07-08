@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync, readFileSync, lstatSync, readlinkSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { spawnSync } from 'child_process';
-import { copyTree, removeTree, ensureSymlink } from '../fs.mjs';
+import { copyTree, removeTree, ensureSymlink, syncInstallTree, pruneTree } from '../fs.mjs';
 import { assertSafeEnvValue, formatEnvValue } from '../validate.mjs';
 import { VERDICT } from '../log.mjs';
 import { resolveServicesBase, resolveUserProjectsBase } from '../paths.mjs';
@@ -23,6 +23,11 @@ import { planResult } from './plan-result.mjs';
 
 const NGINX_DIR = '/etc/nginx/projects.d';
 const PORT_BASE = 4300;
+const DEPLOY_PRUNE_SKIP = new Set(['.env', 'ecosystem.config.cjs']);
+
+export function deployPruneSkip(rel) {
+  return DEPLOY_PRUNE_SKIP.has(rel.split('/')[0]);
+}
 
 // ── Pure renderers (fully testable; no I/O) ──────────────────────────────────────────────────
 
@@ -144,6 +149,9 @@ async function planWebApp(ctx, def, { type, baseDir, contentMode }) {
     } catch { /* ENOENT → absent handled above */ }
   } else if (def.srcDir && existsSync(def.srcDir)) {
     fileDrift = copyTree(def.srcDir, deployDir, { dryRun: true }) > 0;
+    if (ctx.STRICT && existsSync(deployDir)) {
+      fileDrift = fileDrift || pruneTree(deployDir, def.srcDir, { dryRun: true, skip: deployPruneSkip }) > 0;
+    }
   }
 
   const nginxDrift = !st.vhostPresent;
@@ -257,7 +265,9 @@ function applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode 
   } else {
     if (isSymlink(projectDir)) removeTree(projectDir, { dryRun: false });
     mkdirSync(projectDir, { recursive: true });
-    copyTree(def.srcDir, projectDir, { dryRun: false });
+    syncInstallTree(def.srcDir, projectDir, {
+      dryRun: false, strict: !!ctx.STRICT, pruneSkip: deployPruneSkip,
+    });
   }
 
   const envPath = join(projectDir, '.env');

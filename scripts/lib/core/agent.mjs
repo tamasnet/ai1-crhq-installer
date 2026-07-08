@@ -1,7 +1,7 @@
 // core/agent.mjs — agents table (PK key) + agent_skills / agent_recipes join sync.
 import { join } from 'path';
 import { existsSync } from 'fs';
-import { writeIfChanged, copyTree } from '../fs.mjs';
+import { writeIfChanged, copyTree, syncInstallTree, pruneTree } from '../fs.mjs';
 import { dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
@@ -14,6 +14,11 @@ export function brainExcludeSet(env = process.env.AGENT_BRAIN_EXCLUDE) {
     ? env.split(',').map((s) => s.trim()).filter(Boolean)
     : DEFAULT_BRAIN_EXCLUDE;
   return new Set(list);
+}
+
+export function brainPruneSkip(env = process.env.AGENT_BRAIN_EXCLUDE) {
+  const exclude = brainExcludeSet(env);
+  return (rel) => exclude.has(rel.split('/')[0]);
 }
 
 function agentFields(def) {
@@ -90,16 +95,30 @@ export async function planAgent(ctx, def) {
 
   const brainDir = BRAINS ? join(BRAINS, key) : null;
   const hasBrain = !!(def.srcDir && brainDir && existsSync(def.srcDir));
-  const brainFiles = hasBrain ? copyTree(def.srcDir, brainDir, { dryRun: true }) : 0;
+  const pruneSkip = brainPruneSkip();
+  const brainFiles = hasBrain ? syncInstallTree(def.srcDir, brainDir, { dryRun: true, strict: false }).files : 0;
+  const brainPruned = (hasBrain && ctx.STRICT && existsSync(brainDir))
+    ? pruneTree(brainDir, def.srcDir, { dryRun: true, skip: pruneSkip })
+    : 0;
 
-  if (!dbDrift && !linkDrift && brainFiles === 0) {
+  if (!dbDrift && !linkDrift && brainFiles === 0 && brainPruned === 0) {
     return planResult('agent', key, { verdict: VERDICT.ALREADY, action: 'updated' });
   }
   return planResult('agent', key, {
     verdict: VERDICT.OK,
     action: 'updated',
-    dimensions: { db: dbDrift, links: linkDrift, brain: brainFiles > 0 },
+    dimensions: { db: dbDrift, links: linkDrift, brain: brainFiles > 0, ...(brainPruned > 0 ? { pruned: brainPruned } : {}) },
   });
+}
+
+function installBrainAssets(ctx, def, brainDir) {
+  if (!def.srcDir || !brainDir || !existsSync(def.srcDir)) return { files: 0, pruned: 0 };
+  const pruneSkip = brainPruneSkip();
+  const { files, pruned } = syncInstallTree(def.srcDir, brainDir, {
+    dryRun: !!ctx.DRY_RUN, strict: !!ctx.STRICT, pruneSkip,
+  });
+  if (pruned && ctx.DRY_RUN) ctx.log.dry(`prune ${pruned} extra file(s) from ${brainDir}`);
+  return { files, pruned };
 }
 
 export async function upsertAgent(ctx, def) {
@@ -119,6 +138,7 @@ export async function upsertAgent(ctx, def) {
     if (DRY_RUN) {
       log.dry(`create agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)`
         + (hasBrain ? `; copy brain → ${brainDir}` : ''));
+      if (hasBrain) installBrainAssets(ctx, def, brainDir);
       await recordVersion(ctx, 'agent', ver);
       return res(key, VERDICT.OK, 'created', { skills: desiredSkills, recipes: desiredRecipes.length });
     }
@@ -128,6 +148,7 @@ export async function upsertAgent(ctx, def) {
     if (DRY_RUN) {
       log.dry(`${prePlan.verdict === VERDICT.ALREADY ? 'noop' : 'update'} agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)`
         + (hasBrain ? `; copy brain → ${brainDir}` : ''));
+      if (hasBrain) installBrainAssets(ctx, def, brainDir);
       await recordVersion(ctx, 'agent', ver);
       return res(key, prePlan.verdict, 'updated', { skills: desiredSkills, recipes: desiredRecipes.length });
     }
@@ -152,7 +173,7 @@ export async function upsertAgent(ctx, def) {
   }
   if (delR.length) await db('agent_recipes').where({ agent_key: key }).whereIn('recipe_id', delR).del();
 
-  if (hasBrain) copyTree(def.srcDir, brainDir, { dryRun: false });
+  if (hasBrain) installBrainAssets(ctx, def, brainDir);
   await recordVersion(ctx, 'agent', ver);
   if (!existed) return res(key, VERDICT.OK, 'created', { skills: desiredSkills, recipes: realDesiredRecipes.length });
   return res(key, prePlan.verdict === VERDICT.ALREADY ? VERDICT.ALREADY : VERDICT.OK, 'updated', { skills: desiredSkills, recipes: realDesiredRecipes.length });

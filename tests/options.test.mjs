@@ -77,6 +77,27 @@ await test('boolean flag given a value → message + exit 2', () => {
   assert.match(out(r), /option --dry-run does not take a value/);
 });
 
+await test('--strict without --include → exit 2', () => {
+  const r = install(['--strict', '--sandbox']);
+  assert.equal(r.status, 2);
+  assert.match(out(r), /--strict requires --include/);
+});
+
+await test('--strict with --type only (no --include) → exit 2', () => {
+  const r = install(['--strict', '--type=skill', '--sandbox']);
+  assert.equal(r.status, 2);
+  assert.match(out(r), /--strict requires --include/);
+});
+
+await test('--strict with --type=skill is accepted', () => {
+  const r = install(['--strict', '--type=skill', '--include=ai1-sample-skill', '--sandbox', '--dry-run']);
+  assert.equal(r.status, 0, out(r));
+});
+
+await test('--strict is listed in --help', () => {
+  assert.match(install(['--help']).stdout, /--strict/);
+});
+
 // ── install.mjs --list-installed (standalone, read-only; DB-free) ──────────────────────────────
 console.log('\ninstall.mjs --list-installed:');
 

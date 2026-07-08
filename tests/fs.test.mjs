@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { copyTree } from '../scripts/lib/fs.mjs';
+import { copyTree, pruneTree } from '../scripts/lib/fs.mjs';
 import { harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -115,6 +115,56 @@ await test('dry-run reports would-copy and would-chmod', () => {
   copyTree(src, dest);
   chmodSync(join(dest, 'a.txt'), 0o644);
   assert.equal(copyTree(src, dest, { dryRun: true }), 1);
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+console.log('\npruneTree:');
+
+await test('removes dest files absent from src', () => {
+  const root = workDir();
+  const src = join(root, 'src');
+  const dest = join(root, 'dest');
+  mkdirSync(join(src, 'keep'), { recursive: true });
+  writeFileSync(join(src, 'keep', 'a.txt'), 'a');
+  mkdirSync(join(dest, 'keep'), { recursive: true });
+  writeFileSync(join(dest, 'keep', 'a.txt'), 'a');
+  writeFileSync(join(dest, 'stale.txt'), 'gone');
+
+  assert.equal(pruneTree(dest, src), 1);
+  assert.ok(existsSync(join(dest, 'keep', 'a.txt')));
+  assert.equal(existsSync(join(dest, 'stale.txt')), false);
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+await test('skip keeps dest-only paths (agent brain live dirs)', () => {
+  const root = workDir();
+  const src = join(root, 'src');
+  const dest = join(root, 'dest');
+  mkdirSync(src, { recursive: true });
+  writeFileSync(join(src, 'AGENTS.md'), 'meta');
+  mkdirSync(join(dest, 'memory'), { recursive: true });
+  writeFileSync(join(dest, 'memory', 'note.md'), 'live');
+  writeFileSync(join(dest, 'stale.txt'), 'gone');
+
+  assert.equal(pruneTree(dest, src, { skip: (rel) => rel.split('/')[0] === 'memory' }), 1);
+  assert.ok(existsSync(join(dest, 'memory', 'note.md')));
+  assert.equal(existsSync(join(dest, 'stale.txt')), false);
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+await test('dry-run reports removals without deleting', () => {
+  const root = workDir();
+  const src = join(root, 'src');
+  const dest = join(root, 'dest');
+  mkdirSync(src, { recursive: true });
+  mkdirSync(dest, { recursive: true });
+  writeFileSync(join(dest, 'extra.txt'), 'x');
+
+  assert.equal(pruneTree(dest, src, { dryRun: true }), 1);
+  assert.ok(existsSync(join(dest, 'extra.txt')));
 
   rmSync(root, { recursive: true, force: true });
 });

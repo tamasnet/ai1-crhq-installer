@@ -21,7 +21,7 @@ export const FLAG_SPEC = {
   install: {
     bool: ['--dry-run', '--status', '--uninstall', '--respect-locks', '--install-skills-as-user',
       '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available',
-      '--prune-installed', '--copy-projects', '--removed', '--optional', '--run-build'],
+      '--prune-installed', '--copy-projects', '--removed', '--optional', '--run-build', '--strict'],
     value: ['--type', '--include', '--exclude'],
   },
 };
@@ -83,6 +83,17 @@ export function validateFlags(argv, { mode = 'install', declared = [] } = {}) {
   }
 }
 
+// Post-parse install constraints (--strict scope, mode compatibility).
+export function validateInstallScope(flags) {
+  if (!flags.STRICT) return;
+  if (flags.mode !== 'install') {
+    throw new UsageError('option --strict is only supported for install (not --status or --uninstall)');
+  }
+  if (!flags.INCLUDE) {
+    throw new UsageError('option --strict requires --include=<pat> to scope the run');
+  }
+}
+
 const INSTALL_USAGE = `ai1-satellite-tools — install a package of satellite resources
 
 Usage: node scripts/install.mjs [<package>] [options]
@@ -116,6 +127,9 @@ Options:
   --include=<pat>            process only components whose name matches <pat>
                              (regex; a value with no regex metacharacter is an exact ^pat$ match)
   --exclude=<pat>            skip components whose name matches <pat> (applied after --include)
+  --strict                   after copying assets, delete files in the install target that are not
+                             in the package; requires --include=<pat> (--type optional, to narrow
+                             by component type); skills, agents, and copy-mode services/projects
   --sandbox                  install into a throwaway isolated schema + temp dir, then tear down
   --keep                     with --sandbox: keep the schema + temp dir for inspection
   --lifecycle                with --sandbox: run install→status→idempotency→uninstall→reinstall

@@ -1,7 +1,7 @@
 // core/skill.mjs — skills table (PK name) + assets under SKILLS_BASE_DIR/<key>.
 import { join } from 'path';
 import { existsSync } from 'fs';
-import { copyTree, removeTree, writeIfChanged } from '../fs.mjs';
+import { copyTree, removeTree, writeIfChanged, syncInstallTree, pruneTree } from '../fs.mjs';
 import { parseFrontmatter, dumpYaml } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
@@ -29,43 +29,55 @@ async function resolveSkillState(ctx, def) {
     || row.locked !== locked
     || row.is_active !== true;
   let fileChanges = 0;
+  let pruned = 0;
   if (def.srcDir && existsSync(def.srcDir)) {
     fileChanges = copyTree(def.srcDir, skillDir, { dryRun: true, skip: (rel) => rel === 'SKILL.md' });
+    if (ctx.STRICT && existsSync(skillDir)) {
+      pruned = pruneTree(skillDir, def.srcDir, { dryRun: true });
+    }
   }
   const ver = { fkValue: name, version: def.version, name: def.name, description: def.description, body: def.content };
-  return { name, skillDir, fields, row, rowChanged, fileChanges, ver };
+  return { name, skillDir, fields, row, rowChanged, fileChanges, pruned, ver };
 }
 
 export async function planSkill(ctx, def) {
   const { RESPECT_LOCKS } = ctx;
-  const { name, row, rowChanged, fileChanges } = await resolveSkillState(ctx, def);
+  const { name, row, rowChanged, fileChanges, pruned } = await resolveSkillState(ctx, def);
   if (!row) return planResult('skill', name, { verdict: VERDICT.ABSENT, action: 'absent' });
-  if (RESPECT_LOCKS && row.locked && (rowChanged || fileChanges > 0)) {
+  if (RESPECT_LOCKS && row.locked && (rowChanged || fileChanges > 0 || pruned > 0)) {
     return planResult('skill', name, { verdict: VERDICT.LOCKED, action: 'skipped', detail: 'locked' });
   }
-  if (!rowChanged && fileChanges === 0) {
+  if (!rowChanged && fileChanges === 0 && pruned === 0) {
     return planResult('skill', name, { verdict: VERDICT.ALREADY, action: 'updated' });
   }
   return planResult('skill', name, {
     verdict: VERDICT.OK,
     action: 'updated',
-    dimensions: { db: rowChanged, files: fileChanges > 0 },
+    dimensions: { db: rowChanged, files: fileChanges > 0, ...(pruned > 0 ? { pruned } : {}) },
   });
+}
+
+function installSkillAssets(ctx, def, skillDir) {
+  if (!def.srcDir || !existsSync(def.srcDir)) return { files: 0, pruned: 0 };
+  const { files, pruned } = syncInstallTree(def.srcDir, skillDir, { dryRun: !!ctx.DRY_RUN, strict: !!ctx.STRICT });
+  if (pruned && ctx.DRY_RUN) ctx.log.dry(`prune ${pruned} extra file(s) from ${skillDir}`);
+  return { files, pruned };
 }
 
 export async function upsertSkill(ctx, def) {
   const { db, log, DRY_RUN } = ctx;
-  const { name, skillDir, fields, row, rowChanged, fileChanges, ver } = await resolveSkillState(ctx, def);
+  const { name, skillDir, fields, row, rowChanged, ver } = await resolveSkillState(ctx, def);
 
   if (!row) {
     if (DRY_RUN) {
       log.dry(`create skill ${name} as ${fields.skill_type}${fields.locked ? ' (locked)' : ''} and copy assets → ${skillDir}`);
+      installSkillAssets(ctx, def, skillDir);
       await recordVersion(ctx, 'skill', ver);
       return result(name, VERDICT.OK, 'created');
     }
     const now = new Date();
     await db('skills').insert({ name, ...fields, created_at: now, updated_at: now });
-    const files = def.srcDir && existsSync(def.srcDir) ? copyTree(def.srcDir, skillDir, { dryRun: false }) : 0;
+    const { files } = installSkillAssets(ctx, def, skillDir);
     await recordVersion(ctx, 'skill', ver);
     return result(name, VERDICT.OK, 'created', files);
   }
@@ -80,6 +92,7 @@ export async function upsertSkill(ctx, def) {
   if (DRY_RUN) {
     if (row?.locked && rowChanged) log.dry(`unlock locked skill ${name}`);
     log.dry(`${row ? 'update' : 'create'} skill ${name} as ${fields.skill_type}${fields.locked ? ' (locked)' : ''} and copy assets → ${skillDir}`);
+    installSkillAssets(ctx, def, skillDir);
     await recordVersion(ctx, 'skill', ver);
     return result(name, plan.verdict, row ? 'updated' : 'created');
   }
@@ -92,11 +105,9 @@ export async function upsertSkill(ctx, def) {
     await db('skills').where({ name }).update({ ...fields, updated_at: now });
   }
 
-  const files = def.srcDir && existsSync(def.srcDir)
-    ? copyTree(def.srcDir, skillDir, { dryRun: false })
-    : 0;
+  const { files } = installSkillAssets(ctx, def, skillDir);
   await recordVersion(ctx, 'skill', ver);
-  const verdict = (!rowChanged && files === 0) ? VERDICT.ALREADY : VERDICT.OK;
+  const verdict = (plan.verdict === VERDICT.ALREADY && files === 0) ? VERDICT.ALREADY : VERDICT.OK;
   return result(name, verdict, row ? 'updated' : 'created', files);
 }
 

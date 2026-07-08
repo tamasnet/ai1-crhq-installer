@@ -13,6 +13,7 @@ import {
   readInstallLog, sortInstalled, formatInstalledList, buildAvailableReport, formatAvailableList,
   validateFlags, usage, wantsHelp, declaredFlagNames, UsageError,
   ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
+  validateInstallScope,
   runPruneInstalled, formatPruneReport,
 } from './lib/index.mjs';
 
@@ -46,6 +47,7 @@ try {
   }
 
   const ctx = await createContext(argv);
+  validateInstallScope(ctx);
   ctx.PACKAGE = { name: meta.name, version: meta.version };   // provenance for version-history change summaries
   if (sb) ctx.log.info(`sandbox: schema=${sb.schema} baseDir=${sb.baseDir}`);
 

@@ -7,7 +7,7 @@ export { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
 export { resolveSatelliteId, satellitePackageName } from './identity.mjs';
 export { getDb, getAdminDb, closeDb } from './db.mjs';
 export { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
-export { copyTree, writeIfChanged, removeTree, moveTree, ensureSymlink, pathExistsOrLink, safeName } from './fs.mjs';
+export { copyTree, writeIfChanged, removeTree, pruneTree, syncInstallTree, moveTree, ensureSymlink, pathExistsOrLink, safeName } from './fs.mjs';
 export { makeLogger, VERDICT, SEVERITY } from './log.mjs';
 export { requireSkills, requireFiles, PrereqError } from './prereq.mjs';
 export { preflight, PreflightError } from './preflight.mjs';
@@ -18,7 +18,7 @@ export { assertSafeSegment, assertDnsLabel, assertSafeEnvValue, formatEnvValue }
 export { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION, HANDLING_VALUES } from './manifest.mjs';
 export { makeFilter, compileMatcher, hasFilter, FilterError } from './filter.mjs';
 export { CLI_TYPE_TO_COLLECTION, COLLECTION_TO_CLI_TYPE, CLI_TYPE_VALUES, COLLECTION_TYPE_VALUES, splitCliTypeValues, normalizeCliTypeScope, formatCliTypeError } from './component-types.mjs';
-export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC } from './flags.mjs';
+export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC, validateInstallScope } from './flags.mjs';
 export { runPlan, ORDER, resolveHandling } from './run.mjs';
 export { runSync, SyncError, SYNC_TYPES, discoverLiveComponents } from './sync.mjs';
 export { runPruneInstalled, formatPruneReport } from './prune-installed.mjs';
