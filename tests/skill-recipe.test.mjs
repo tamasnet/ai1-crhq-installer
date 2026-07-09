@@ -69,6 +69,12 @@ try {
     assert.equal((await ctx.db('skill_versions').where({ skill_name: skillDef.name })).length, 1, 're-install merges, no duplicate version row');
   });
 
+  await test('whitespace-only DB drift is ignored (plan → ALREADY)', async () => {
+    await ctx.db('skills').where({ name: skillDef.name }).update({ content: `\n\n${skillDef.content}\n` });
+    assert.equal((await planSkill(ctx, skillDef)).verdict, 'ALREADY-INSTALLED');
+    assert.equal((await upsertSkill(ctx, skillDef)).verdict, 'ALREADY-INSTALLED');
+  });
+
   await test('update: changed content → OK, row content updated, stays org+locked', async () => {
     const r = await upsertSkill(ctx, { ...skillDef, content: `${skillDef.content}\nUPDATED-MARKER` });
     assert.equal(r.verdict, 'INSTALL-OK');
@@ -173,6 +179,12 @@ try {
     assert.equal(r.verdict, 'ALREADY-INSTALLED');
     assert.equal((await planRecipe(ctx, recipeDef)).verdict, 'ALREADY-INSTALLED');
     assert.equal((await recipeRow()).id, before);
+  });
+
+  await test('whitespace-only DB drift is ignored (plan → ALREADY)', async () => {
+    await ctx.db('recipes').where({ name: recipeDef.name }).update({ content: `\n\n${recipeDef.content}\n` });
+    assert.equal((await planRecipe(ctx, recipeDef)).verdict, 'ALREADY-INSTALLED');
+    assert.equal((await upsertRecipe(ctx, recipeDef)).verdict, 'ALREADY-INSTALLED');
   });
 
   await test('update: changed content → OK', async () => {

@@ -6,7 +6,7 @@ import { copyTree, removeTree, writeIfChanged, syncInstallTree, pruneTree } from
 import { assetDirForContentPath } from '../manifest.mjs';
 import { protectMatcher, listProtectedEntries } from '../protect.mjs';
 import { isInstallStrict } from '../strict.mjs';
-import { parseFrontmatter, dumpYaml } from '../parse.mjs';
+import { parseFrontmatter, dumpYaml, textEqual, normalizeTextBody, normalizeFileText } from '../parse.mjs';
 import { VERDICT, logDeletions } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
 import { planResult } from './plan-result.mjs';
@@ -24,9 +24,12 @@ async function resolveSkillState(ctx, def) {
     description: def.description, content: def.content, skill_type: skillType,
     skill_path: skillPath, skill_dir: skillDir, is_active: true, is_global: false, locked,
   };
+  const TEXT_FIELDS = new Set(['description', 'content']);
   const dbFields = row
     ? ['description', 'content', 'skill_type', 'skill_path', 'skill_dir', 'locked', 'is_active']
-      .filter((k) => row[k] !== fields[k])
+      .filter((k) => TEXT_FIELDS.has(k)
+        ? !textEqual(row[k], fields[k], { kind: k === 'description' ? 'description' : 'body' })
+        : row[k] !== fields[k])
     : [];
   const rowChanged = !row || dbFields.length > 0;
   let fileChanges = 0;
@@ -175,10 +178,12 @@ export async function exportSkill(ctx, row, { outRoot, relPath, protect }) {
     log.warn(`skill ${row.name}: no version history in skill_versions — pinned 1`);
   }
   const parsed = tryFrontmatter(row.content || '');
-  const body = (parsed.meta.name || parsed.meta.version || parsed.meta.description) ? parsed.body : (row.content || '');
+  const body = normalizeTextBody(
+    (parsed.meta.name || parsed.meta.version || parsed.meta.description) ? parsed.body : (row.content || ''),
+  );
   const meta = { name: row.name, version, description: row.description || '' };
-  const md = `---\n${dumpYaml(meta)}---\n\n${body.replace(/^\n+/, '')}`;
-  const mdChanged = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
+  const md = `---\n${dumpYaml(meta)}---\n\n${body}`;
+  const mdChanged = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN, normalize: normalizeFileText });
 
   const entry = { path: relPath, version, ...(row.skill_type === 'user' ? { install_type: 'user' } : {}) };
   return { ...result(row.name, VERDICT.SYNC_OK, 'exported', files + (mdChanged ? 1 : 0)), entry, changed: files > 0 || mdChanged };

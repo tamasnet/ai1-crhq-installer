@@ -6,7 +6,7 @@ import { writeIfChanged, copyTree, syncInstallTree, pruneTree } from '../fs.mjs'
 import { assetDirForContentPath } from '../manifest.mjs';
 import { protectMatcher, listProtectedEntries } from '../protect.mjs';
 import { isInstallStrict } from '../strict.mjs';
-import { dumpYaml } from '../parse.mjs';
+import { dumpYaml, textEqual, normalizeTextBody, normalizeFileText } from '../parse.mjs';
 import { VERDICT, logDeletions } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
 import { planResult } from './plan-result.mjs';
@@ -27,13 +27,13 @@ function changedAgentFields(row, def, fields) {
   if (!row) return [];
   const diffs = [];
   if (row.name !== fields.name) diffs.push('display_name');
-  if ((row.description || '') !== fields.description) diffs.push('description');
+  if (!textEqual(row.description, fields.description, { kind: 'description' })) diffs.push('description');
   if (row.mode !== fields.mode) diffs.push('mode');
   if (row.is_active !== true) diffs.push('is_active');
   if (def.default_model != null && row.default_model !== def.default_model) diffs.push('default_model');
   if (def.agent_type != null && row.agent_type !== def.agent_type) diffs.push('agent_type');
   if (def.icon != null && row.icon !== def.icon) diffs.push('icon');
-  if (def.instructions != null && (row.instructions || '') !== def.instructions) diffs.push('instructions');
+  if (def.instructions != null && !textEqual(row.instructions, def.instructions, { kind: 'body' })) diffs.push('instructions');
   if (def.system_prompt_path != null && (row.system_prompt_path || '') !== def.system_prompt_path) diffs.push('system_prompt_path');
   if (def.provider != null && row.provider !== def.provider) diffs.push('provider');
   if (def.capabilities != null && JSON.stringify(row.capabilities ?? []) !== JSON.stringify(def.capabilities)) diffs.push('capabilities');
@@ -237,9 +237,9 @@ export async function exportAgent(ctx, row, { outRoot, relPath, protect }) {
     : 0;
   if (matcher.matched.size) ctx.log.info(`agent ${key}: protected (not exported): ${[...matcher.matched].sort().join(', ')}`);
 
-  const body = (row.instructions || '').replace(/^\n+/, '');
-  const md = `---\n${dumpYaml(fm)}---\n${body ? `\n${body.endsWith('\n') ? body : `${body}\n`}` : ''}`;
-  const mdChanged = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
+  const body = normalizeTextBody(row.instructions || '');
+  const md = `---\n${dumpYaml(fm)}---\n${body ? `\n${body}\n` : ''}`;
+  const mdChanged = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN, normalize: normalizeFileText });
   return { ...res(key, VERDICT.SYNC_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath, ...(version != null ? { version } : {}) }, changed: files > 0 || mdChanged };
 }
 

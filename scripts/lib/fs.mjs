@@ -9,8 +9,9 @@ import { join, dirname, resolve } from 'path';
 
 const CMP_CHUNK = 64 * 1024;
 
-export function writeIfChanged(path, content, { dryRun = false } = {}) {
-  if (existsSync(path) && readFileSync(path, 'utf8') === content) return false;
+export function writeIfChanged(path, content, { dryRun = false, normalize = null } = {}) {
+  const norm = normalize ?? ((s) => s);
+  if (existsSync(path) && norm(readFileSync(path, 'utf8')) === norm(content)) return false;
   if (dryRun) return true;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content);

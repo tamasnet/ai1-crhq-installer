@@ -113,6 +113,13 @@ try {
     assert.deepEqual(await recipeIdsOf(agentDef.name), [sampleRecipeId]);
   });
 
+  await test('whitespace-only instructions drift is ignored (plan → ALREADY)', async () => {
+    const row = await agentRow(agentDef.name);
+    await ctx.db('agents').where({ key: agentDef.name }).update({ instructions: `\n\n${row.instructions}\n` });
+    assert.equal((await planAgent(ctx, agentDef)).verdict, 'ALREADY-INSTALLED');
+    assert.equal((await upsertAgent(ctx, agentDef)).verdict, 'ALREADY-INSTALLED');
+  });
+
   await test('attach filters: missing + inactive skills skipped', async () => {
     const r = await upsertAgent(ctx, { ...agentDef, skills: ['ai1-sample-skill', 'ai1-inactive-skill', 'ghost-skill'] });
     assert.equal(r.verdict, 'ALREADY-INSTALLED', 'desired set unchanged after filtering');

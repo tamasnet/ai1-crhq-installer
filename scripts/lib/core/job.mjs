@@ -2,7 +2,7 @@
 // skill's install dir must exist before we register the job. script resolves under SKILLS_BASE_DIR.
 import { join } from 'path';
 import { writeIfChanged } from '../fs.mjs';
-import { dumpYaml } from '../parse.mjs';
+import { dumpYaml, textEqual } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 import { requireFiles } from '../prereq.mjs';
 import { planResult } from './plan-result.mjs';
@@ -105,7 +105,7 @@ const COMPARE_KEYS = {
 function rowFieldDiff(row, fields) {
   const diffs = [];
   if (row.job_type !== fields.job_type) diffs.push('job_type');
-  if ((row.description || '') !== fields.description) diffs.push('description');
+  if (!textEqual(row.description, fields.description, { kind: 'description' })) diffs.push('description');
   for (const k of COMPARE_KEYS[fields.job_type] || []) if (row[k] !== fields[k]) diffs.push(k);
   return diffs;
 }

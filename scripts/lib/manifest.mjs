@@ -2,7 +2,7 @@
 // Component sources are parsed into the def shapes consumed by lib/core/*.
 import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname, isAbsolute, resolve, basename, extname } from 'path';
-import { loadYaml, parseFrontmatter } from './parse.mjs';
+import { loadYaml, parseFrontmatter, normalizeTextBody, normalizeDescription, normalizeInstructions } from './parse.mjs';
 import { STANDARD_FLAG_NAMES } from './flags.mjs';
 import { assertSafeSegment, assertDnsLabel } from './validate.mjs';
 
@@ -183,8 +183,8 @@ function loadSkillDef(entry, root) {
   }
   const srcDir = join(root, assetDirForContentPath(entry.path));
   return {
-    key: meta.name, name: meta.name, description: meta.description || '', version,
-    srcDir, srcFile, content: body, installType,
+    key: meta.name, name: meta.name, description: normalizeDescription(meta.description), version,
+    srcDir, srcFile, content: normalizeTextBody(body), installType,
   };
 }
 
@@ -198,7 +198,10 @@ function loadRecipeDef(entry, root) {
   // Version is optional for recipes; when present (frontmatter and/or manifest pin) it's an integer
   // and the two must agree.
   const version = resolveOptionalVersion(`Recipe ${meta.name}`, meta.version, entry.version, entry.path);
-  return { name: meta.name, description: meta.description || '', content: body, srcFile, ...(version != null ? { version } : {}) };
+  return {
+    name: meta.name, description: normalizeDescription(meta.description),
+    content: normalizeTextBody(body), srcFile, ...(version != null ? { version } : {}),
+  };
 }
 
 function loadAgentDef(entry, root) {
@@ -216,12 +219,11 @@ function loadAgentDef(entry, root) {
   if (a.mode) checkLen('agent mode', a.mode, LIMITS.agentMode);
   if (a.default_model) checkLen('agent default_model', a.default_model, LIMITS.agentModel);
   if (a.agent_type) checkLen('agent agent_type', a.agent_type, LIMITS.agentType);
-  // Body → instructions (leading blank lines trimmed); an empty body rides the DB default.
-  const instructions = body && body.trim() ? body.replace(/^\n+/, '') : undefined;
+  const instructions = normalizeInstructions(body);
   // Version is optional for agents; when present it round-trips through agent_versions.
   const version = resolveOptionalVersion(`Agent ${a.name}`, a.version, entry.version, entry.path);
   return {
-    name: a.name, display_name: a.display_name, description: a.description || '', mode: a.mode || 'cli',
+    name: a.name, display_name: a.display_name, description: normalizeDescription(a.description), mode: a.mode || 'cli',
     default_model: a.default_model, agent_type: a.agent_type, icon: a.icon, skills: a.skills || [], recipes: a.recipes || [],
     instructions, system_prompt_path: a.system_prompt_path, capabilities: a.capabilities, provider: a.provider,
     srcDir: join(root, assetDirForContentPath(entry.path)), srcFile,

@@ -6,7 +6,7 @@ export { createContext, parseFlags, resolveSkillsBase, resolveBrains, resolveSch
 export { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
 export { resolveSatelliteId, satellitePackageName } from './identity.mjs';
 export { getDb, getAdminDb, closeDb } from './db.mjs';
-export { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
+export { parseFrontmatter, loadYaml, dumpYaml, normalizeTextBody, normalizeDescription, normalizeInstructions, normalizeFileText, textEqual } from './parse.mjs';
 export { copyTree, writeIfChanged, removeTree, pruneTree, diffTree, syncInstallTree, moveTree, ensureSymlink, pathExistsOrLink, safeName } from './fs.mjs';
 export { DEFAULT_PROTECT, effectiveProtect, protectMatcher, listProtectedEntries } from './protect.mjs';
 export { makeLogger, VERDICT, SEVERITY } from './log.mjs';

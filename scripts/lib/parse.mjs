@@ -18,6 +18,37 @@ export function parseFrontmatter(md) {
   return { meta: loadYaml(m[1]) || {}, body: m[2] };
 }
 
+// Normalize markdown bodies and DB text fields for compare/load/export. Edge whitespace and
+// line endings only — internal blank lines and trailing spaces in code blocks are preserved.
+export function normalizeTextBody(text) {
+  if (text == null || text === '') return '';
+  return String(text)
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/^\n+/, '')
+    .replace(/\n+$/, '');
+}
+
+export function normalizeDescription(text) {
+  return normalizeTextBody(text).trim();
+}
+
+// Agent instructions: undefined when the body is empty or whitespace-only after normalization.
+export function normalizeInstructions(text) {
+  const s = normalizeTextBody(text).trim();
+  return s === '' ? undefined : s;
+}
+
+export function normalizeFileText(text) {
+  if (text == null) return '';
+  return String(text).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+}
+
+export function textEqual(a, b, { kind = 'body' } = {}) {
+  const norm = kind === 'description' ? normalizeDescription : normalizeTextBody;
+  return norm(a ?? '') === norm(b ?? '');
+}
+
 // ── YAML emission (the sync path) ────────────────────────────────────────────────────────────
 // Hand-rolled like parseFrontmatter: the vendored bundle only exports `parse`.
 // Correct by construction: a scalar is emitted plain only when it provably can't be misread;

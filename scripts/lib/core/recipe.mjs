@@ -1,7 +1,7 @@
 // core/recipe.mjs — recipes table (uuid PK auto, name UNIQUE). description/content are NOT NULL.
 import { join } from 'path';
 import { writeIfChanged } from '../fs.mjs';
-import { dumpYaml } from '../parse.mjs';
+import { dumpYaml, textEqual, normalizeTextBody, normalizeFileText } from '../parse.mjs';
 import { VERDICT } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
 import { planResult } from './plan-result.mjs';
@@ -11,7 +11,12 @@ function recipeFields(def) {
 }
 
 function recipeFieldDiff(row, fields) {
-  return row ? ['description', 'content', 'is_active'].filter((k) => row[k] !== fields[k]) : [];
+  if (!row) return [];
+  const diffs = [];
+  if (!textEqual(row.description, fields.description, { kind: 'description' })) diffs.push('description');
+  if (!textEqual(row.content, fields.content, { kind: 'body' })) diffs.push('content');
+  if (row.is_active !== fields.is_active) diffs.push('is_active');
+  return diffs;
 }
 
 function recipeChanged(row, fields) {
@@ -78,8 +83,8 @@ export async function removeRecipe(ctx, nameOrDef) {
 export async function exportRecipe(ctx, row, { outRoot, relPath }) {
   const version = await currentVersion(ctx.db, 'recipe', row.id);
   const fm = { name: row.name, description: row.description || '', ...(version != null ? { version } : {}) };
-  const md = `---\n${dumpYaml(fm)}---\n\n${(row.content || '').replace(/^\n+/, '')}`;
-  const changed = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
+  const md = `---\n${dumpYaml(fm)}---\n\n${normalizeTextBody(row.content || '')}`;
+  const changed = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN, normalize: normalizeFileText });
   return { ...res(row.name, VERDICT.SYNC_OK, 'exported'), entry: { path: relPath, ...(version != null ? { version } : {}) }, changed };
 }
 

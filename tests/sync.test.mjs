@@ -23,7 +23,7 @@ import { runPlan } from '../scripts/lib/run.mjs';
 import { runSync } from '../scripts/lib/sync.mjs';
 import { updateInstallLogForMirror, readInstallLog, installLogPath } from '../scripts/lib/install-log.mjs';
 import { recordVersion } from '../scripts/lib/version-history.mjs';
-import { dumpYaml, loadYaml, parseFrontmatter } from '../scripts/lib/parse.mjs';
+import { dumpYaml, loadYaml, parseFrontmatter, normalizeTextBody } from '../scripts/lib/parse.mjs';
 import { makeCtx, harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -124,7 +124,7 @@ try {
     const { meta: sfm, body: sbody } = parseFrontmatter(readFileSync(join(dirA, 'skills', 'ai1-sample-skill.md'), 'utf8'));
     assert.equal(sfm.name, 'ai1-sample-skill');
     const srow = await db('skills').where({ name: 'ai1-sample-skill' }).first();
-    assert.equal(sbody.replace(/^\n+/, ''), srow.content.replace(/^\n+/, ''), 'skill body = DB content');
+    assert.equal(normalizeTextBody(sbody), normalizeTextBody(srow.content), 'skill body = DB content');
 
     const agent = parseFrontmatter(readFileSync(join(dirA, 'agents', 'ai1-sample-agent.md'), 'utf8')).meta;
     assert.equal(agent.provider, 'openai');
@@ -155,7 +155,7 @@ try {
     assert.equal(meta.name, 'ai1-sample-agent');
     assert.equal(meta.provider, 'openai', 'DB config emitted to agent .md frontmatter');
     const arow = await db('agents').where({ key: 'ai1-sample-agent' }).first();
-    assert.equal(body.replace(/^\n+/, ''), (arow.instructions || '').replace(/^\n+/, ''), 'agent .md body = DB instructions');
+    assert.equal(normalizeTextBody(body), normalizeTextBody(arow.instructions || ''), 'agent .md body = DB instructions');
 
     rmSync(join(brainDir, 'activity'), { recursive: true, force: true });   // keep later runs pristine
   });
