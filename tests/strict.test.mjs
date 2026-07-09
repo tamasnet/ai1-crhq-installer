@@ -92,6 +92,31 @@ try {
     rmSync(join(skillDir, 'keep-me.txt'));
   });
 
+  await test('path-prefix protect keeps nested runtime dirs (scripts/node_modules)', async () => {
+    const ctx = makeCtx({ STRICT: true });
+    const def = { ...skillDef, protect: ['scripts/node_modules'] };
+    await upsertSkill(ctx, def);
+    mkdirSync(join(skillDir, 'scripts', 'node_modules', 'pkg'), { recursive: true });
+    writeFileSync(join(skillDir, 'scripts', 'node_modules', 'pkg', 'index.js'), 'live');
+    writeFileSync(join(skillDir, 'scripts', 'stale.js'), '// old');
+    await upsertSkill(ctx, def);
+    assert.ok(existsSync(join(skillDir, 'scripts', 'node_modules', 'pkg', 'index.js')));
+    assert.equal(existsSync(join(skillDir, 'scripts', 'stale.js')), false);
+    rmSync(join(skillDir, 'scripts'), { recursive: true, force: true });
+  });
+
+  await test('**/node_modules protect keeps nested node_modules anywhere', async () => {
+    const ctx = makeCtx({ STRICT: true });
+    const def = { ...skillDef, protect: ['**/node_modules'] };
+    await upsertSkill(ctx, def);
+    mkdirSync(join(skillDir, 'vendor', 'node_modules', 'x'), { recursive: true });
+    writeFileSync(join(skillDir, 'vendor', 'stale.js'), '// old');
+    await upsertSkill(ctx, def);
+    assert.ok(existsSync(join(skillDir, 'vendor', 'node_modules', 'x')));
+    assert.equal(existsSync(join(skillDir, 'vendor', 'stale.js')), false);
+    rmSync(join(skillDir, 'vendor'), { recursive: true, force: true });
+  });
+
   console.log('\nagent strict:');
 
   await test('upsertAgent --strict removes stale brain files but keeps memory/', async () => {

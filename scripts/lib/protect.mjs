@@ -1,15 +1,17 @@
-// protect.mjs — the shared "protect" concept for component files. A protected name is a TOP-LEVEL
-// entry of a component's install/live directory that the tooling treats as runtime state, not
-// package content: it is never deleted by a --strict install prune and never exported by sync.
-// Install COPY is deliberately unaffected — a package that ships a protected name installs it once
-// as one-way seed data (warned at install; see listProtectedEntries).
+// protect.mjs — the shared "protect" concept for component files. Protected paths are entries the
+// tooling treats as runtime state, not package content: never deleted by a --strict install prune
+// and never exported by sync. Install COPY is deliberately unaffected — a package that ships a
+// protected path installs it once as one-way seed data (warned at install; see listProtectedEntries).
 //
-// Patterns are simple globs (`*` and `?` only) matched against the top-level path element — never
-// nested elements, never the full path. DEFAULT_PROTECT applies to every component; a component's
-// manifest entry `protect:` list extends it, and a `!pattern` entry removes that exact pattern from
-// the effective set (literal match on the pattern string, resolved after all additions, so order
-// never matters). This replaces the former AGENT_BRAIN_EXCLUDE env mechanism.
+// Pattern tiers (all use simple globs: `*` any chars within a segment, `?` one char, `**` any depth):
+//   - no `/` and no `**` → top-level name only (backward compatible)
+//   - contains `/`      → anchored path prefix from the component root (+ descendants)
+//   - contains `**`      → match at any depth (e.g. `**/node_modules`)
+//
+// DEFAULT_PROTECT applies to every component; manifest `protect:` extends it; `!pattern` removes that
+// exact pattern from the effective set (literal match, resolved after all additions).
 import { existsSync, readdirSync } from 'fs';
+import { join } from 'path';
 
 export const DEFAULT_PROTECT = [
   '.*',                    // dotfiles/dirs: .env, .scratch, .cache, …
@@ -33,32 +35,134 @@ export function effectiveProtect(protect = []) {
   return [...set];
 }
 
-// Glob → anchored regex. Only `*` (any run) and `?` (one char) are special; the rest is literal.
-function globRegex(pattern) {
+function isTopLevelPattern(pattern) {
+  return !pattern.includes('/') && !pattern.includes('**');
+}
+
+// Glob → anchored regex for a single path segment.
+function segmentGlobRegex(segment) {
+  const escaped = segment.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]');
+}
+
+// Top-level glob (legacy): `*` and `?` only, matched against one name.
+function topGlobRegex(pattern) {
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
   return new RegExp(`^${escaped}$`);
 }
 
-// Matcher over top-level path elements, in the skip(relPath) shape copyTree/pruneTree take.
-// `matched` collects the top-level names actually protected during use, so callers can log
-// exactly what was kept/skipped instead of silently dropping it.
+// Path glob without `**`: anchored prefix — matches the path and all descendants.
+function pathPrefixRegex(pattern) {
+  const segs = pattern.split('/').map(segmentGlobRegex);
+  return new RegExp(`^${segs.join('\\/')}(?:\\/.*)?$`);
+}
+
+// Path glob with `**`: `**` matches zero or more path segments; still prefix-protects descendants.
+function globstarRegex(pattern) {
+  let re = '^';
+  let i = 0;
+  while (i < pattern.length) {
+    if (pattern[i] === '*' && pattern[i + 1] === '*') {
+      if (pattern[i + 2] === '/') {
+        re += '(?:.*/)?';
+        i += 3;
+      } else {
+        re += '.*';
+        i += 2;
+      }
+    } else if (pattern[i] === '*') {
+      re += '[^/]*';
+      i += 1;
+    } else if (pattern[i] === '?') {
+      re += '[^/]';
+      i += 1;
+    } else if (pattern[i] === '/') {
+      re += '\\/';
+      i += 1;
+    } else {
+      re += pattern[i].replace(/[.+^${}()|[\]\\]/g, '\\$&');
+      i += 1;
+    }
+  }
+  re += '(?:\\/.*)?$';
+  return new RegExp(re);
+}
+
+function compilePattern(pattern) {
+  if (isTopLevelPattern(pattern)) {
+    return { kind: 'top', re: topGlobRegex(pattern), pattern };
+  }
+  if (pattern.includes('**')) {
+    return { kind: 'path', re: globstarRegex(pattern), pattern };
+  }
+  return { kind: 'path', re: pathPrefixRegex(pattern), pattern };
+}
+
+// Best-effort key for logging which protected root was hit.
+function protectionRoot(pattern, rel) {
+  if (isTopLevelPattern(pattern)) return rel.split('/')[0];
+  const relParts = rel.split('/');
+  if (pattern.includes('**')) {
+    const patParts = pattern.split('/');
+    const starIdx = patParts.indexOf('**');
+    if (starIdx >= 0 && starIdx < patParts.length - 1) {
+      const tail = patParts.slice(starIdx + 1).join('/');
+      const tailParts = tail.split('/');
+      for (let i = 0; i <= relParts.length - tailParts.length; i++) {
+        const slice = relParts.slice(i, i + tailParts.length).join('/');
+        if (pathPrefixRegex(tail).test(slice)) {
+          return relParts.slice(0, i + tailParts.length).join('/');
+        }
+      }
+    }
+    if (pattern === '**' || pattern.endsWith('/**')) {
+      return relParts[0] ?? rel;
+    }
+  }
+  const n = Math.min(pattern.split('/').length, relParts.length);
+  return relParts.slice(0, n).join('/');
+}
+
+// Matcher in the skip(relPath) shape copyTree/pruneTree take. `matched` collects protected roots
+// encountered during use so callers can log what was kept/skipped.
 export function protectMatcher(protect = []) {
-  const regexes = effectiveProtect(protect).map(globRegex);
+  const compiled = effectiveProtect(protect).map(compilePattern);
   const matched = new Set();
   const skip = (rel) => {
-    const top = rel.split('/')[0];
-    if (!regexes.some((r) => r.test(top))) return false;
-    matched.add(top);
-    return true;
+    for (const { kind, re, pattern } of compiled) {
+      if (kind === 'top') {
+        const top = rel.split('/')[0];
+        if (!re.test(top)) continue;
+        matched.add(top);
+        return true;
+      }
+      if (!re.test(rel)) continue;
+      matched.add(protectionRoot(pattern, rel));
+      return true;
+    }
+    return false;
   };
   return { skip, matched };
 }
 
-// Top-level entries of srcDir that match the protect set — i.e. protected names a package SHIPS.
-// They install (copy is unaffected) but will never be pruned or synced afterward; callers warn so
-// the one-way-seed semantics are deliberate, not accidental.
+// Entries under srcDir that match the protect set — i.e. protected paths a package SHIPS.
 export function listProtectedEntries(srcDir, protect = []) {
   if (!srcDir || !existsSync(srcDir)) return [];
   const { skip } = protectMatcher(protect);
-  return readdirSync(srcDir).filter((name) => skip(name)).sort();
+  const found = new Set();
+
+  function walk(rel) {
+    const full = rel ? join(srcDir, rel) : srcDir;
+    for (const entry of readdirSync(full, { withFileTypes: true })) {
+      const r = rel ? `${rel}/${entry.name}` : entry.name;
+      if (skip(r)) {
+        found.add(r);
+        continue;
+      }
+      if (entry.isDirectory()) walk(r);
+    }
+  }
+
+  walk('');
+  return [...found].sort();
 }

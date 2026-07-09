@@ -1,7 +1,7 @@
 // fs.mjs — filesystem helpers. Callers pass absolute paths rooted at ctx.SKILLS_BASE. Every helper
 // honors dry-run (zero writes) and is idempotent (skips byte-identical content).
 import {
-  existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync,
+  existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, rmdirSync,
   lstatSync, readlinkSync, symlinkSync, unlinkSync, renameSync,
   statSync, copyFileSync, chmodSync, utimesSync, openSync, readSync, closeSync,
 } from 'fs';
@@ -137,8 +137,22 @@ function pruneTreeRel(destDir, srcDir, rel, dryRun, skip) {
     const destPath = join(destDir, entry.name);
     const srcPath = join(srcDir, entry.name);
     if (!existsSync(srcPath)) {
-      removed.push(entry.isDirectory() ? `${r}/` : r);
-      if (!dryRun) rmSync(destPath, { recursive: true, force: true });
+      if (entry.isDirectory()) {
+        removed.push(...pruneAbsentSubtree(destPath, r, dryRun, skip));
+        if (!dryRun) {
+          try {
+            if (readdirSync(destPath).length === 0) {
+              rmdirSync(destPath);
+              removed.push(`${r}/`);
+            }
+          } catch { /* race */ }
+        } else if (absentDirWouldEmpty(destPath, r, skip, removed)) {
+          removed.push(`${r}/`);
+        }
+      } else {
+        removed.push(r);
+        if (!dryRun) rmSync(destPath, { force: true });
+      }
       continue;
     }
     const srcStat = lstatSync(srcPath);
@@ -147,6 +161,43 @@ function pruneTreeRel(destDir, srcDir, rel, dryRun, skip) {
     }
   }
   return removed;
+}
+
+// Remove entries under a dest-only directory, respecting skip on nested paths.
+function pruneAbsentSubtree(destDir, rel, dryRun, skip) {
+  const removed = [];
+  for (const entry of readdirSync(destDir, { withFileTypes: true })) {
+    const r = `${rel}/${entry.name}`;
+    if (skip?.(r)) continue;
+    const destPath = join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      removed.push(...pruneAbsentSubtree(destPath, r, dryRun, skip));
+      if (!dryRun) {
+        try {
+          if (readdirSync(destPath).length === 0) {
+            rmdirSync(destPath);
+            removed.push(`${r}/`);
+          }
+        } catch { /* race */ }
+      } else if (absentDirWouldEmpty(destPath, r, skip, removed)) {
+        removed.push(`${r}/`);
+      }
+    } else {
+      removed.push(r);
+      if (!dryRun) rmSync(destPath, { force: true });
+    }
+  }
+  return removed;
+}
+
+function absentDirWouldEmpty(dir, rel, skip, removed) {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  if (entries.length === 0) return true;
+  return entries.every((e) => {
+    const r = `${rel}/${e.name}`;
+    if (skip?.(r)) return false;
+    return removed.includes(r) || removed.includes(`${r}/`);
+  });
 }
 
 // Compare srcDir (package) against destDir (live) without writing. Returns rel-path lists:

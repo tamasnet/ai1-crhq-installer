@@ -141,12 +141,20 @@ Components skipped by their handling mode are reported with a `SKIPPED` verdict 
 
 ### Component protect
 
-Every component entry may carry an optional `protect` list: simple glob patterns (`*` matches any run of characters, `?` one character; everything else is literal) matched against **top-level** names in the component's install/live directory — never nested elements or full paths. A protected name is treated as runtime state, not package content:
+Every component entry may carry an optional `protect` list. Patterns use simple globs: `*` matches any run of characters within one path segment, `?` one character, `**` zero or more segments. Matching is tiered:
+
+| Pattern shape | Matches |
+|---|---|
+| No `/` (e.g. `data`, `.*`) | Top-level name only |
+| Contains `/` (e.g. `scripts/node_modules`) | Anchored path prefix from the component root and all descendants |
+| Contains `**` (e.g. `**/node_modules`) | At any depth |
+
+A protected path is treated as runtime state, not package content:
 
 - a `--strict` install never deletes it from the install target (protected directories are skipped entirely, contents unexamined);
 - `sync` / `sync --mirror` never export it into the package.
 
-Install **copy** is unaffected: a package that ships a file/dir with a protected name installs it as one-way seed data — copied in, then never pruned or synced afterward. The installer warns when a package ships protected names so this is deliberate.
+Install **copy** is unaffected: a package that ships a protected path installs it as one-way seed data — copied in, then never pruned or synced afterward. The installer warns when a package ships protected paths so this is deliberate.
 
 Every component starts from the same default set:
 
@@ -162,8 +170,10 @@ components:
     - path: services/my-api
       version: 1
       protect:
-        - '!config'      # this service ships a real config/ directory — sync + strict-prune it
-        - 'sessions'     # extra runtime dir to preserve
+        - '!config'              # this service ships a real config/ directory — sync + strict-prune it
+        - 'sessions'              # extra runtime dir to preserve at top level
+        - 'scripts/node_modules'  # nested runtime dir under scripts/
+        - '**/node_modules'       # any node_modules tree anywhere in the component
 ```
 
 `protect` applies to skills, agents, and copy-mode services/projects (the component types with a managed file tree). Symlink-mode projects need no protection — the deployed path is the package source itself.

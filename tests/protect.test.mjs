@@ -51,30 +51,60 @@ await test('protects default names at the top level (dotfiles, underscore, liter
   assert.ok(!skip('ecosystem_config.cjs'));       // '.' in the pattern is literal, not regex-any
 });
 
-await test('matches TOP-LEVEL elements only — a nested protected name is not protected', () => {
+await test('patterns without / match TOP-LEVEL elements only by default', () => {
   const { skip } = protectMatcher();
   assert.ok(!skip('scripts/data/lookup.json'));   // top-level element is 'scripts'
   assert.ok(!skip('src/.env'));                   // top-level element is 'src'
 });
 
-await test('component globs work and matched collects the protected top-level names', () => {
-  const m = protectMatcher(['seed-*', 'db?']);
+await test('path-prefix patterns protect nested paths and descendants', () => {
+  const { skip } = protectMatcher(['scripts/node_modules']);
+  assert.ok(skip('scripts/node_modules'));
+  assert.ok(skip('scripts/node_modules/lodash/index.js'));
+  assert.ok(!skip('scripts/data/lookup.json'));
+  assert.ok(!skip('vendor/node_modules'));        // not under scripts/
+});
+
+await test('** patterns protect at any depth', () => {
+  const { skip } = protectMatcher(['**/node_modules']);
+  assert.ok(skip('node_modules'));
+  assert.ok(skip('node_modules/pkg/index.js'));
+  assert.ok(skip('scripts/node_modules'));
+  assert.ok(skip('scripts/node_modules/lodash/index.js'));
+  assert.ok(skip('a/b/node_modules/x'));
+  assert.ok(!skip('scripts/vendor'));             // no node_modules segment
+});
+
+await test('path globs do not cross / within a segment', () => {
+  const { skip } = protectMatcher(['scripts/*.cache']);
+  assert.ok(skip('scripts/foo.cache'));
+  assert.ok(skip('scripts/foo.cache/nested'));
+  assert.ok(!skip('scripts/foo/bar.cache'));
+});
+
+await test('component globs work and matched collects protected roots', () => {
+  const m = protectMatcher(['seed-*', 'db?', 'scripts/node_modules']);
   assert.ok(m.skip('seed-data'));
   assert.ok(m.skip('db1'));
   assert.ok(!m.skip('db12'));                     // '?' is exactly one character
   m.skip('memory/a.md');
-  assert.deepEqual([...m.matched].sort(), ['db1', 'memory', 'seed-data']);
+  m.skip('scripts/node_modules/pkg/index.js');
+  assert.deepEqual([...m.matched].sort(), ['db1', 'memory', 'scripts/node_modules', 'seed-data']);
 });
 
 console.log('\nlistProtectedEntries:');
 
-await test('lists top-level src entries matching the protect set', () => {
+await test('lists top-level and nested src entries matching the protect set', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ai1-protect-'));
   writeFileSync(join(dir, '.env'), 'X=1');
   writeFileSync(join(dir, 'index.js'), '//');
   mkdirSync(join(dir, 'data'));
+  mkdirSync(join(dir, 'scripts', 'node_modules', 'pkg'), { recursive: true });
+  writeFileSync(join(dir, 'scripts', 'node_modules', 'pkg', 'index.js'), '//');
   assert.deepEqual(listProtectedEntries(dir), ['.env', 'data']);
   assert.deepEqual(listProtectedEntries(dir, ['!data']), ['.env']);
+  assert.deepEqual(listProtectedEntries(dir, ['scripts/node_modules']), ['.env', 'data', 'scripts/node_modules']);
+  assert.deepEqual(listProtectedEntries(dir, ['**/node_modules']), ['.env', 'data', 'scripts/node_modules']);
   assert.deepEqual(listProtectedEntries(join(dir, 'absent')), []);
   rmSync(dir, { recursive: true, force: true });
 });
@@ -88,7 +118,7 @@ const manifest = (protect) => ({
 
 await test('valid protect list is accepted; invalid shapes are rejected', () => {
   validateManifest(manifest(undefined));
-  validateManifest(manifest(['sessions', '!config']));
+  validateManifest(manifest(['sessions', '!config', 'scripts/node_modules', '**/node_modules']));
   assert.throws(() => validateManifest(manifest('sessions')), ManifestError);
   assert.throws(() => validateManifest(manifest([42])), ManifestError);
   assert.throws(() => validateManifest(manifest([' '])), ManifestError);

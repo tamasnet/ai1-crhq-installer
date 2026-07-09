@@ -134,7 +134,7 @@ await test('removes dest files absent from src, returning rel paths (dirs with t
   mkdirSync(join(dest, 'olddir'), { recursive: true });
   writeFileSync(join(dest, 'olddir', 'x'), 'gone');
 
-  assert.deepEqual(pruneTree(dest, src).sort(), ['keep/b.txt', 'olddir/', 'stale.txt']);
+  assert.deepEqual(pruneTree(dest, src).sort(), ['keep/b.txt', 'olddir/', 'olddir/x', 'stale.txt']);
   assert.ok(existsSync(join(dest, 'keep', 'a.txt')));
   assert.equal(existsSync(join(dest, 'stale.txt')), false);
   assert.equal(existsSync(join(dest, 'olddir')), false);
@@ -169,6 +169,24 @@ await test('dry-run reports removals without deleting', () => {
 
   assert.deepEqual(pruneTree(dest, src, { dryRun: true }), ['extra.txt']);
   assert.ok(existsSync(join(dest, 'extra.txt')));
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+await test('pruneTree keeps nested skip paths inside dest-only directories', () => {
+  const root = workDir();
+  const src = join(root, 'src');
+  const dest = join(root, 'dest');
+  mkdirSync(src, { recursive: true });
+  mkdirSync(join(dest, 'vendor', 'node_modules', 'pkg'), { recursive: true });
+  writeFileSync(join(dest, 'vendor', 'node_modules', 'pkg', 'index.js'), 'live');
+  writeFileSync(join(dest, 'vendor', 'stale.js'), 'gone');
+
+  const skip = (rel) => rel === 'vendor/node_modules' || rel.startsWith('vendor/node_modules/');
+  assert.deepEqual(pruneTree(dest, src, { dryRun: true, skip }).sort(), ['vendor/stale.js']);
+  pruneTree(dest, src, { dryRun: false, skip });
+  assert.ok(existsSync(join(dest, 'vendor', 'node_modules', 'pkg', 'index.js')));
+  assert.equal(existsSync(join(dest, 'vendor', 'stale.js')), false);
 
   rmSync(root, { recursive: true, force: true });
 });

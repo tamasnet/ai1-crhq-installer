@@ -76,8 +76,8 @@ export function validateManifest(meta) {
       if (entry.handling != null && !HANDLING_VALUES.has(entry.handling)) {
         throw new ManifestError(`components.${type}[${entry.path}] handling must be one of ${[...HANDLING_VALUES].join(', ')} (got ${JSON.stringify(entry.handling)})`);
       }
-      // protect (optional): top-level glob patterns extending DEFAULT_PROTECT ('!pattern' opts out
-      // of a default). Shape-checked only; pattern semantics live in protect.mjs.
+      // protect (optional): glob patterns extending DEFAULT_PROTECT ('!pattern' opts out of a
+      // default). Shape-checked only; pattern semantics live in protect.mjs.
       if (entry.protect != null && (!Array.isArray(entry.protect)
         || entry.protect.some((p) => typeof p !== 'string' || p.trim() === ''))) {
         throw new ManifestError(`components.${type}[${entry.path}] protect must be a list of non-empty strings`);
