@@ -6,6 +6,7 @@ set -euo pipefail
 
 # ── config ───────────────────────────────────────────────────────────────────
 readonly PKG_NAME="ai1-satellite-tools"
+readonly BIN_PREFIX="ai1-"
 readonly SCRIPTS="install.mjs sync.mjs remote.mjs action.mjs polaris.mjs drift.mjs diff.mjs"
 readonly HEARTBEAT_SCRIPT="heartbeat-actions.sh"
 readonly CRON_TAG="# ai1-satellite-tools: heartbeat-actions"
@@ -32,6 +33,12 @@ die() {
 
 dry() {
   [[ "$DRY_RUN" == true ]]
+}
+
+# e.g. diff.mjs -> ai1-diff (not diff.mjs in ~/.local/bin)
+bin_name() {
+  local script="$1"
+  printf '%s%s' "$BIN_PREFIX" "${script%.mjs}"
 }
 
 run() {
@@ -71,7 +78,7 @@ cron_installed() {
 
 symlinks_present() {
   for each in $SCRIPTS; do
-    [[ -L "${BIN_DIR}/${each}" ]] || return 1
+    [[ -L "${BIN_DIR}/$(bin_name "$each")" ]] || return 1
   done
 }
 
@@ -172,7 +179,7 @@ handle_install() {
   run mkdir -p "$BIN_DIR"
 
   for each in $SCRIPTS; do
-    run ln -sf "${SCRIPTS_DIR}/${each}" "${BIN_DIR}/${each}"
+    run ln -sf "${SCRIPTS_DIR}/${each}" "${BIN_DIR}/$(bin_name "$each")"
   done
 
   install_cron
@@ -182,7 +189,7 @@ handle_install() {
 
 handle_uninstall() {
   for each in $SCRIPTS; do
-    run rm -f "${BIN_DIR}/${each}"
+    run rm -f "${BIN_DIR}/$(bin_name "$each")"
   done
 
   uninstall_cron
