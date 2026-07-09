@@ -102,10 +102,16 @@ const COMPARE_KEYS = {
   message_session: ['schedule', 'timezone', 'target_session_id', 'message', 'max_runs_before_rotate', 'model', 'timeout_minutes', 'max_concurrent', 'skip_if_running', 'enabled'],
 };
 
+function rowFieldDiff(row, fields) {
+  const diffs = [];
+  if (row.job_type !== fields.job_type) diffs.push('job_type');
+  if ((row.description || '') !== fields.description) diffs.push('description');
+  for (const k of COMPARE_KEYS[fields.job_type] || []) if (row[k] !== fields[k]) diffs.push(k);
+  return diffs;
+}
+
 function rowChanged(row, fields) {
-  if ((row.description || '') !== fields.description) return true;
-  const keys = COMPARE_KEYS[fields.job_type] || [];
-  return keys.some((k) => row[k] !== fields[k]);
+  return rowFieldDiff(row, fields).length > 0;
 }
 
 function checkPrereqs(ctx, def) {
@@ -129,9 +135,9 @@ export async function planJob(ctx, def) {
   const fields = fieldsForDef(ctx, def);
   const row = await ctx.db('background_jobs').where({ name }).first();
   if (!row) return planResult('job', name, { verdict: VERDICT.ABSENT, action: 'absent' });
-  const changed = row.job_type !== fields.job_type || rowChanged(row, fields);
-  if (!changed) return planResult('job', name, { verdict: VERDICT.ALREADY, action: 'updated' });
-  return planResult('job', name, { verdict: VERDICT.OK, action: 'updated', dimensions: { db: true } });
+  const dbFields = rowFieldDiff(row, fields);
+  if (!dbFields.length) return planResult('job', name, { verdict: VERDICT.ALREADY, action: 'updated' });
+  return planResult('job', name, { verdict: VERDICT.OK, action: 'updated', dimensions: { db: true, dbFields } });
 }
 
 export async function upsertJob(ctx, def) {
@@ -160,7 +166,7 @@ export async function upsertJob(ctx, def) {
     return res(name, plan.verdict, 'updated');
   }
 
-  const changed = row.job_type !== fields.job_type || rowChanged(row, fields);
+  const changed = rowChanged(row, fields);
   const now = new Date();
   if (changed) await db('background_jobs').where({ name }).update({ ...fields, updated_at: now });
   return res(name, plan.verdict, 'updated');

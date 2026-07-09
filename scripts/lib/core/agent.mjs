@@ -20,19 +20,21 @@ function agentFields(def) {
   return fields;
 }
 
-function fieldsSame(row, def, fields) {
-  return !!row
-    && row.name === fields.name
-    && (row.description || '') === fields.description
-    && row.mode === fields.mode
-    && row.is_active === true
-    && (def.default_model == null || row.default_model === def.default_model)
-    && (def.agent_type == null || row.agent_type === def.agent_type)
-    && (def.icon == null || row.icon === def.icon)
-    && (def.instructions == null || (row.instructions || '') === def.instructions)
-    && (def.system_prompt_path == null || (row.system_prompt_path || '') === def.system_prompt_path)
-    && (def.provider == null || row.provider === def.provider)
-    && (def.capabilities == null || JSON.stringify(row.capabilities ?? []) === JSON.stringify(def.capabilities));
+function changedAgentFields(row, def, fields) {
+  if (!row) return [];
+  const diffs = [];
+  if (row.name !== fields.name) diffs.push('display_name');
+  if ((row.description || '') !== fields.description) diffs.push('description');
+  if (row.mode !== fields.mode) diffs.push('mode');
+  if (row.is_active !== true) diffs.push('is_active');
+  if (def.default_model != null && row.default_model !== def.default_model) diffs.push('default_model');
+  if (def.agent_type != null && row.agent_type !== def.agent_type) diffs.push('agent_type');
+  if (def.icon != null && row.icon !== def.icon) diffs.push('icon');
+  if (def.instructions != null && (row.instructions || '') !== def.instructions) diffs.push('instructions');
+  if (def.system_prompt_path != null && (row.system_prompt_path || '') !== def.system_prompt_path) diffs.push('system_prompt_path');
+  if (def.provider != null && row.provider !== def.provider) diffs.push('provider');
+  if (def.capabilities != null && JSON.stringify(row.capabilities ?? []) !== JSON.stringify(def.capabilities)) diffs.push('capabilities');
+  return diffs;
 }
 
 async function resolveAgentLinks(ctx, def) {
@@ -59,12 +61,8 @@ function realRecipeIds(desiredRecipes) {
   return desiredRecipes.filter((id) => typeof id !== 'string' || !id.startsWith('planned:'));
 }
 
-function linksDrift(curSkills, curRecipes, desiredSkills, desiredRecipes) {
-  const realDesired = realRecipeIds(desiredRecipes);
-  return desiredSkills.some((s) => !curSkills.includes(s))
-    || curSkills.some((s) => !desiredSkills.includes(s))
-    || realDesired.some((id) => !curRecipes.includes(id))
-    || curRecipes.some((id) => !realDesired.includes(id));
+function linkDelta(cur, desired) {
+  return { add: desired.filter((x) => !cur.includes(x)), del: cur.filter((x) => !desired.includes(x)) };
 }
 
 export async function planAgent(ctx, def) {
@@ -74,11 +72,17 @@ export async function planAgent(ctx, def) {
   if (!row) return planResult('agent', key, { verdict: VERDICT.ABSENT, action: 'absent' });
 
   const fields = agentFields(def);
-  const dbDrift = !fieldsSame(row, def, fields);
+  const dbFields = changedAgentFields(row, def, fields);
+  const dbDrift = dbFields.length > 0;
   const { desiredSkills, desiredRecipes } = await resolveAgentLinks(ctx, def);
   const curSkills = (await db('agent_skills').where({ agent_key: key }).select('skill_name')).map((r) => r.skill_name);
   const curRecipes = (await db('agent_recipes').where({ agent_key: key }).select('recipe_id')).map((r) => r.recipe_id);
-  const linkDrift = linksDrift(curSkills, curRecipes, desiredSkills, desiredRecipes);
+  const linkChanges = {
+    skills: linkDelta(curSkills, desiredSkills),
+    recipes: linkDelta(curRecipes, realRecipeIds(desiredRecipes)),
+  };
+  const linkDrift = !!(linkChanges.skills.add.length || linkChanges.skills.del.length
+    || linkChanges.recipes.add.length || linkChanges.recipes.del.length);
 
   const brainDir = BRAINS ? join(BRAINS, key) : null;
   const hasBrain = !!(def.srcDir && brainDir && existsSync(def.srcDir));
@@ -93,7 +97,11 @@ export async function planAgent(ctx, def) {
   return planResult('agent', key, {
     verdict: VERDICT.OK,
     action: 'updated',
-    dimensions: { db: dbDrift, links: linkDrift, brain: brainFiles > 0, ...(brainPruned > 0 ? { pruned: brainPruned } : {}) },
+    dimensions: {
+      db: dbDrift, links: linkDrift, brain: brainFiles > 0,
+      ...(dbFields.length ? { dbFields } : {}), ...(linkDrift ? { linkChanges } : {}),
+      ...(brainPruned > 0 ? { pruned: brainPruned } : {}),
+    },
   });
 }
 

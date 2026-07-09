@@ -147,6 +147,35 @@ function pruneTreeRel(destDir, srcDir, rel, dryRun, skip) {
   return removed;
 }
 
+// Compare srcDir (package) against destDir (live) without writing. Returns rel-path lists:
+// modified (bytes or mode differ; mtime-only ignored), missing (in src, not live), extra (live-only,
+// via pruneTree dry-run — dirs with trailing '/'). copySkip/pruneSkip mirror the install skips.
+export function diffTree(srcDir, destDir, { copySkip = null, pruneSkip = null } = {}) {
+  if (!srcDir || !existsSync(srcDir)) return { modified: [], missing: [], extra: [] };
+  const modified = [];
+  const missing = [];
+  diffTreeRel(srcDir, destDir, '', copySkip, modified, missing);
+  const extra = existsSync(destDir) ? pruneTree(destDir, srcDir, { dryRun: true, skip: pruneSkip }) : [];
+  return { modified, missing, extra };
+}
+
+function diffTreeRel(srcDir, destDir, rel, skip, modified, missing) {
+  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+    const r = rel ? `${rel}/${entry.name}` : entry.name;
+    if (skip && skip(r)) continue;
+    const src = join(srcDir, entry.name);
+    const dest = join(destDir, entry.name);
+    if (entry.isDirectory()) { diffTreeRel(src, dest, r, skip, modified, missing); continue; }
+    if (!entry.isFile()) continue;
+    let destStat = null;
+    try { destStat = statSync(dest); } catch { /* missing */ }
+    if (!destStat?.isFile()) { missing.push(r); continue; }
+    const srcStat = statSync(src);
+    if (srcStat.size !== destStat.size || !filesByteEqual(src, dest, srcStat.size)
+      || modeBits(srcStat) !== modeBits(destStat)) modified.push(r);
+  }
+}
+
 // Copy package assets then optionally prune extras so dest matches src (--strict install).
 // `pruned` is the list of removed rel paths (empty when not strict).
 export function syncInstallTree(srcDir, destDir, { dryRun = false, strict = false, copySkip = null, pruneSkip = null } = {}) {

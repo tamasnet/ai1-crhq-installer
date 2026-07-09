@@ -21,14 +21,11 @@ async function resolveSkillState(ctx, def) {
     description: def.description, content: def.content, skill_type: skillType,
     skill_path: skillPath, skill_dir: skillDir, is_active: true, is_global: false, locked,
   };
-  const rowChanged = !row
-    || row.description !== fields.description
-    || row.content !== fields.content
-    || row.skill_dir !== skillDir
-    || row.skill_path !== skillPath
-    || row.skill_type !== skillType
-    || row.locked !== locked
-    || row.is_active !== true;
+  const dbFields = row
+    ? ['description', 'content', 'skill_type', 'skill_path', 'skill_dir', 'locked', 'is_active']
+      .filter((k) => row[k] !== fields[k])
+    : [];
+  const rowChanged = !row || dbFields.length > 0;
   let fileChanges = 0;
   let pruned = 0;
   if (def.srcDir && existsSync(def.srcDir)) {
@@ -38,12 +35,12 @@ async function resolveSkillState(ctx, def) {
     }
   }
   const ver = { fkValue: name, version: def.version, name: def.name, description: def.description, body: def.content };
-  return { name, skillDir, fields, row, rowChanged, fileChanges, pruned, ver };
+  return { name, skillDir, fields, row, rowChanged, dbFields, fileChanges, pruned, ver };
 }
 
 export async function planSkill(ctx, def) {
   const { RESPECT_LOCKS } = ctx;
-  const { name, row, rowChanged, fileChanges, pruned } = await resolveSkillState(ctx, def);
+  const { name, row, rowChanged, dbFields, fileChanges, pruned } = await resolveSkillState(ctx, def);
   if (!row) return planResult('skill', name, { verdict: VERDICT.ABSENT, action: 'absent' });
   if (RESPECT_LOCKS && row.locked && (rowChanged || fileChanges > 0 || pruned > 0)) {
     return planResult('skill', name, { verdict: VERDICT.LOCKED, action: 'skipped', detail: 'locked' });
@@ -54,7 +51,10 @@ export async function planSkill(ctx, def) {
   return planResult('skill', name, {
     verdict: VERDICT.OK,
     action: 'updated',
-    dimensions: { db: rowChanged, files: fileChanges > 0, ...(pruned > 0 ? { pruned } : {}) },
+    dimensions: {
+      db: rowChanged, files: fileChanges > 0,
+      ...(dbFields.length ? { dbFields } : {}), ...(pruned > 0 ? { pruned } : {}),
+    },
   });
 }
 

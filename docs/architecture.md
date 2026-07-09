@@ -13,6 +13,7 @@ Six CLIs sit on a shared library in `scripts/lib/`:
 | `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, install-state push, GitHub token, package download. | Network only. |
 | `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; `pull-config`, `push-install`, `install-package`, and `drift-report`. | Network only through remote client calls; `install-package` then invokes the local installer. |
 | `scripts/drift.mjs` | Read-only drift report: compare install-log components against source packages; list orphans. | satellite DB, filesystem, local package stores. |
+| `scripts/diff.mjs` | Read-only package diff: compare a package's components against live equivalents (DB fields, links, files), install-log independent. | satellite DB, filesystem. |
 | `scripts/polaris.mjs` | GitHub Client Repository clone helper. | Network + local `git`; uses hub-provided GitHub token. |
 
 The library barrel is `scripts/lib/index.mjs`. Package hooks can import reusable functions from the installed skill path when they need custom behavior.
@@ -126,8 +127,9 @@ scripts/
     ├── list-available.mjs     # local package store scanner
     ├── version-history.mjs    # satellite *_versions table round-trip
     ├── parse.mjs              # frontmatter/YAML helpers
-    ├── fs.mjs                 # copy/write/remove helpers
+    ├── fs.mjs                 # copy/write/remove/diff helpers
     ├── protect.mjs            # protected-names matcher (strict prune + sync export skips)
+    ├── diff.mjs               # package → live component diff
     ├── flags.mjs              # strict option validation
     ├── filter.mjs             # include/exclude matching
     ├── identity.mjs           # satellite id -> package name helpers

@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { copyTree, pruneTree } from '../scripts/lib/fs.mjs';
+import { copyTree, pruneTree, diffTree } from '../scripts/lib/fs.mjs';
 import { harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -169,6 +169,59 @@ await test('dry-run reports removals without deleting', () => {
 
   assert.deepEqual(pruneTree(dest, src, { dryRun: true }), ['extra.txt']);
   assert.ok(existsSync(join(dest, 'extra.txt')));
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+console.log('\ndiffTree:');
+
+await test('reports modified, missing (package-only), and extra (live-only) rel paths', () => {
+  const root = workDir();
+  const src = join(root, 'src');
+  const dest = join(root, 'dest');
+  mkdirSync(join(src, 'scripts'), { recursive: true });
+  writeFileSync(join(src, 'same.txt'), 'x');
+  writeFileSync(join(src, 'scripts', 'edited.js'), 'v2');
+  writeFileSync(join(src, 'new.txt'), 'n');
+  mkdirSync(join(dest, 'scripts'), { recursive: true });
+  writeFileSync(join(dest, 'same.txt'), 'x');
+  writeFileSync(join(dest, 'scripts', 'edited.js'), 'v1');
+  writeFileSync(join(dest, 'stale.txt'), 'gone');
+
+  const d = diffTree(src, dest);
+  assert.deepEqual(d.modified, ['scripts/edited.js']);
+  assert.deepEqual(d.missing, ['new.txt']);
+  assert.deepEqual(d.extra, ['stale.txt']);
+  assert.ok(existsSync(join(dest, 'stale.txt')));   // read-only
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+await test('honors copySkip and pruneSkip; flags mode-only changes; ignores mtime', () => {
+  const root = workDir();
+  const src = join(root, 'src');
+  const dest = join(root, 'dest');
+  mkdirSync(src, { recursive: true });
+  mkdirSync(dest, { recursive: true });
+  writeFileSync(join(src, 'SKILL.md'), 'pkg');
+  writeFileSync(join(dest, 'SKILL.md'), 'live');
+  writeFileSync(join(src, 'run.sh'), '#!/bin/sh');
+  writeFileSync(join(dest, 'run.sh'), '#!/bin/sh');
+  chmodSync(join(src, 'run.sh'), 0o755);
+  chmodSync(join(dest, 'run.sh'), 0o644);
+  writeFileSync(join(src, 'a.txt'), 'a');
+  writeFileSync(join(dest, 'a.txt'), 'a');
+  utimesSync(join(dest, 'a.txt'), new Date(0), new Date(0));   // mtime-only difference
+  mkdirSync(join(dest, 'data'), { recursive: true });
+  writeFileSync(join(dest, 'data', 'live.db'), 'state');
+
+  const d = diffTree(src, dest, {
+    copySkip: (rel) => rel === 'SKILL.md',
+    pruneSkip: (rel) => rel.split('/')[0] === 'data',
+  });
+  assert.deepEqual(d.modified, ['run.sh']);
+  assert.deepEqual(d.missing, []);
+  assert.deepEqual(d.extra, []);
 
   rmSync(root, { recursive: true, force: true });
 });

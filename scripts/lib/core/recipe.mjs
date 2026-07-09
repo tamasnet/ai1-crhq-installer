@@ -10,8 +10,12 @@ function recipeFields(def) {
   return { description: def.description || '', content: def.content || '', is_active: true };
 }
 
+function recipeFieldDiff(row, fields) {
+  return row ? ['description', 'content', 'is_active'].filter((k) => row[k] !== fields[k]) : [];
+}
+
 function recipeChanged(row, fields) {
-  return !row || row.description !== fields.description || row.content !== fields.content || row.is_active !== true;
+  return !row || recipeFieldDiff(row, fields).length > 0;
 }
 
 export async function planRecipe(ctx, def) {
@@ -19,10 +23,11 @@ export async function planRecipe(ctx, def) {
   const row = await ctx.db('recipes').where({ name }).first();
   const fields = recipeFields(def);
   if (!row) return planResult('recipe', name, { verdict: VERDICT.ABSENT, action: 'absent' });
-  if (!recipeChanged(row, fields)) {
+  const dbFields = recipeFieldDiff(row, fields);
+  if (!dbFields.length) {
     return planResult('recipe', name, { verdict: VERDICT.ALREADY, action: 'updated' });
   }
-  return planResult('recipe', name, { verdict: VERDICT.OK, action: 'updated', dimensions: { db: true } });
+  return planResult('recipe', name, { verdict: VERDICT.OK, action: 'updated', dimensions: { db: true, dbFields } });
 }
 
 export async function upsertRecipe(ctx, def) {
