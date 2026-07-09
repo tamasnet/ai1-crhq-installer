@@ -1,18 +1,17 @@
 #!/bin/sh
 # build-installer.sh — generate a self-contained, self-extracting installer for this skill.
 #
-# Bundles SKILL.md + scripts/ into a tar.gz, base64-encodes it, and appends it as a blob to the
-# end of a POSIX shell template. The resulting dist/install.sh extracts the bundle, installs the
-# package, and registers the satellite with the Ai1 Platform Hub. It supports both
-# `sh install.sh` (reads the blob from $0) and `curl -fsSL <url>/install.sh | sh` (reads the
-# blob from the same stdin the shell consumes).
+# Bundles SKILL.md + scripts/ into a tar.gz, base64-encodes it, and embeds it as a quoted
+# heredoc inside a POSIX shell template. The resulting dist/install.sh extracts the bundle,
+# installs the package, and registers the satellite with the Ai1 Platform Hub. Because the blob
+# is part of the parsed script (not read from leftover stdin), both `sh install.sh` and
+# `curl -fsSL <url>/install.sh | sh` work under any POSIX shell, including dash.
 #
 # Usage: ./build-installer.sh [output-path]   (default: dist/install.sh)
 set -eu
 
 ROOT=$(cd "$(dirname "$0")" && pwd)
 OUT="${1:-$ROOT/dist/install.sh}"
-MARKER='__ARCHIVE_BELOW__'
 
 command -v tar >/dev/null 2>&1 || { echo "build: tar is required" >&2; exit 1; }
 command -v base64 >/dev/null 2>&1 || { echo "build: base64 is required" >&2; exit 1; }
@@ -71,8 +70,8 @@ BYTES=$(wc -c < "$TARBALL" | tr -d ' ')
 echo "build: bundle is ${BYTES} bytes (compressed)" >&2
 
 # Emit the runtime template. Unquoted heredoc — ${}/${} in the template must be \$-escaped to
-# survive as literals in the generated script. ${MARKER} is intentionally unescaped so its
-# build-time value is embedded. The LAST non-blob line is the marker; the base64 blob follows.
+# survive as literals in the generated script. The template ends mid-way through the
+# payload_b64 function; the blob and the closing lines are appended below.
 cat > "$OUT" <<TEMPLATE_EOF
 #!/bin/sh
 # AGENT INSTRUCTIONS — ai1-satellite-tools self-extracting installer
@@ -117,8 +116,6 @@ cat > "$OUT" <<TEMPLATE_EOF
 #     node \${AI1_INSTALL_DIR:-\${HOME}/packages/ai1-satellite-tools}/skills/ai1-satellite-tools/scripts/remote.mjs register --help
 set -eu
 
-MARKER='${MARKER}'
-
 die() { echo "ai1-installer: \$*" >&2; exit 1; }
 
 usage() {
@@ -161,16 +158,6 @@ b64decode() {
   fi
 }
 
-# Stream just the base64 blob to stdout. File mode reads \$0; piped mode reads stdin — in both
-# cases "delete everything up to and including the marker line" leaves exactly the blob.
-payload() {
-  if [ -f "\$0" ] && grep -q "^\${MARKER}\$" "\$0" 2>/dev/null; then
-    sed -e "1,/^\${MARKER}\$/d" "\$0"
-  else
-    sed -e "1,/^\${MARKER}\$/d"
-  fi
-}
-
 run_install_pkg() {
   if [ "\${AI1_RUN_INSTALL:-1}" = "0" ]; then
     echo "ai1-installer: AI1_RUN_INSTALL=0 — skipping package install" >&2
@@ -203,7 +190,7 @@ main() {
   INSTALL_DIR="\${AI1_INSTALL_DIR:-\${HOME}/packages/ai1-satellite-tools}"
   mkdir -p "\$INSTALL_DIR" || die "could not create \$INSTALL_DIR"
 
-  payload | b64decode | tar xzf - -C "\$INSTALL_DIR" || die "failed to extract bundle"
+  payload_b64 | b64decode | tar xzf - -C "\$INSTALL_DIR" || die "failed to extract bundle"
   [ -f "\$INSTALL_DIR/skills/ai1-satellite-tools/scripts/remote.mjs" ] || die "bundle missing skills/ai1-satellite-tools/scripts/remote.mjs"
   echo "ai1-installer: extracted bundle to \$INSTALL_DIR" >&2
 
@@ -211,14 +198,26 @@ main() {
   run_register "\$@"
 }
 
-main "\$@"
-exit 0
-${MARKER}
+# The bundle is embedded as a quoted heredoc so it is part of the parsed script. Reading it
+# from leftover stdin (marker-after-exit pattern) breaks under \`curl | sh\` with dash, which
+# buffers read-ahead of a piped script and swallows the blob before the extract pipeline runs
+# (bash reads non-seekable input byte-by-byte, which is why the old pattern worked there).
+# Defining payload_b64 last and calling main on the final line also means a truncated download
+# fails to parse and runs nothing, instead of half-extracting.
+payload_b64() {
+  cat <<'PAYLOAD_B64_EOF'
 TEMPLATE_EOF
 
 # Append the blob. base64 default line-wrapping differs across platforms but the decoder
 # tolerates either wrapped or single-line input.
 base64 < "$TARBALL" >> "$OUT"
+
+cat >> "$OUT" <<'TEMPLATE_EOF'
+PAYLOAD_B64_EOF
+}
+
+main "$@"
+TEMPLATE_EOF
 
 chmod +x "$OUT"
 echo "build: wrote $OUT ($(wc -c < "$OUT" | tr -d ' ') bytes)" >&2
