@@ -15,6 +15,14 @@
       "install_include": "^ai1-",
       "install_exclude": "experimental",
       "install_optional": true
+    },
+    {
+      "type": "diff-package",
+      "package_name": "ai1-example",
+      "package_version": 2,
+      "diff_get_package": false,
+      "diff_type": "skill,recipe",
+      "diff_include": "^ai1-"
     }
   ],
   "actions_fetched_at": "2026-06-28T19:29:14.651Z"

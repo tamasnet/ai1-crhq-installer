@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, statSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { harness } from './_helpers.mjs';
@@ -241,6 +241,147 @@ await test('queued drift-report calls completeAction with type and data on succe
     assert.equal(completions[0].body.status, 'completed');
     assert.equal(completions[0].body.type, 'drift-report');
     assert.deepEqual(completions[0].body.data, driftData);
+  });
+});
+
+await test('diff-package without local package returns not-available message without fetching', async () => {
+  await withRemoteDir(async (dir) => {
+    const pkgBase = join(dir, 'packages');
+    mkdirSync(pkgBase, { recursive: true });
+    const oldPkgBase = process.env.PACKAGE_BASE_DIR;
+    process.env.PACKAGE_BASE_DIR = pkgBase;
+    writeActions(dir, [{
+      type: 'diff-package',
+      package_name: 'widget',
+      package_version: 3,
+    }]);
+    const calls = [];
+
+    try {
+      const result = await runActions({}, {
+        getPackage: async () => { calls.push('get-package'); return {}; },
+      });
+
+      assert.deepEqual(calls, []);
+      assert.equal(result.processed, 1);
+      assert.equal(result.results[0].type, 'diff-package');
+      assert.equal(result.results[0].result.type, 'diff-package');
+      assert.equal(result.results[0].result.data.ok, false);
+      assert.match(result.results[0].result.data.message, /not available locally/);
+      assert.deepEqual(JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions, []);
+    } finally {
+      if (oldPkgBase == null) delete process.env.PACKAGE_BASE_DIR;
+      else process.env.PACKAGE_BASE_DIR = oldPkgBase;
+    }
+  });
+});
+
+await test('diff-package dry-run with diff_get_package plans a hub fetch', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{
+      type: 'diff-package',
+      package_name: 'widget',
+      package_version: 3,
+      diff_get_package: true,
+    }]);
+
+    const result = await runActions({ dryRun: true }, {
+      getPackage: async () => { throw new Error('should not download'); },
+    });
+
+    assert.equal(result.wouldProcess, 1);
+    assert.equal(result.results[0].plan.getPackage, true);
+  });
+});
+
+await test('diff-package validates package fields before side effects', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{ type: 'diff-package', package_name: 'widget' }]);
+    const calls = [];
+
+    await assert.rejects(
+      runActions({}, {
+        getPackage: async () => { calls.push('get-package'); return {}; },
+        diffPackage: async () => { calls.push('diff'); return {}; },
+      }),
+      /package_version/,
+    );
+
+    assert.deepEqual(calls, []);
+    const action = JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions[0];
+    assert.equal(action.status, 'error');
+    assert.match(action.error_message, /package_version/);
+  });
+});
+
+await test('diff-package validates diff_strict as boolean', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{
+      type: 'diff-package',
+      package_name: 'widget',
+      package_version: 3,
+      diff_strict: 'yes',
+    }]);
+
+    await assert.rejects(runActions({}, {
+      getPackage: async () => { throw new Error('should not download'); },
+      diffPackage: async () => { throw new Error('should not diff'); },
+    }), /diff_strict/);
+
+    const action = JSON.parse(readFileSync(actionsFile(dir), 'utf8')).actions[0];
+    assert.equal(action.status, 'error');
+    assert.match(action.error_message, /diff_strict/);
+  });
+});
+
+await test('diff-package dry-run includes parsed diff options', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{
+      type: 'diff-package',
+      package_name: 'widget',
+      package_version: 3,
+      diff_get_package: true,
+      diff_type: 'skill',
+      diff_include: '^x',
+      diff_copy_projects: true,
+    }]);
+
+    const result = await runActions({ dryRun: true }, {
+      getPackage: async () => { throw new Error('should not download'); },
+      diffPackage: async () => { throw new Error('should not diff'); },
+    });
+
+    assert.equal(result.wouldProcess, 1);
+    const plan = result.results[0].plan;
+    assert.equal(plan.name, 'widget');
+    assert.equal(plan.version, 3);
+    assert.equal(plan.getPackage, true);
+    assert.deepEqual(plan.typeScope, ['skills']);
+    assert.deepEqual(plan.filterSpec, { include: '^x', exclude: null });
+    assert.equal(plan.copyProjects, true);
+  });
+});
+
+await test('queued diff-package calls completeAction with type and data on success', async () => {
+  await withRemoteDir(async (dir) => {
+    writeActions(dir, [{ type: 'diff-package', key: 'diff1', package_name: 'widget', package_version: 3 }]);
+    const diffData = {
+      ok: false,
+      message: "package 'widget@3' is not available locally (set diff_get_package to true to fetch from hub)",
+      package: { name: 'widget', version: 3, dir: null },
+    };
+    const completions = [];
+
+    await runActions({}, {
+      diffPackage: async () => ({ type: 'diff-package', data: diffData }),
+      completeAction: async (key, body) => { completions.push({ key, body }); return { key, status: body.status }; },
+    });
+
+    assert.equal(completions.length, 1);
+    assert.equal(completions[0].key, 'diff1');
+    assert.equal(completions[0].body.status, 'completed');
+    assert.equal(completions[0].body.type, 'diff-package');
+    assert.deepEqual(completions[0].body.data, diffData);
   });
 });
 

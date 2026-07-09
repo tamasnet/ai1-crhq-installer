@@ -183,11 +183,17 @@ present. It requires `jq` on `PATH` to read `actions.json`.
 the file after each action. Successful actions are removed. If an action fails, processing stops and
 the failed action is left in place with `status: "error"`, `error_message`, `error_at`, and
 `attempts` for troubleshooting. Supported action types are `pull-config`, `push-install`,
-`install-package`, and `drift-report`. `install-package` runs `remote.mjs get-package` using `package_name` and
+`install-package`, `drift-report`, and `diff-package`. `install-package` runs `remote.mjs get-package` using `package_name` and
 `package_version`, then runs `install.mjs` on the downloaded package. Optional `install_type`,
 `install_include`, `install_exclude`, and boolean `install_optional` map to install flags `--type`,
 `--include`, `--exclude`, and `--optional`. `drift-report` runs `drift.mjs --json` and completes
-with `{ type: "drift-report", data: <drift report> }`.
+with `{ type: "drift-report", data: <drift report> }`. `diff-package` runs the same logic as
+`diff.mjs --json` for `package_name`/`package_version`. By default it uses a local package at
+`${PACKAGE_BASE_DIR}/<name>@<version>`; when absent, completes with
+`{ ok: false, message: "…not available locally…" }` unless boolean `diff_get_package` is true (then
+fetches via `get-package` first). Optional `diff_type`, `diff_include`, `diff_exclude`, boolean
+`diff_strict`, and boolean `diff_copy_projects` mirror `diff.mjs` flags. Completes with
+`{ type: "diff-package", data: <diff report> }`.
 Pass `--dry-run` to validate and report queued actions without performing network/install side
 effects and without updating `actions.json`.
 

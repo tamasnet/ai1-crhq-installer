@@ -6,8 +6,10 @@ import { createContext } from './context.mjs';
 import { preflight } from './preflight.mjs';
 import { closeDb } from './db.mjs';
 import { runDrift } from './drift.mjs';
+import { runDiff } from './diff.mjs';
+import { formatCliTypeError, normalizeCliTypeScope } from './component-types.mjs';
 import { actionsPath } from './remote.mjs';
-import { pullRemoteConfig, pushRemoteInstall, fetchRemotePackage, completeRemoteAction } from './remote.mjs';
+import { pullRemoteConfig, pushRemoteInstall, fetchRemotePackage, completeRemoteAction, resolvePackageBase } from './remote.mjs';
 
 export class ActionError extends Error {
   constructor(message) { super(message); this.name = 'ActionError'; }
@@ -66,19 +68,35 @@ function markFailed(action, e, now) {
   };
 }
 
-function requiredString(action, field) {
+function requiredString(action, field, actionType = 'install-package') {
   const value = action[field];
   if (typeof value !== 'string' || value.trim() === '') {
-    throw new ActionError(`install-package action requires string field: ${field}`);
+    throw new ActionError(`${actionType} action requires string field: ${field}`);
   }
   return value.trim();
 }
 
-function requiredPositiveInteger(action, field) {
+function requiredPositiveInteger(action, field, actionType = 'install-package') {
   const value = action[field];
   if (Number.isInteger(value) && value >= 1) return value;
   if (typeof value === 'string' && /^\d+$/.test(value) && Number(value) >= 1) return Number(value);
-  throw new ActionError(`install-package action requires positive integer field: ${field}`);
+  throw new ActionError(`${actionType} action requires positive integer field: ${field}`);
+}
+
+function optionalStringField(action, field, actionType) {
+  if (action[field] == null) return null;
+  if (typeof action[field] !== 'string' || action[field].trim() === '') {
+    throw new ActionError(`${actionType} action field ${field} must be a non-empty string when set`);
+  }
+  return action[field].trim();
+}
+
+function optionalBooleanField(action, field, actionType) {
+  if (action[field] == null || action[field] === false) return false;
+  if (action[field] !== true) {
+    throw new ActionError(`${actionType} action field ${field} must be a boolean when set`);
+  }
+  return true;
 }
 
 function optionalStringFlag(action, field, flag) {
@@ -104,6 +122,31 @@ function installFlagsForAction(action) {
     optionalStringFlag(action, 'install_exclude', '--exclude'),
     optionalBooleanFlag(action, 'install_optional', '--optional'),
   ].filter(Boolean);
+}
+
+function diffOptsForAction(action) {
+  const actionType = 'diff-package';
+  const getPackage = optionalBooleanField(action, 'diff_get_package', actionType);
+  const strict = optionalBooleanField(action, 'diff_strict', actionType);
+  const copyProjects = optionalBooleanField(action, 'diff_copy_projects', actionType);
+  const include = optionalStringField(action, 'diff_include', actionType);
+  const exclude = optionalStringField(action, 'diff_exclude', actionType);
+  let typeScope = null;
+  const rawType = optionalStringField(action, 'diff_type', actionType);
+  if (rawType) {
+    const { types, invalid } = normalizeCliTypeScope(rawType);
+    if (invalid.length) throw new ActionError(formatCliTypeError(invalid, 'diff_type'));
+    typeScope = types.length ? types : null;
+  }
+  return { getPackage, typeScope, filterSpec: { include, exclude }, strict, copyProjects };
+}
+
+function localPackageDir(name, version) {
+  return join(resolvePackageBase(), `${name}@${version}`);
+}
+
+function localPackageAvailable(name, version) {
+  return existsSync(join(localPackageDir(name, version), 'ai1-package.yaml'));
 }
 
 function defaultInstallPackage(packageDir, args = [], { log } = {}) {
@@ -138,8 +181,52 @@ async function defaultDriftReport(_action, { log } = {}) {
   }
 }
 
+async function resolveDiffPackageDir(plan, { getPackage }, { log } = {}) {
+  if (plan.getPackage) {
+    const fetched = await getPackage({ name: plan.name, version: plan.version }, { log });
+    return { packageDir: fetched.packageDir, source: 'hub' };
+  }
+  if (localPackageAvailable(plan.name, plan.version)) {
+    return { packageDir: localPackageDir(plan.name, plan.version), source: 'local' };
+  }
+  return { packageDir: null, source: null };
+}
+
+async function defaultDiffPackage(action, { log, getPackage } = {}) {
+  const plan = planAction(action);
+  const resolved = await resolveDiffPackageDir(plan, { getPackage }, { log });
+  if (!resolved.packageDir) {
+    log?.info(`package '${plan.name}@${plan.version}' is not available locally`);
+    return {
+      type: 'diff-package',
+      data: {
+        ok: false,
+        message: `package '${plan.name}@${plan.version}' is not available locally (set diff_get_package to true to fetch from hub)`,
+        package: { name: plan.name, version: plan.version, dir: null },
+      },
+    };
+  }
+
+  try {
+    const ctx = await createContext([], { mode: 'status' });
+    ctx.DRY_RUN = true;
+    ctx.COPY_PROJECTS = plan.copyProjects;
+    await preflight(ctx);
+    log?.info(`running diff for ${plan.name}@${plan.version} (${resolved.source}) …`);
+    const data = await runDiff(ctx, {
+      packageDir: resolved.packageDir,
+      typeScope: plan.typeScope,
+      filterSpec: plan.filterSpec,
+      strict: plan.strict,
+    });
+    return { type: 'diff-package', data };
+  } finally {
+    await closeDb();
+  }
+}
+
 function completionBodyForResult(result) {
-  if (result?.type === 'drift-report' && result.data != null) {
+  if (result?.data != null && (result.type === 'drift-report' || result.type === 'diff-package')) {
     return { status: 'completed', type: result.type, data: result.data };
   }
   return { status: 'completed' };
@@ -178,6 +265,22 @@ function planAction(action) {
     const installFlags = installFlagsForAction(action);
     return { type: action.type, operation: 'install-package', name, version, installFlags };
   }
+  if (action.type === 'diff-package') {
+    const name = requiredString(action, 'package_name', 'diff-package');
+    const version = requiredPositiveInteger(action, 'package_version', 'diff-package');
+    const { getPackage, typeScope, filterSpec, strict, copyProjects } = diffOptsForAction(action);
+    return {
+      type: action.type,
+      operation: 'diff-package',
+      name,
+      version,
+      getPackage,
+      typeScope,
+      filterSpec,
+      strict,
+      copyProjects,
+    };
+  }
   if (action.type === 'drift-report') {
     return { type: action.type, operation: 'drift-report' };
   }
@@ -200,6 +303,9 @@ async function performAction(action, deps, now, log) {
   if (plan.type === 'drift-report') {
     return deps.driftReport(action, { log });
   }
+  if (plan.type === 'diff-package') {
+    return deps.diffPackage(action, { log });
+  }
 
   throw new ActionError(`unsupported action type: ${plan.type}`);
 }
@@ -212,6 +318,7 @@ export async function runActions({ limit = null, dryRun = false } = {}, {
   getPackage = fetchRemotePackage,
   installPackage = defaultInstallPackage,
   driftReport = defaultDriftReport,
+  diffPackage = defaultDiffPackage,
   completeAction = completeRemoteAction,
 } = {}) {
   const max = validateLimit(limit);
@@ -248,7 +355,7 @@ export async function runActions({ limit = null, dryRun = false } = {}, {
     let result;
     try {
       log?.info(`processing action ${i + 1}/${toProcess}: ${type || '(unknown)'}${key ? ` (key=${key})` : ''}`);
-      result = await performAction(action, { pullConfig, pushInstall, getPackage, installPackage, driftReport }, now, log);
+      result = await performAction(action, { pullConfig, pushInstall, getPackage, installPackage, driftReport, diffPackage }, now, log);
     } catch (e) {
       const failed = markFailed(action, e, now);
       record.actions[0] = failed;

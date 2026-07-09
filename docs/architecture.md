@@ -11,7 +11,7 @@ Seven CLIs sit on a shared library in `scripts/lib/`:
 | `scripts/install.mjs` | Install/status/uninstall packages; dry-run; sandbox lifecycle; package availability reports. | satellite DB for skills/recipes/agents/jobs; filesystem/nginx/PM2 for services/projects. |
 | `scripts/sync.mjs` | Export live satellite state back into a package; `--mirror` makes the package match live state. | satellite DB and installed skill/agent files. |
 | `scripts/remote.mjs` | Ai1 Platform Hub client: register, config, heartbeat, install-state push, GitHub token, package download. | Network only. |
-| `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; `pull-config`, `push-install`, `install-package`, and `drift-report`. | Network only through remote client calls; `install-package` then invokes the local installer. |
+| `scripts/action.mjs` | Process queued hub actions from `${REMOTE_BASE_DIR}/actions.json`; `pull-config`, `push-install`, `install-package`, `drift-report`, and `diff-package`. | Network only through remote client calls; `install-package` and `diff-package` (when `diff_get_package` is true) invoke package fetch. |
 | `scripts/drift.mjs` | Read-only drift report: compare install-log components against source packages; list orphans. | satellite DB, filesystem, local package stores. |
 | `scripts/diff.mjs` | Read-only package diff: compare a package's components against live equivalents (DB fields, links, files), install-log independent. | satellite DB, filesystem. |
 | `scripts/polaris.mjs` | GitHub Client Repository clone helper. | Network + local `git`; uses hub-provided GitHub token. |
@@ -167,7 +167,11 @@ caps the number processed; `--dry-run` validates and reports the selected action
 effects or queue mutation; `--json` returns a machine-readable summary. `install-package` actions
 download a registered package via `remote.mjs get-package`, then call `install.mjs` on the extracted
 package; `install_type`, `install_include`, and `install_exclude` map to `--type`, `--include`, and
-`--exclude`, while boolean `install_optional` maps to `--optional`.
+`--exclude`, while boolean `install_optional` maps to `--optional`. `diff-package` compares a
+package against live state (same logic as `diff.mjs`); by default it uses a local
+`${PACKAGE_BASE_DIR}/<name>@<version>` tree and returns `{ ok: false, message: … }` when absent unless
+boolean `diff_get_package` fetches from the hub first. Optional `diff_type`, `diff_include`,
+`diff_exclude`, `diff_strict`, and `diff_copy_projects` mirror `diff.mjs` flags.
 
 Legacy `CRHQ_BASE_DIR` and `SANDBOX_SCHEMA` fallbacks remain for existing harnesses.
 
