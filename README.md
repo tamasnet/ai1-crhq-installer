@@ -60,7 +60,7 @@ ai1-satellite-tools/
 ├── SKILL.md                 # agent-facing skill instructions
 ├── README.md                # quick project overview
 ├── build-installer.sh       # builds a self-extracting hub-registration installer
-├── docs/                    # current v1.0 references
+├── docs/                    # reference documentation (manifest v2)
 ├── examples/bundle/         # complete package example for DB components + service
 ├── scripts/                 # CLIs and shared library
 └── tests/                   # sandbox-backed and DB-free tests

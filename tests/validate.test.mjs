@@ -47,8 +47,8 @@ console.log('\nmanifest load (reject-at-load):');
 
 await test('traversing skill name ../../../evil rejected at manifest load', () => {
   const dir = mkPkg(
-    'name: p\nversion: 1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/evil\n      version: 1\n',
-    { 'skills/evil/SKILL.md': SKILL_MD('../../../evil') },
+    'name: p\nversion: 1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/evil.md\n      version: 1\n',
+    { 'skills/evil.md': SKILL_MD('../../../evil') },
   );
   assert.throws(() => loadManifest(dir), (e) => e instanceof ManifestError && /invalid skill name/.test(e.message));
 });

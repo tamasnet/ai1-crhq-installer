@@ -65,11 +65,11 @@ try {
     assert.equal(skill.version, plan.skills[0].version);
     assert.equal(skill.package, meta.name);
     assert.equal(skill.package_version, String(meta.version));
-    assert.equal(skill.source, `skills/${plan.skills[0].key}/SKILL.md`);
+    assert.equal(skill.source, `skills/${plan.skills[0].key}.md`);
     assert.ok(skill.installed_at);
 
     const agent = find(packagesDir, 'agent');
-    assert.equal(agent.source, `agents/${plan.agents[0].name}/AGENTS.md`);
+    assert.equal(agent.source, `agents/${plan.agents[0].name}.md`);
     assert.equal(agent.version, plan.agents[0].version, 'agent carries its (optional) integer version');
     assert.equal(agent.version, 1);
     assert.equal(agent.package, meta.name);
@@ -216,14 +216,14 @@ try {
     const dir = freshDir();
     // Pre-existing log: a skill from another package + a recipe the mirror will drop.
     writeFileSync(installLogPath(dir), JSON.stringify([
-      { type: 'skill', name: 'sk', version: 1, package: 'vendor-pkg', package_version: '7', source: 'skills/sk/SKILL.md', installed_at: '2020-01-01T00:00:00Z' },
+      { type: 'skill', name: 'sk', version: 1, package: 'vendor-pkg', package_version: '7', source: 'skills/sk.md', installed_at: '2020-01-01T00:00:00Z' },
       { type: 'recipe', name: 'gone', package: 'vendor-pkg', package_version: '7', installed_at: '2020-01-01T00:00:00Z' },
     ]));
     const ctx = { DRY_RUN: false, PACKAGES_DIR: dir, log: makeLogger({}) };
     const p = updateInstallLogForMirror(ctx, {
       installed: [
-        { type: 'skill', name: 'sk', version: 2, source: 'skills/sk/SKILL.md' },   // ownership transfers to mirror
-        { type: 'agent', name: 'ag', source: 'agents/ag/AGENTS.md' },               // brand-new slot
+        { type: 'skill', name: 'sk', version: 2, source: 'skills/sk.md' },   // ownership transfers to mirror
+        { type: 'agent', name: 'ag', source: 'agents/ag.md' },               // brand-new slot
       ],
       removed: [{ type: 'recipe', name: 'gone' }],
       pkg: { name: 'ai1-tamas', version: 3 },
@@ -254,7 +254,7 @@ try {
     ]));
     const ctx = { DRY_RUN: false, PACKAGES_DIR: dir, log: makeLogger({}) };
     updateInstallLogForMirror(ctx, {
-      installed: [{ type: 'skill', name: 'mine', version: 1, source: 'skills/mine/SKILL.md' }],
+      installed: [{ type: 'skill', name: 'mine', version: 1, source: 'skills/mine.md' }],
       removed: [], pkg: { name: 'ai1-tamas', version: 1 },
     });
     const log = readInstallLog(dir);

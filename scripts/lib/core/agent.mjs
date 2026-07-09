@@ -1,7 +1,9 @@
 // core/agent.mjs — agents table (PK key) + agent_skills / agent_recipes join sync.
+// Manifest v2: content from agents/<key>.md; optional brain assets under AGENT_BRAINS_DIR/<key>.
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { writeIfChanged, copyTree, syncInstallTree, pruneTree } from '../fs.mjs';
+import { assetDirForContentPath } from '../manifest.mjs';
 import { protectMatcher, listProtectedEntries } from '../protect.mjs';
 import { isInstallStrict } from '../strict.mjs';
 import { dumpYaml } from '../parse.mjs';
@@ -86,12 +88,12 @@ export async function planAgent(ctx, def) {
     || linkChanges.recipes.add.length || linkChanges.recipes.del.length);
 
   const brainDir = BRAINS ? join(BRAINS, key) : null;
-  const hasBrain = !!(def.srcDir && brainDir && existsSync(def.srcDir));
-  const brainFiles = hasBrain
+  const hasSrc = !!(def.srcDir && existsSync(def.srcDir));
+  const brainFiles = (hasSrc && brainDir)
     ? syncInstallTree(def.srcDir, brainDir, { dryRun: true, strict: false, contentOnly: !!ctx.CONTENT_ONLY }).files
     : 0;
-  const brainPruned = (hasBrain && isInstallStrict(ctx, def) && existsSync(brainDir))
-    ? pruneTree(brainDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip }).length
+  const brainPruned = (isInstallStrict(ctx, def) && brainDir && existsSync(brainDir))
+    ? pruneTree(brainDir, hasSrc ? def.srcDir : null, { dryRun: true, skip: protectMatcher(def.protect).skip }).length
     : 0;
 
   if (!dbDrift && !linkDrift && brainFiles === 0 && brainPruned === 0) {
@@ -109,17 +111,22 @@ export async function planAgent(ctx, def) {
 }
 
 function installBrainAssets(ctx, def, brainDir) {
-  if (!def.srcDir || !brainDir || !existsSync(def.srcDir)) return { files: 0, pruned: [] };
-  const shipped = listProtectedEntries(def.srcDir, def.protect);
-  if (shipped.length) {
-    ctx.log.warn(`agent ${def.name}: package ships protected entries (installed as one-way seed, never pruned/synced): ${shipped.join(', ')}`);
+  if (!brainDir) return { files: 0, pruned: [] };
+  const strict = isInstallStrict(ctx, def);
+  const hasSrc = def.srcDir && existsSync(def.srcDir);
+  if (!hasSrc && !strict) return { files: 0, pruned: [] };
+  if (hasSrc) {
+    const shipped = listProtectedEntries(def.srcDir, def.protect);
+    if (shipped.length) {
+      ctx.log.warn(`agent ${def.name}: package ships protected entries (installed as one-way seed, never pruned/synced): ${shipped.join(', ')}`);
+    }
   }
   const protect = protectMatcher(def.protect);
-  const { files, pruned } = syncInstallTree(def.srcDir, brainDir, {
-    dryRun: !!ctx.DRY_RUN, strict: isInstallStrict(ctx, def), pruneSkip: protect.skip,
+  const { files, pruned } = syncInstallTree(hasSrc ? def.srcDir : null, brainDir, {
+    dryRun: !!ctx.DRY_RUN, strict, pruneSkip: protect.skip,
   });
   logDeletions(ctx.log, brainDir, pruned, { dryRun: !!ctx.DRY_RUN });
-  if (isInstallStrict(ctx, def) && protect.matched.size) {
+  if (strict && protect.matched.size) {
     ctx.log.info(`agent ${def.name}: protected (kept): ${[...protect.matched].sort().join(', ')}`);
   }
   return { files, pruned };
@@ -135,14 +142,15 @@ export async function upsertAgent(ctx, def) {
   const realDesiredRecipes = realRecipeIds(desiredRecipes);
   const ver = { fkValue: key, version: def.version, name: def.display_name, description: def.description, body: def.instructions };
   const brainDir = ctx.BRAINS ? join(ctx.BRAINS, key) : null;
-  const hasBrain = !!(def.srcDir && brainDir && existsSync(def.srcDir));
+  const hasSrc = !!(def.srcDir && existsSync(def.srcDir));
+  const touchBrain = !!(brainDir && (hasSrc || isInstallStrict(ctx, def)));
+  const brainLog = touchBrain ? `; ${hasSrc ? 'copy' : 'prune'} brain → ${brainDir}` : '';
   const prePlan = existed ? await planAgent(ctx, def) : null;
 
   if (!row) {
     if (DRY_RUN) {
-      log.dry(`create agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)`
-        + (hasBrain ? `; copy brain → ${brainDir}` : ''));
-      if (hasBrain) installBrainAssets(ctx, def, brainDir);
+      log.dry(`create agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)${brainLog}`);
+      if (touchBrain) installBrainAssets(ctx, def, brainDir);
       await recordVersion(ctx, 'agent', ver);
       return res(key, VERDICT.OK, 'created', { skills: desiredSkills, recipes: desiredRecipes.length });
     }
@@ -150,9 +158,8 @@ export async function upsertAgent(ctx, def) {
     await db('agents').insert({ key, ...fields, created_at: now, updated_at: now });
   } else {
     if (DRY_RUN) {
-      log.dry(`${prePlan.verdict === VERDICT.ALREADY ? 'noop' : 'update'} agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)`
-        + (hasBrain ? `; copy brain → ${brainDir}` : ''));
-      if (hasBrain) installBrainAssets(ctx, def, brainDir);
+      log.dry(`${prePlan.verdict === VERDICT.ALREADY ? 'noop' : 'update'} agent ${key}; sync ${desiredSkills.length} skill(s), ${desiredRecipes.length} recipe(s)${brainLog}`);
+      if (touchBrain) installBrainAssets(ctx, def, brainDir);
       await recordVersion(ctx, 'agent', ver);
       return res(key, prePlan.verdict, 'updated', { skills: desiredSkills, recipes: desiredRecipes.length });
     }
@@ -177,7 +184,7 @@ export async function upsertAgent(ctx, def) {
   }
   if (delR.length) await db('agent_recipes').where({ agent_key: key }).whereIn('recipe_id', delR).del();
 
-  if (hasBrain) installBrainAssets(ctx, def, brainDir);
+  if (touchBrain) installBrainAssets(ctx, def, brainDir);
   await recordVersion(ctx, 'agent', ver);
   if (!existed) return res(key, VERDICT.OK, 'created', { skills: desiredSkills, recipes: realDesiredRecipes.length });
   return res(key, prePlan.verdict === VERDICT.ALREADY ? VERDICT.ALREADY : VERDICT.OK, 'updated', { skills: desiredSkills, recipes: realDesiredRecipes.length });
@@ -221,20 +228,18 @@ export async function exportAgent(ctx, row, { outRoot, relPath, protect }) {
     ...(skills.length ? { skills } : {}),
     ...(recipes.length ? { recipes } : {}),
   };
-  const destDir = join(outRoot, relPath);
+  const assetRel = assetDirForContentPath(relPath);
+  const destDir = join(outRoot, assetRel);
   const brainDir = ctx.BRAINS ? join(ctx.BRAINS, key) : null;
   const matcher = protectMatcher(protect);
   const files = brainDir && existsSync(brainDir)
-    ? copyTree(brainDir, destDir, {
-        dryRun: !!ctx.DRY_RUN,
-        skip: (rel) => rel === 'AGENTS.md' || matcher.skip(rel),
-      })
+    ? copyTree(brainDir, destDir, { dryRun: !!ctx.DRY_RUN, skip: matcher.skip })
     : 0;
   if (matcher.matched.size) ctx.log.info(`agent ${key}: protected (not exported): ${[...matcher.matched].sort().join(', ')}`);
 
   const body = (row.instructions || '').replace(/^\n+/, '');
   const md = `---\n${dumpYaml(fm)}---\n${body ? `\n${body.endsWith('\n') ? body : `${body}\n`}` : ''}`;
-  const mdChanged = writeIfChanged(join(destDir, 'AGENTS.md'), md, { dryRun: !!ctx.DRY_RUN });
+  const mdChanged = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
   return { ...res(key, VERDICT.SYNC_OK, 'exported', { skills, recipes: recipes.length }), entry: { path: relPath, ...(version != null ? { version } : {}) }, changed: files > 0 || mdChanged };
 }
 

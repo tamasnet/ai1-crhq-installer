@@ -9,19 +9,17 @@ import { resolveServicesBase, resolveUserProjectsBase } from './paths.mjs';
 import { UsageError } from './flags.mjs';
 import { formatCliTypeError, normalizeCliTypeScope } from './component-types.mjs';
 
-// SKILLS_BASE_DIR = the parent dir under which each skill's <key> folder is created.
+// SKILLS_BASE_DIR = the parent dir under which each skill's <key> asset folder is created.
+// Manifest v2: skills/<key>.md carries DB content; skills/<key>/ is copied to join(SKILLS_BASE, key).
 export function resolveSkillsBase() {
   return process.env.SKILLS_BASE_DIR
     || (process.env.CRHQ_BASE_DIR && join(process.env.CRHQ_BASE_DIR, 'user-skills'))
     || '/opt/projects/crhq-satellite/user-skills';
 }
 
-// AGENT_BRAINS_DIR = the parent dir under which each agent's <key> brain folder is created — the
-// agent-side analog of SKILLS_BASE_DIR. An agent component is a directory (agents/<key>/ with
-// AGENTS.md, like a skill's SKILL.md); install copies that whole tree to join(AGENT_BRAINS_DIR,
-// key). Same vendor-neutral / CRHQ_BASE_DIR-relative / default shape as resolveSkillsBase() so the sandbox
-// can redirect it to a temp dir. The `documents/agent-brains` literal lives ONLY in the fallback +
-// default, never in core logic.
+// AGENT_BRAINS_DIR = the parent dir under which each agent's <key> brain folder is created.
+// Manifest v2: agents/<key>.md carries DB config/instructions; agents/<key>/ is copied to
+// join(AGENT_BRAINS_DIR, key). Same vendor-neutral / CRHQ_BASE_DIR-relative shape as resolveSkillsBase().
 export function resolveBrains() {
   return process.env.AGENT_BRAINS_DIR
     || (process.env.CRHQ_BASE_DIR && join(process.env.CRHQ_BASE_DIR, 'documents/agent-brains'))

@@ -19,10 +19,10 @@ export function writeIfChanged(path, content, { dryRun = false } = {}) {
 
 // Recursively copy srcDir → destDir, skipping byte-identical files. Returns the number of files
 // written (or that would be written, in dry-run). `skip(relPath)` (path relative to srcDir, using
-// '/' separators) excludes matching entries — used by exportSkill to avoid copying the installed
-// SKILL.md it is about to regenerate from the DB (which would otherwise flip-flop the file and make
-// the export look "changed" on every run). `contentOnly` ignores mode/mtime-only differences —
-// used by diff/drift reporting to suppress metadata noise; installs never set it.
+// '/' separators) excludes matching entries — callers pass protectMatcher(def.protect).skip during
+// sync export so protected runtime paths are not copied back into the package. `contentOnly` ignores
+// mode/mtime-only differences — used by diff/drift reporting to suppress metadata noise; installs
+// never set it.
 export function copyTree(srcDir, destDir, { dryRun = false, skip = null, contentOnly = false } = {}) {
   return copyTreeRel(srcDir, destDir, '', dryRun, skip, contentOnly);
 }
@@ -125,8 +125,36 @@ export function safeName(name) {
 // protected runtime state survives a --strict install. Returns the removed rel paths (or those
 // that would be, in dry-run); a removed directory is a single entry with a trailing '/'.
 export function pruneTree(destDir, srcDir, { dryRun = false, skip = null } = {}) {
-  if (!existsSync(destDir) || !existsSync(srcDir)) return [];
+  if (!existsSync(destDir)) return [];
+  if (!srcDir || !existsSync(srcDir)) return pruneTreeToEmpty(destDir, '', dryRun, skip);
   return pruneTreeRel(destDir, srcDir, '', dryRun, skip);
+}
+
+// Strict prune when the package ships no asset tree — remove everything in dest except skip.
+function pruneTreeToEmpty(destDir, rel, dryRun, skip) {
+  const removed = [];
+  for (const entry of readdirSync(destDir, { withFileTypes: true })) {
+    const r = rel ? `${rel}/${entry.name}` : entry.name;
+    if (skip?.(r)) continue;
+    const destPath = join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      removed.push(...pruneTreeToEmpty(destPath, r, dryRun, skip));
+      if (!dryRun) {
+        try {
+          if (readdirSync(destPath).length === 0) {
+            rmdirSync(destPath);
+            removed.push(`${r}/`);
+          }
+        } catch { /* race */ }
+      } else if (absentDirWouldEmpty(destPath, r, skip, removed)) {
+        removed.push(`${r}/`);
+      }
+    } else {
+      removed.push(r);
+      if (!dryRun) rmSync(destPath, { force: true });
+    }
+  }
+  return removed;
 }
 
 function pruneTreeRel(destDir, srcDir, rel, dryRun, skip) {
@@ -237,10 +265,10 @@ function diffTreeRel(srcDir, destDir, rel, skip, strict, out) {
 // Copy package assets then optionally prune extras so dest matches src (--strict install).
 // `pruned` is the list of removed rel paths (empty when not strict).
 export function syncInstallTree(srcDir, destDir, { dryRun = false, strict = false, copySkip = null, pruneSkip = null, contentOnly = false } = {}) {
-  if (!srcDir || !existsSync(srcDir)) return { files: 0, pruned: [] };
-  const files = copyTree(srcDir, destDir, { dryRun, skip: copySkip, contentOnly });
+  const hasSrc = srcDir && existsSync(srcDir);
+  const files = hasSrc ? copyTree(srcDir, destDir, { dryRun, skip: copySkip, contentOnly }) : 0;
   const pruned = strict && existsSync(destDir)
-    ? pruneTree(destDir, srcDir, { dryRun, skip: pruneSkip })
+    ? pruneTree(destDir, hasSrc ? srcDir : null, { dryRun, skip: pruneSkip })
     : [];
   return { files, pruned };
 }

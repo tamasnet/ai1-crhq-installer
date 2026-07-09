@@ -150,7 +150,7 @@ try {
       outOfSync: [
         {
           type: 'skill', name: 'x', state: 'modified', version: 1,
-          package: 'p', package_version: '1', source_path: 'skills/x/SKILL.md',
+          package: 'p', package_version: '1', source_path: 'skills/x.md',
           package_location: '/home/agent/packages/p@1', detail: 'updated',
         },
         {
@@ -165,7 +165,7 @@ try {
     assert.match(text, /Out of sync/);
     assert.match(text, /modified/);
     assert.match(text, /absent/);
-    assert.match(text, /skills\/x\/SKILL\.md/);
+    assert.match(text, /skills\/x\.md/);
     assert.match(text, /p@1/);
     assert.match(text, /VERSION/);
   });

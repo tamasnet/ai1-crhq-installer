@@ -57,9 +57,9 @@ Coverage summary:
 
 | Suite | Coverage |
 |-------|----------|
-| `fs.test.mjs` | copyTree/pruneTree/diffTree: mode preservation, idempotency, prune paths, content-only vs strict comparison. |
+| `fs.test.mjs` | copyTree/pruneTree/diffTree/syncInstallTree: mode preservation, idempotency, prune paths (incl. missing srcDir), content-only vs strict comparison. |
 | `protect.test.mjs` | Protected-names defaults, `!` negation, top-level/path/`**` glob matching, manifest validation. |
-| `strict.test.mjs` | `--strict` install pruning, protect interaction, CLI scope validation. |
+| `strict.test.mjs` | `--strict` install pruning (including asset-less skills/agents), protect interaction, CLI scope validation. |
 | `skill-recipe.test.mjs` | Skill/recipe install, uninstall, lock handling, versions, dry-run, validation failures. |
 | `agent.test.mjs` | Agent rows, config fields, skill/recipe joins, brain directory handling, removal. |
 | `job.test.mjs` | Job schedule aliases, script args, prereqs, idempotency, removal. |

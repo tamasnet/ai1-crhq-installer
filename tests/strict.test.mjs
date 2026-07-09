@@ -25,7 +25,7 @@ const sb = await provisionSandbox({ ts: stamp, seed: false });
 console.log(`sandbox ${sb.schema} @ ${sb.baseDir}\n`);
 
 try {
-  const { plan } = loadManifest('examples/bundle');
+  const { plan, packageRoot } = loadManifest('examples/bundle');
   const skillDef = plan.skills[0];
   const agentDef = plan.agents[0];
   const skillDir = join(sb.baseDir, skillDef.key);
@@ -60,6 +60,19 @@ try {
     writeFileSync(join(skillDir, 'stale-manifest.js'), '// old');
     await upsertSkill(ctx, def);
     assert.equal(existsSync(join(skillDir, 'stale-manifest.js')), false);
+  });
+
+  await test('upsertSkill strict prunes when package has no asset dir', async () => {
+    const ctx = makeCtx({ STRICT: true });
+    await upsertSkill(ctx, skillDef);
+    writeFileSync(join(skillDir, 'stale-no-assets.js'), '// old');
+    const contentOnly = {
+      ...skillDef,
+      srcDir: join(packageRoot, 'skills', 'no-asset-dir'),
+    };
+    await upsertSkill(ctx, contentOnly);
+    assert.equal(existsSync(join(skillDir, 'stale-no-assets.js')), false);
+    assert.equal(existsSync(join(skillDir, 'scripts', 'hello.js')), false, 'strict empty package removes shipped assets too');
   });
 
   console.log('\nprotect under --strict:');
@@ -128,6 +141,19 @@ try {
     await upsertAgent(ctx, agentDef);
     assert.equal(existsSync(join(brainDir, 'stale.txt')), false);
     assert.ok(existsSync(join(brainDir, 'memory', 'session.md')));
+  });
+
+  await test('upsertAgent strict prunes when package has no asset dir', async () => {
+    const ctx = makeCtx({ STRICT: true });
+    await upsertAgent(ctx, agentDef);
+    writeFileSync(join(brainDir, 'stale-no-assets.txt'), 'gone');
+    const contentOnly = {
+      ...agentDef,
+      srcDir: join(packageRoot, 'agents', 'no-asset-dir'),
+    };
+    await upsertAgent(ctx, contentOnly);
+    assert.equal(existsSync(join(brainDir, 'stale-no-assets.txt')), false);
+    assert.equal(existsSync(join(brainDir, 'identity.md')), false, 'strict empty package removes shipped brain files too');
   });
 
   console.log('\nCLI validation:');

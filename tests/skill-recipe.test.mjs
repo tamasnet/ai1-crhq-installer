@@ -37,7 +37,7 @@ try {
     const r = await upsertSkill(ctx, skillDef);
     assert.equal(r.verdict, 'INSTALL-OK');
     assert.equal(r.action, 'created');
-    assert.equal(r.files, 2, 'SKILL.md + scripts/hello.js copied');
+    assert.equal(r.files, 1, 'scripts/hello.js copied');
     const row = await skillRow();
     assert.equal(row.skill_type, 'org', 'default registration is org');
     assert.equal(row.locked, true, 'org skills install locked');
@@ -45,9 +45,9 @@ try {
     assert.equal(row.skill_dir, skillDir, 'still under SKILLS_BASE_DIR');
     assert.equal(row.is_active, true);
     assert.equal(row.is_global, false);
-    assert.ok(row.content.includes('# Ai1 Sample Skill'), 'content = SKILL.md body');
+    assert.ok(row.content.includes('# Ai1 Sample Skill'), 'content = skill .md body');
     assert.ok(!row.content.includes('name: ai1-sample-skill'), 'frontmatter stripped from content');
-    assert.ok(existsSync(join(skillDir, 'SKILL.md')));
+    assert.ok(!existsSync(join(skillDir, 'SKILL.md')), 'content .md is not copied to skill_dir');
     assert.ok(existsSync(join(skillDir, 'scripts', 'hello.js')));
   });
 
@@ -193,38 +193,38 @@ try {
 
   console.log('\nnegatives:');
 
-  await test('missing SKILL.md → ManifestError', async () => {
+  await test('missing skill .md → ManifestError', async () => {
     const badPkg = join(sb.baseDir, 'badpkg');
-    mkdirSync(join(badPkg, 'skills', 'foo'), { recursive: true });
+    mkdirSync(join(badPkg, 'skills'), { recursive: true });
     writeFileSync(join(badPkg, 'ai1-package.yaml'),
-      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 0.0.1\n');
-    assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /SKILL\.md/.test(e.message));
+      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo.md\n      version: 0.0.1\n');
+    assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /Skill not found/.test(e.message));
   });
 
   await test('skill version pin mismatch → ManifestError', async () => {
     const badPkg = join(sb.baseDir, 'badpin');
-    mkdirSync(join(badPkg, 'skills', 'foo'), { recursive: true });
-    writeFileSync(join(badPkg, 'skills', 'foo', 'SKILL.md'), '---\nname: foo\nversion: 9\ndescription: d\n---\nbody');
+    mkdirSync(join(badPkg, 'skills'), { recursive: true });
+    writeFileSync(join(badPkg, 'skills', 'foo.md'), '---\nname: foo\nversion: 9\ndescription: d\n---\nbody');
     writeFileSync(join(badPkg, 'ai1-package.yaml'),
-      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 1\n');
+      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo.md\n      version: 1\n');
     assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /!= manifest pin/.test(e.message));
   });
 
   await test('non-integer skill version (old semver) → ManifestError', async () => {
     const badPkg = join(sb.baseDir, 'badver');
-    mkdirSync(join(badPkg, 'skills', 'foo'), { recursive: true });
-    writeFileSync(join(badPkg, 'skills', 'foo', 'SKILL.md'), '---\nname: foo\nversion: 0.1.0\ndescription: d\n---\nbody');
+    mkdirSync(join(badPkg, 'skills'), { recursive: true });
+    writeFileSync(join(badPkg, 'skills', 'foo.md'), '---\nname: foo\nversion: 0.1.0\ndescription: d\n---\nbody');
     writeFileSync(join(badPkg, 'ai1-package.yaml'),
-      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 0.1.0\n');
+      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo.md\n      version: 0.1.0\n');
     assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /positive integer/.test(e.message));
   });
 
   await test('invalid install_type → ManifestError', async () => {
     const badPkg = join(sb.baseDir, 'badtype');
-    mkdirSync(join(badPkg, 'skills', 'foo'), { recursive: true });
-    writeFileSync(join(badPkg, 'skills', 'foo', 'SKILL.md'), '---\nname: foo\nversion: 1\ndescription: d\n---\nbody');
+    mkdirSync(join(badPkg, 'skills'), { recursive: true });
+    writeFileSync(join(badPkg, 'skills', 'foo.md'), '---\nname: foo\nversion: 1\ndescription: d\n---\nbody');
     writeFileSync(join(badPkg, 'ai1-package.yaml'),
-      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo\n      version: 1\n      install_type: bogus\n');
+      'name: bad\nversion: 0.0.1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/foo.md\n      version: 1\n      install_type: bogus\n');
     assert.throws(() => loadManifest(badPkg), (e) => e instanceof ManifestError && /install_type/.test(e.message));
   });
 

@@ -113,7 +113,7 @@ console.log('\nmanifest protect validation:');
 
 const manifest = (protect) => ({
   name: 'p', version: 1, description: 'd',
-  components: { skills: [{ path: 'skills/s', version: 1, ...(protect !== undefined ? { protect } : {}) }] },
+  components: { skills: [{ path: 'skills/s.md', version: 1, ...(protect !== undefined ? { protect } : {}) }] },
 });
 
 await test('valid protect list is accepted; invalid shapes are rejected', () => {

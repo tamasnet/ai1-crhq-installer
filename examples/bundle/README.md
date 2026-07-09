@@ -4,9 +4,9 @@ Reference Ai1 Package for `ai1-satellite-tools`. It includes each DB component t
 
 | Component | Path | Notes |
 |-----------|------|-------|
-| Skill | `skills/ai1-sample-skill/` | `SKILL.md` plus `scripts/hello.js`. |
+| Skill | `skills/ai1-sample-skill.md` + `skills/ai1-sample-skill/` | Content `.md` plus `scripts/hello.js`. |
 | Recipe | `recipes/ai1-sample-recipe.md` | Markdown frontmatter + body. |
-| Agent | `agents/ai1-sample-agent/` | Directory-form agent with `AGENTS.md` and a sample brain file. |
+| Agent | `agents/ai1-sample-agent.md` + `agents/ai1-sample-agent/` | Content `.md` plus a sample brain file. |
 | Job | `jobs/ai1-sample-job.yaml` | Hourly job requiring the sample skill. |
 | Service | `services/ai1-sample-svc/` | Minimal HTTP service deployed via nginx + PM2 on real install. |
 | Install entry | `scripts/install.mjs` | Package-specific hook used to demonstrate flag forwarding. |

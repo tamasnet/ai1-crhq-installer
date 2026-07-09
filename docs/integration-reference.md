@@ -28,11 +28,11 @@ The sandbox creates an isolated schema and clones these table shapes from live w
 
 ## Component mappings
 
-File copies are additive by default. With `--strict` (requires `--include`), installs also delete target files absent from the package; protected names (manifest `protect` + defaults — see the spec's "Component protect") always survive both strict prune and sync export.
+File copies are additive by default. With `--strict` (requires `--include`), installs also delete target files absent from the package; protected names (manifest `protect` + defaults — see the spec's "Component protect") always survive both strict prune and sync export. When a skill or agent has no package asset directory, strict install still prunes the live tree (same as an empty asset tree).
 
 ### Skill
 
-Source: `skills/<key>/SKILL.md` and sibling files.
+Source: `skills/<key>.md` and optional `skills/<key>/` assets.
 
 Install behavior:
 
@@ -42,7 +42,7 @@ Install behavior:
 - Set `skill_dir` to `SKILLS_BASE_DIR/<name>`.
 - Default to `skill_type='org'` and `locked=true`.
 - Use `skill_type='user'` and `locked=false` for `install_type: user` or `--install-skills-as-user`.
-- Copy the entire skill directory to `skill_dir`.
+- Copy optional assets from `skills/<key>/` to `skill_dir`.
 - Record `skill_versions.version_num` from the component version.
 
 Uninstall removes the DB row, version history, and skill directory unless `--respect-locks` skips a locked row.
@@ -62,18 +62,18 @@ Agent recipe links resolve recipe names to recipe UUIDs.
 
 ### Agent
 
-Source: `agents/<key>/AGENTS.md` and sibling brain files.
+Source: `agents/<key>.md` and optional `agents/<key>/` brain files.
 
 Install behavior:
 
-- `AGENTS.md` frontmatter `name` maps to `agents.key`.
+- `.md` frontmatter `name` maps to `agents.key`.
 - `display_name` maps to `agents.name`.
 - Body maps to `agents.instructions` when non-empty.
 - Optional frontmatter maps to `description`, `mode`, `default_model`, `agent_type`, `icon`, `provider`, `system_prompt_path`, and `capabilities`.
 - Upsert `agents` by `key`, with `is_active=true`.
 - Sync `agent_skills` to the declared installed active skill names.
 - Sync `agent_recipes` to declared recipe names resolved to UUIDs.
-- Copy the whole agent directory to `AGENT_BRAINS_DIR/<key>`; runtime dirs (`memory`, `activity`, …) are protected.
+- Copy optional files under `agents/<key>/` to `AGENT_BRAINS_DIR/<key>`; runtime dirs (`memory`, `activity`, …) are protected.
 - Record `agent_versions.version_num` when a version is declared.
 
 Uninstall removes the agent row, joins, and version history. It preserves the brain folder because it may contain runtime state.
@@ -141,9 +141,9 @@ On install, the declared component version is upserted. On sync/mirror, the curr
 
 `sync.mjs` uses the reverse of the install mappings:
 
-- Skills: regenerate `SKILL.md` from the DB row and copy installed skill files except the old `SKILL.md` and protected names.
+- Skills: regenerate `skills/<key>.md` from the DB row and copy installed skill assets from `skill_dir` except protected names.
 - Recipes: regenerate the Markdown file from the DB row.
-- Agents: regenerate `AGENTS.md` from the DB row/joins and copy brain files except protected names.
+- Agents: regenerate `agents/<key>.md` from the DB row/joins and copy brain files except protected names.
 - Jobs: export only script/node jobs whose script path is under `SKILLS_BASE_DIR`.
 - Services: not exported.
 - Projects: added only with `--add-project`, then left to git.

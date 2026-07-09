@@ -1,7 +1,9 @@
-// core/skill.mjs — skills table (PK name) + assets under SKILLS_BASE_DIR/<key>.
+// core/skill.mjs — skills table (PK name). Manifest v2: content from skills/<key>.md; optional
+// assets under SKILLS_BASE_DIR/<key>.
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { copyTree, removeTree, writeIfChanged, syncInstallTree, pruneTree } from '../fs.mjs';
+import { assetDirForContentPath } from '../manifest.mjs';
 import { protectMatcher, listProtectedEntries } from '../protect.mjs';
 import { isInstallStrict } from '../strict.mjs';
 import { parseFrontmatter, dumpYaml } from '../parse.mjs';
@@ -29,13 +31,16 @@ async function resolveSkillState(ctx, def) {
   const rowChanged = !row || dbFields.length > 0;
   let fileChanges = 0;
   let pruned = 0;
-  if (def.srcDir && existsSync(def.srcDir)) {
+  const hasSrc = def.srcDir && existsSync(def.srcDir);
+  if (hasSrc) {
     fileChanges = copyTree(def.srcDir, skillDir, {
-      dryRun: true, skip: (rel) => rel === 'SKILL.md', contentOnly: !!ctx.CONTENT_ONLY,
+      dryRun: true, contentOnly: !!ctx.CONTENT_ONLY,
     });
-    if (isInstallStrict(ctx, def) && existsSync(skillDir)) {
-      pruned = pruneTree(skillDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip }).length;
-    }
+  }
+  if (isInstallStrict(ctx, def) && existsSync(skillDir)) {
+    pruned = pruneTree(skillDir, hasSrc ? def.srcDir : null, {
+      dryRun: true, skip: protectMatcher(def.protect).skip,
+    }).length;
   }
   const ver = { fkValue: name, version: def.version, name: def.name, description: def.description, body: def.content };
   return { name, skillDir, fields, row, rowChanged, dbFields, fileChanges, pruned, ver };
@@ -62,17 +67,21 @@ export async function planSkill(ctx, def) {
 }
 
 function installSkillAssets(ctx, def, skillDir) {
-  if (!def.srcDir || !existsSync(def.srcDir)) return { files: 0, pruned: [] };
-  const shipped = listProtectedEntries(def.srcDir, def.protect);
-  if (shipped.length) {
-    ctx.log.warn(`skill ${def.name}: package ships protected entries (installed as one-way seed, never pruned/synced): ${shipped.join(', ')}`);
+  const strict = isInstallStrict(ctx, def);
+  const hasSrc = def.srcDir && existsSync(def.srcDir);
+  if (!hasSrc && !strict) return { files: 0, pruned: [] };
+  if (hasSrc) {
+    const shipped = listProtectedEntries(def.srcDir, def.protect);
+    if (shipped.length) {
+      ctx.log.warn(`skill ${def.name}: package ships protected entries (installed as one-way seed, never pruned/synced): ${shipped.join(', ')}`);
+    }
   }
   const protect = protectMatcher(def.protect);
-  const { files, pruned } = syncInstallTree(def.srcDir, skillDir, {
-    dryRun: !!ctx.DRY_RUN, strict: isInstallStrict(ctx, def), pruneSkip: protect.skip,
+  const { files, pruned } = syncInstallTree(hasSrc ? def.srcDir : null, skillDir, {
+    dryRun: !!ctx.DRY_RUN, strict, pruneSkip: protect.skip,
   });
   logDeletions(ctx.log, skillDir, pruned, { dryRun: !!ctx.DRY_RUN });
-  if (isInstallStrict(ctx, def) && protect.matched.size) {
+  if (strict && protect.matched.size) {
     ctx.log.info(`skill ${def.name}: protected (kept): ${[...protect.matched].sort().join(', ')}`);
   }
   return { files, pruned };
@@ -152,10 +161,11 @@ export async function removeSkill(ctx, nameOrDef) {
 
 export async function exportSkill(ctx, row, { outRoot, relPath, protect }) {
   const { db, log } = ctx;
-  const destDir = join(outRoot, relPath);
+  const assetRel = assetDirForContentPath(relPath);
+  const destDir = join(outRoot, assetRel);
   const matcher = protectMatcher(protect);
   const files = row.skill_dir && existsSync(row.skill_dir)
-    ? copyTree(row.skill_dir, destDir, { dryRun: !!ctx.DRY_RUN, skip: (rel) => rel === 'SKILL.md' || matcher.skip(rel) })
+    ? copyTree(row.skill_dir, destDir, { dryRun: !!ctx.DRY_RUN, skip: matcher.skip })
     : 0;
   if (matcher.matched.size) log.info(`skill ${row.name}: protected (not exported): ${[...matcher.matched].sort().join(', ')}`);
 
@@ -168,7 +178,7 @@ export async function exportSkill(ctx, row, { outRoot, relPath, protect }) {
   const body = (parsed.meta.name || parsed.meta.version || parsed.meta.description) ? parsed.body : (row.content || '');
   const meta = { name: row.name, version, description: row.description || '' };
   const md = `---\n${dumpYaml(meta)}---\n\n${body.replace(/^\n+/, '')}`;
-  const mdChanged = writeIfChanged(join(destDir, 'SKILL.md'), md, { dryRun: !!ctx.DRY_RUN });
+  const mdChanged = writeIfChanged(join(outRoot, relPath), md, { dryRun: !!ctx.DRY_RUN });
 
   const entry = { path: relPath, version, ...(row.skill_type === 'user' ? { install_type: 'user' } : {}) };
   return { ...result(row.name, VERDICT.SYNC_OK, 'exported', files + (mdChanged ? 1 : 0)), entry, changed: files > 0 || mdChanged };

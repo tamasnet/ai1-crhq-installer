@@ -69,14 +69,14 @@ try {
     assert.equal(row.agent_type, 'specialist', 'agent_type rides DB default when the package omits it');
     assert.equal(row.icon, '🧪', 'icon from def');
     assert.equal(row.default_model, 'sonnet');
-    assert.ok(agentDef.instructions && agentDef.instructions.length, 'def carries instructions from the AGENTS.md body');
+    assert.ok(agentDef.instructions && agentDef.instructions.length, 'def carries instructions from the agent .md body');
     assert.equal(row.instructions, agentDef.instructions, 'instructions persisted from the Markdown body');
     assert.deepEqual(await skillsOf(agentDef.name), ['ai1-sample-skill']);
     assert.deepEqual(await recipeIdsOf(agentDef.name), [sampleRecipeId], 'recipe name resolved to uuid');
     // Brain: the whole agent directory is copied to AGENT_BRAINS_DIR/<key>.
     const brainDir = join(ctx.BRAINS, agentDef.name);
-    assert.ok(existsSync(join(brainDir, 'AGENTS.md')), 'brain AGENTS.md copied to AGENT_BRAINS_DIR/<key>');
-    assert.ok(existsSync(join(brainDir, 'identity.md')), 'sibling brain file copied alongside AGENTS.md');
+    assert.ok(!existsSync(join(brainDir, 'AGENTS.md')), 'content .md is not copied to brain dir');
+    assert.ok(existsSync(join(brainDir, 'identity.md')), 'sibling brain file copied to AGENT_BRAINS_DIR/<key>');
   });
 
   await test('brain is idempotent: re-run writes nothing new, stays ALREADY', async () => {
@@ -172,26 +172,25 @@ try {
   await test('manifest: an over-long agent_type (> varchar(20)) is rejected with a clear error', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'ai1-agent-type-'));
     try {
-      mkdirSync(join(tmp, 'agents', 'typed'), { recursive: true });
+      mkdirSync(join(tmp, 'agents'), { recursive: true });
       const tooLong = 'x'.repeat(21);   // agents.agent_type is varchar(20)
-      writeFileSync(join(tmp, 'agents', 'typed', 'AGENTS.md'),
+      writeFileSync(join(tmp, 'agents', 'typed.md'),
         `---\nname: typed\ndisplay_name: Typed\nagent_type: ${tooLong}\n---\nbody\n`);
       writeFileSync(join(tmp, 'ai1-package.yaml'),
-        'name: type-test\nversion: 1\ndescription: d\ncomponents:\n  agents:\n    - path: agents/typed\n');
+        'name: type-test\nversion: 1\ndescription: d\ncomponents:\n  agents:\n    - path: agents/typed.md\n');
       assert.throws(() => loadManifest(tmp), /agent agent_type exceeds 20 chars/, 'too-long agent_type fails fast at manifest load');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  await test('a flat agents/<name>.md is rejected by the manifest loader', async () => {
+  await test('a directory-only agent path is rejected by the manifest loader', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'ai1-agent-fmt-'));
     try {
-      mkdirSync(join(tmp, 'agents'), { recursive: true });
-      writeFileSync(join(tmp, 'agents', 'legacy.md'), '---\nname: legacy\ndisplay_name: Legacy\n---\nbody\n');
+      mkdirSync(join(tmp, 'agents', 'legacy'), { recursive: true });
       writeFileSync(join(tmp, 'ai1-package.yaml'),
-        'name: fmt-test\nversion: 1\ndescription: d\ncomponents:\n  agents:\n    - path: agents/legacy.md\n');
-      assert.throws(() => loadManifest(tmp), /directory with an AGENTS\.md/, 'flat .md points the author at the directory form');
+        'name: fmt-test\nversion: 1\ndescription: d\ncomponents:\n  agents:\n    - path: agents/legacy\n');
+      assert.throws(() => loadManifest(tmp), /must be a \.md file/, 'directory path rejected in manifest v2');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

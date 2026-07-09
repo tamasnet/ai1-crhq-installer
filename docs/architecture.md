@@ -22,9 +22,9 @@ The library barrel is `scripts/lib/index.mjs`. Package hooks can import reusable
 
 | Type | Package source | Live target | Version source |
 |------|----------------|-------------|----------------|
-| Skill | `skills/<key>/SKILL.md` + directory assets | `skills` row + `SKILLS_BASE_DIR/<key>` | `skill_versions.version_num` |
+| Skill | `skills/<key>.md` + optional `skills/<key>/` assets | `skills` row + `SKILLS_BASE_DIR/<key>` | `skill_versions.version_num` |
 | Recipe | `recipes/<name>.md` | `recipes` row | `recipe_versions.version_num` when declared |
-| Agent | `agents/<key>/AGENTS.md` + brain files | `agents`, joins, `AGENT_BRAINS_DIR/<key>` | `agent_versions.version_num` when declared |
+| Agent | `agents/<key>.md` + optional `agents/<key>/` brain files | `agents`, joins, `AGENT_BRAINS_DIR/<key>` | `agent_versions.version_num` when declared |
 | Job | `jobs/<name>.yaml` | `background_jobs` row | unversioned |
 | Service | `services/<name>/service.yaml` + source | `${SERVICES_BASE_DIR:-~/services}/<name>`, nginx, PM2 | `service.yaml`/manifest only |
 | Project | `projects/<name>/project.yaml` + source | `/opt/projects/user/<name>` symlink/copy, nginx, PM2 | `project.yaml`/manifest only |
@@ -49,7 +49,7 @@ install.mjs <package> [flags]
 
 Uninstall uses the reverse component order. Status is read-only. Dry-run records intended changes without DB/filesystem writes; service/project build commands are skipped unless `--run-build` is passed, and nginx/PM2 apply is always skipped.
 
-With `--strict` (requires `--include`), asset copies also delete target files not present in the package, listing every deleted path; protected names (manifest `protect` + defaults) always survive.
+With `--strict` (requires `--include`), asset copies also delete target files not present in the package, listing every deleted path; protected names (manifest `protect` + defaults) always survive. The same applies when a skill or agent ships content only (no `skills/<key>/` or `agents/<key>/` asset directory): strict install prunes the live asset tree to empty except protected paths.
 
 ## Sync flow
 
@@ -93,7 +93,7 @@ The install log is `${PACKAGES_DIR:-~/packages}/install.json`. It stores install
       "version": 1,
       "package": "my-package",
       "package_version": "1",
-      "source": "skills/my-skill/SKILL.md",
+      "source": "skills/my-skill.md",
       "installed_at": "..."
     }
   ]

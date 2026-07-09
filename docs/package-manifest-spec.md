@@ -1,8 +1,10 @@
-# Ai1 Package manifest specification v1.0
+# Ai1 Package manifest specification v2.0
 
 An Ai1 Package is an installable directory tree. Its root contains `ai1-package.yaml`, which explicitly lists every component the installer should manage.
 
 The manifest is the source of truth. Files that exist in the package but are not listed under `components` are ignored.
+
+**Manifest v2** separates DB-backed content (`.md` files) from filesystem assets (optional sibling directories). Requires installer version `2` or later.
 
 ## Package layout
 
@@ -10,13 +12,12 @@ The manifest is the source of truth. Files that exist in the package but are not
 <package>/
 ├── ai1-package.yaml
 ├── README.md                    # optional human instructions
-├── skills/<skill-key>/
-│   ├── SKILL.md
-│   └── scripts/                 # optional skill assets/scripts
+├── skills/<skill-key>.md        # → skills.content (DB)
+├── skills/<skill-key>/          # optional assets (→ SKILLS_BASE_DIR/<key>)
+│   └── scripts/
 ├── recipes/<recipe-name>.md
-├── agents/<agent-key>/
-│   ├── AGENTS.md
-│   └── ...                      # optional brain files
+├── agents/<agent-key>.md        # → agents row + instructions (DB)
+├── agents/<agent-key>/          # optional brain files (→ AGENT_BRAINS_DIR/<key>)
 ├── jobs/<job-name>.yaml
 ├── services/<service-name>/
 │   ├── service.yaml
@@ -37,12 +38,12 @@ values (`skill`, `recipe`, etc.).
 name: my-package                 # required package identifier
 version: 1                       # required package release label; string or number accepted
 description: Package summary.    # required
-installer: 1                     # optional minimum ai1-satellite-tools installer version
+installer: 2                     # optional minimum ai1-satellite-tools installer version
 
 components:
   skills:
-    - path: skills/my-skill
-      version: 1                 # required positive integer; must match SKILL.md version
+    - path: skills/my-skill.md
+      version: 1                 # required positive integer; must match .md frontmatter version
       install_type: org          # optional: org (default, locked) or user (unlocked)
       handling: normal           # optional: normal (default) | removed | optional | strict
       protect: ['!config']       # optional: extend/trim the protected-names set (see Component protect)
@@ -50,7 +51,7 @@ components:
     - path: recipes/my-recipe.md
       version: 1                 # optional positive integer
   agents:
-    - path: agents/my-agent
+    - path: agents/my-agent.md
       version: 1                 # optional positive integer
   jobs:
     - path: jobs/my-job.yaml
@@ -75,7 +76,7 @@ install_flags:
 | `version` | yes | Package release label. It is not a component version. |
 | `description` | yes | Package summary. |
 | `components` | yes | Mapping of component type to list of entries. |
-| `installer` | no | Positive integer minimum installer version; current installer version is `1`. |
+| `installer` | no | Positive integer minimum installer version; current installer version is `2`. |
 | `install_entry` | no | Package-specific hook run after declarative install/status/uninstall. |
 | `install_flags` | no | Package-specific flags accepted by `install.mjs` and forwarded to `install_entry`. |
 
@@ -87,9 +88,9 @@ Component versions are positive integers.
 
 | Component | Version rule |
 |-----------|--------------|
-| Skill | Required in manifest and `SKILL.md`; values must match. Recorded in `skill_versions`. |
+| Skill | Required in manifest and `skills/<key>.md`; values must match. Recorded in `skill_versions`. |
 | Recipe | Optional in manifest/frontmatter; if both are present, values must match. Recorded in `recipe_versions` when present. |
-| Agent | Optional in manifest/`AGENTS.md`; if both are present, values must match. Recorded in `agent_versions` when present. |
+| Agent | Optional in manifest/`agents/<key>.md`; if both are present, values must match. Recorded in `agent_versions` when present. |
 | Job | Not versioned. |
 | Service | Required in manifest and `service.yaml`; values must match. |
 | Project | Required in manifest and `project.yaml`; values must match. |
@@ -116,13 +117,13 @@ Every component entry may carry an optional `handling` field that controls wheth
 ```yaml
 components:
   skills:
-    - path: skills/legacy-skill     # files may be deleted from the package
-      handling: removed             # version pin not required for a tombstone
-      name: legacy-skill            # optional: override the name derived from the path basename
-    - path: skills/beta-skill
+    - path: skills/legacy-skill.md   # files may be deleted from the package
+      handling: removed              # version pin not required for a tombstone
+      name: legacy-skill             # optional: override the name derived from the path basename
+    - path: skills/beta-skill.md
       version: 1
       handling: optional
-    - path: skills/tight-skill
+    - path: skills/tight-skill.md
       version: 1
       handling: strict
       protect: ['!config']
@@ -180,7 +181,7 @@ components:
 
 ## Components
 
-### Skill: `skills/<key>/SKILL.md`
+### Skill: `skills/<key>.md`
 
 ```markdown
 ---
@@ -200,7 +201,7 @@ Required frontmatter:
 | `version` | Positive integer matching `components.skills[].version`. |
 | `description` | Discovery text stored in `skills.description`. |
 
-The Markdown body becomes `skills.content`. The whole skill directory is copied to `SKILLS_BASE_DIR/<name>`. `install_type: org` registers a locked org skill. `install_type: user` registers an unlocked user skill. `--install-skills-as-user` overrides every skill entry to `user`.
+The Markdown body becomes `skills.content`. Optional assets under `skills/<key>/` are copied to `SKILLS_BASE_DIR/<name>`. `install_type: org` registers a locked org skill. `install_type: user` registers an unlocked user skill. `--install-skills-as-user` overrides every skill entry to `user`.
 
 ### Recipe: `recipes/<name>.md`
 
@@ -216,9 +217,9 @@ Recipe content.
 
 Required frontmatter: `name`, `description`. Optional: `version`. The body becomes `recipes.content`.
 
-### Agent: `agents/<key>/AGENTS.md`
+### Agent: `agents/<key>.md`
 
-Agents are directory components. `AGENTS.md` configures the DB row and supplies the agent instructions; sibling files are copied as the agent's brain.
+`agents/<key>.md` configures the DB row and supplies the agent instructions. Optional brain files live under `agents/<key>/`.
 
 ```markdown
 ---
@@ -242,7 +243,7 @@ Agent instructions.
 
 Required frontmatter: `name`, `display_name`. Optional fields: `version`, `description`, `mode`, `default_model`, `agent_type`, `icon`, `provider`, `system_prompt_path`, `capabilities`, `skills`, `recipes`.
 
-The body becomes `agents.instructions`. Skill links attach only to installed active skills. Recipe links resolve by recipe name. The whole directory copies to `AGENT_BRAINS_DIR/<name>`. Uninstall removes the DB row and joins but preserves the brain folder.
+The body becomes `agents.instructions`. Skill links attach only to installed active skills. Recipe links resolve by recipe name. Optional files under `agents/<key>/` copy to `AGENT_BRAINS_DIR/<name>`. Uninstall removes the DB row and joins but preserves the brain folder.
 
 ### Job: `jobs/<name>.yaml`
 

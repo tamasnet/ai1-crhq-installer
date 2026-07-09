@@ -80,10 +80,10 @@ try {
   // Build a minimal valid skill package at <base>/<pkgName>/ declaring skill <skillName>@<version>.
   const writeSkillPackage = (base, pkgName, skillName, version) => {
     const dir = join(base, pkgName);
-    mkdirSync(join(dir, 'skills', skillName), { recursive: true });
+    mkdirSync(join(dir, 'skills'), { recursive: true });
     writeFileSync(join(dir, 'ai1-package.yaml'),
-      `name: ${pkgName}\nversion: 1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/${skillName}\n      version: ${version}\n`);
-    writeFileSync(join(dir, 'skills', skillName, 'SKILL.md'),
+      `name: ${pkgName}\nversion: 1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/${skillName}.md\n      version: ${version}\n`);
+    writeFileSync(join(dir, 'skills', `${skillName}.md`),
       `---\nname: ${skillName}\nversion: ${version}\ndescription: "x"\n---\nbody\n`);
     return dir;
   };

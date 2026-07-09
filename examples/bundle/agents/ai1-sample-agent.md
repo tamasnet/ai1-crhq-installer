@@ -17,7 +17,6 @@ installer's agent path. This Markdown body becomes the agent's `instructions` fi
 frontmatter above carries the rest of the configuration (the optional `provider`,
 `system_prompt_path`, and `capabilities` fields may also go in the frontmatter).
 
-This agent is a **directory** component (like a skill): the folder is the agent's "brain". On install
-the whole `agents/ai1-sample-agent/` tree is copied to `AGENT_BRAINS_DIR/ai1-sample-agent/` so
-sibling files such as `identity.md` travel with the agent. Demonstrate the bundle's sample skill
-and recipe, and keep responses short.
+Optional brain files live in `agents/ai1-sample-agent/` and are copied to
+`AGENT_BRAINS_DIR/ai1-sample-agent/` on install. Demonstrate the bundle's sample skill and recipe,
+and keep responses short.

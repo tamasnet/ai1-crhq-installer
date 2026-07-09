@@ -55,14 +55,12 @@ async function liveVersion(ctx, type, def, liveDir) {
   return null;
 }
 
-// File status vs the live tree, mirroring install/sync skips: skills skip SKILL.md (DB content is
-// authoritative), the prune side honors protect. Symlink-mode projects have no copy to compare.
+// File status vs the live tree. Asset dirs are compared directly; content lives in the .md file.
 function fileDetail(ctx, type, def, liveDir) {
   if (!def.srcDir || !existsSync(def.srcDir) || !liveDir) return null;
   if (type === 'project' && !ctx.COPY_PROJECTS) return null;
   const protect = protectMatcher(def.protect);
-  const copySkip = type === 'skill' ? (rel) => rel === 'SKILL.md' : null;
-  const d = diffTree(def.srcDir, liveDir, { copySkip, pruneSkip: protect.skip, strict: !ctx.CONTENT_ONLY });
+  const d = diffTree(def.srcDir, liveDir, { pruneSkip: protect.skip, strict: !ctx.CONTENT_ONLY });
   return { ...d, protected: [...protect.matched].sort() };
 }
 

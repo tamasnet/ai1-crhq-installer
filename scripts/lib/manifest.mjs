@@ -25,14 +25,20 @@ const TYPE_ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services', 'projects
 //              (same as CLI --strict) without requiring --include.
 export const HANDLING_VALUES = new Set(['normal', 'removed', 'optional', 'strict']);
 
-// Component types whose manifest path is a single FILE (recipe .md / job .yaml); the rest are
-// directories. Used when deriving a tombstone's name from its path.
-const FILE_TYPES = new Set(['recipes', 'jobs']);
+// Component types whose manifest path is a single FILE (recipe/job .md/.yaml; skill/agent .md).
+// Used when deriving a tombstone's name from its path.
+const FILE_TYPES = new Set(['recipes', 'jobs', 'skills', 'agents']);
+
+// Manifest v2: skill/agent content lives at skills/<key>.md / agents/<key>.md; optional asset
+// trees live at skills/<key>/ / agents/<key>/ (sibling paths, basename without .md).
+export function assetDirForContentPath(contentPath) {
+  return join(dirname(contentPath), basename(contentPath, extname(contentPath)));
+}
 
 // The installer's own integer version. A package's optional `installer` field is the minimum
 // version it requires — a plain positive integer with an implicit ">=" — and a package that needs a
 // newer installer than this one is rejected at manifest load.
-export const INSTALLER_VERSION = 1;
+export const INSTALLER_VERSION = 2;
 
 // varchar limits mirrored from the live CRHQ schema — validated here so a too-long
 // value fails fast with a clear message instead of a Postgres error mid-install.
@@ -86,6 +92,9 @@ export function validateManifest(meta) {
       // its component files are gone, so there is nothing left to version-check.
       if (entry.handling !== 'removed' && (type === 'skills' || type === 'services' || type === 'projects') && !entry.version) {
         throw new ManifestError(`components.${type}[${entry.path}] requires a version pin`);
+      }
+      if (entry.handling !== 'removed' && (type === 'skills' || type === 'agents') && !entry.path.endsWith('.md')) {
+        throw new ManifestError(`components.${type}[${entry.path}] path must be a .md file (manifest v2)`);
       }
     }
   }
@@ -156,27 +165,27 @@ function removedName(type, entry) {
 }
 
 function loadSkillDef(entry, root) {
-  const srcDir = join(root, entry.path);
-  const mdPath = join(srcDir, 'SKILL.md');
-  if (!existsSync(mdPath)) throw new ManifestError(`Skill missing SKILL.md: ${entry.path}`);
-  const { meta, body } = parseFrontmatter(readFileSync(mdPath, 'utf8'));
-  if (!meta.name) throw new ManifestError(`SKILL.md missing 'name': ${entry.path}`);
+  const srcFile = join(root, entry.path);
+  if (!existsSync(srcFile)) throw new ManifestError(`Skill not found: ${entry.path}`);
+  const { meta, body } = parseFrontmatter(readFileSync(srcFile, 'utf8'));
+  if (!meta.name) throw new ManifestError(`Skill missing 'name': ${entry.path}`);
   assertManifestSegment('skill name', meta.name);
-  if (meta.version == null) throw new ManifestError(`SKILL.md missing 'version': ${entry.path}`);
+  if (meta.version == null) throw new ManifestError(`Skill missing 'version': ${entry.path}`);
   const version = intVersion(`Skill ${meta.name} version`, meta.version);
   const pin = intVersion(`Skill ${entry.path} manifest version`, entry.version);
   if (version !== pin) {
-    throw new ManifestError(`Skill ${meta.name}: SKILL.md version ${version} != manifest pin ${pin}`);
+    throw new ManifestError(`Skill ${meta.name}: version ${version} != manifest pin ${pin}`);
   }
   checkLen('skill name', meta.name, LIMITS.skillName);
-  // install_type (manifest entry): how the skill registers. Default 'org' (locked); 'user'
-  // installs it unlocked as a user skill. Either way assets land in SKILLS_BASE_DIR.
   const installType = entry.install_type;
   if (installType != null && installType !== 'user' && installType !== 'org') {
     throw new ManifestError(`Skill ${meta.name}: install_type must be 'user' or 'org' (got '${installType}')`);
   }
-  // content = SKILL.md body (frontmatter stripped) — matches the live CRHQ skills.content convention.
-  return { key: meta.name, name: meta.name, description: meta.description || '', version, srcDir, content: body, installType };
+  const srcDir = join(root, assetDirForContentPath(entry.path));
+  return {
+    key: meta.name, name: meta.name, description: meta.description || '', version,
+    srcDir, srcFile, content: body, installType,
+  };
 }
 
 function loadRecipeDef(entry, root) {
@@ -193,18 +202,9 @@ function loadRecipeDef(entry, root) {
 }
 
 function loadAgentDef(entry, root) {
-  const srcDir = join(root, entry.path);
-  // An agent is a DIRECTORY with an AGENTS.md (the agent's "brain"), exactly like a skill's
-  // <key>/SKILL.md. A flat agents/<name>.md file is not accepted — use the directory form.
-  if (entry.path.endsWith('.md') || (existsSync(srcDir) && statSync(srcDir).isFile())) {
-    throw new ManifestError(`Agent '${entry.path}': an agent must be a directory with an AGENTS.md — use agents/<key>/ (a folder), not a flat .md file`);
-  }
-  const mdPath = join(srcDir, 'AGENTS.md');
-  if (!existsSync(mdPath)) throw new ManifestError(`Agent missing AGENTS.md: ${entry.path}`);
-  // Content-bearing component (like skills/recipes): YAML frontmatter for the scalar/list fields +
-  // a Markdown body that becomes the agent's `instructions`. The rest of the directory is the
-  // brain — copied to AGENT_BRAINS_DIR/<key> on install.
-  const { meta: a, body } = parseFrontmatter(readFileSync(mdPath, 'utf8'));
+  const srcFile = join(root, entry.path);
+  if (!existsSync(srcFile)) throw new ManifestError(`Agent not found: ${entry.path}`);
+  const { meta: a, body } = parseFrontmatter(readFileSync(srcFile, 'utf8'));
   // Agents follow the same name/description pattern as every other component type: `name` is the
   // canonical identifier (stored as CRHQ agents.key), `display_name` the human label (stored as
   // agents.name).
@@ -224,9 +224,8 @@ function loadAgentDef(entry, root) {
     name: a.name, display_name: a.display_name, description: a.description || '', mode: a.mode || 'cli',
     default_model: a.default_model, agent_type: a.agent_type, icon: a.icon, skills: a.skills || [], recipes: a.recipes || [],
     instructions, system_prompt_path: a.system_prompt_path, capabilities: a.capabilities, provider: a.provider,
-    // srcDir = the agent/brain directory (copied to AGENT_BRAINS_DIR/<key> on install); srcFile = its
-    // AGENTS.md (the install log's `source`, mirroring a skill's SKILL.md).
-    srcDir, srcFile: mdPath, ...(version != null ? { version } : {}),
+    srcDir: join(root, assetDirForContentPath(entry.path)), srcFile,
+    ...(version != null ? { version } : {}),
   };
 }
 

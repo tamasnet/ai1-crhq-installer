@@ -1,5 +1,5 @@
 // sync.mjs — core sync logic: reconcile a package repo's ai1-package.yaml against the live
-// satellite (DB + SKILLS_BASE_DIR) by exporting components back into the package directory.
+// satellite (DB + SKILLS_BASE_DIR + AGENT_BRAINS_DIR) by exporting components back into the package directory.
 //
 // Direction: satellite (DB + filesystem) → package repo (Git working copy)
 // Git-safe: writeIfChanged is used throughout — byte-identical files are never touched.
@@ -43,7 +43,7 @@ import { spawnSync } from 'node:child_process';
 // without an import cycle.
 import { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
 import { safeName, writeIfChanged, removeTree, moveTree, ensureSymlink, pathExistsOrLink } from './fs.mjs';
-import { validateManifest, readWebAppConfig } from './manifest.mjs';
+import { validateManifest, readWebAppConfig, assetDirForContentPath } from './manifest.mjs';
 import { assertSafeSegment } from './validate.mjs';
 import { makeFilter, hasFilter } from './filter.mjs';
 import { VERDICT } from './log.mjs';
@@ -87,34 +87,43 @@ export function isInsideGitRepo(dir) {
 // Component types covered by sync/mirror DB export (services/projects are not DB-resident).
 export const SYNC_TYPES = ['skills', 'recipes', 'agents', 'jobs'];
 
-// Default relative path within the package for a newly added component. Skills, agents, and projects
-// are directories (SKILL.md / AGENTS.md / project.yaml inside); recipes and jobs are single files.
+// Default relative path within the package for a newly added component. Skills and agents are
+// content .md files with optional asset dirs; recipes and jobs are single files.
 const DEFAULT_PATH = {
-  skills:  (name) => `skills/${safeName(name)}`,
+  skills:  (name) => `skills/${safeName(name)}.md`,
   recipes: (name) => `recipes/${safeName(name)}.md`,
-  agents:  (name) => `agents/${safeName(name)}`,
+  agents:  (name) => `agents/${safeName(name)}.md`,
   jobs:    (name) => `jobs/${safeName(name)}.yaml`,
   projects:(name) => `projects/${safeName(name)}`,
 };
+
+// Remove a manifest v2 skill/agent (content .md + optional asset dir) or any other component path.
+function removeComponentFiles(ctx, type, entryPath, packageDir) {
+  const dry = !!ctx.DRY_RUN;
+  let changed = false;
+  if (type === 'skills' || type === 'agents') {
+    if (removeTree(join(packageDir, entryPath), { dryRun: dry })) changed = true;
+    if (removeTree(join(packageDir, assetDirForContentPath(entryPath)), { dryRun: dry })) changed = true;
+  } else if (removeTree(join(packageDir, entryPath), { dryRun: dry })) {
+    changed = true;
+  }
+  return changed;
+}
 
 // Canonical DB identifier for a discovered row, per type.
 const ROW_NAME = { skills: (r) => r.name, recipes: (r) => r.name, agents: (r) => r.key, jobs: (r) => r.name };
 
 // Derive the component's canonical DB name from a manifest entry path.
-// For directory components: try their metadata file's canonical name; fall back to the directory
-// basename. For recipes/jobs: basename of path minus the extension.
-// If the component file already exists in the package dir, the frontmatter is authoritative.
 function deriveName(packageDir, type, entryPath) {
-  if (type === 'skills' || type === 'agents') {
-    const mdName = type === 'skills' ? 'SKILL.md' : 'AGENTS.md';
-    const mdPath = join(packageDir, entryPath, mdName);
+  if (type === 'skills' || type === 'agents' || type === 'recipes') {
+    const mdPath = join(packageDir, entryPath);
     if (existsSync(mdPath)) {
       try {
         const { meta } = parseFrontmatter(readFileSync(mdPath, 'utf8'));
         if (meta.name) return meta.name;
       } catch { /* fall through to basename */ }
     }
-    return basename(entryPath);
+    return basename(entryPath, extname(entryPath));
   }
   if (type === 'projects') {
     const srcDir = join(packageDir, entryPath);
@@ -252,14 +261,9 @@ function removeProjectFromPackage(ctx, name, { packageDir, entryPath }) {
 const label = (type, name) => `${type.replace(/s$/, '')}:${name}`;
 const singular = (type) => type.replace(/s$/, '');
 
-// The component's manifest file relative to the package root — the install log's `source` field
-// (mirrors install-log.mjs's sourceOf). Skills/agents carry a SKILL.md/AGENTS.md under their dir;
-// the rest are a single file.
+// The component's manifest file relative to the package root — the install log's `source` field.
 const sourceOf = (type, path) => (
-  type === 'skills' ? `${path}/SKILL.md`
-    : type === 'agents' ? `${path}/AGENTS.md`
-      : type === 'projects' ? `${path}/project.yaml`
-        : path
+  type === 'projects' ? `${path}/project.yaml` : path
 );
 
 // ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -337,7 +341,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
 
   // Skill names known to the package — used by exportJob to populate 'requires:'.
   const skillNamesInManifest = new Set(
-    (manifest.components.skills ?? []).map((e) => basename(e.path)),
+    (manifest.components.skills ?? []).map((e) => basename(e.path, extname(e.path))),
   );
 
   // Build the addition queue: explicit --add-* plus, in mirror mode, every curated live component in
@@ -377,7 +381,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
         let changed = false;
         if (type === 'projects') {
           changed = removeProjectFromPackage(ctx, name, { packageDir, entryPath: entry.path });
-        } else if (removeTree(join(packageDir, entry.path), { dryRun: dry })) {
+        } else if (removeComponentFiles(ctx, type, entry.path, packageDir)) {
           changed = true;
         }
         list.splice(idx, 1);
@@ -392,7 +396,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
     }
     // Rebuild skill names after removals (jobs' requires: field depends on this).
     skillNamesInManifest.clear();
-    for (const e of (manifest.components.skills ?? [])) skillNamesInManifest.add(basename(e.path));
+    for (const e of (manifest.components.skills ?? [])) skillNamesInManifest.add(basename(e.path, extname(e.path)));
   }
 
   // ── Step 1: additions ────────────────────────────────────────────────────────────────────────
@@ -471,7 +475,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
           entry = rest;
         }
         manifest.components[type].push(entry);
-        if (type === 'skills') skillNamesInManifest.add(basename(relPath));
+        if (type === 'skills') skillNamesInManifest.add(basename(relPath, extname(relPath)));
         manifestDirty = true;
       }
 
@@ -503,7 +507,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
       if (!row) {
         if (isMirror) {
           // Gone from the satellite → drop the entry and delete its file/dir from the package.
-          if (removeTree(join(packageDir, entry.path), { dryRun: dry })) contentChanged = true;
+          if (removeComponentFiles(ctx, type, entry.path, packageDir)) contentChanged = true;
           manifestDirty = true;
           contentChanged = true;
           logRemoved.push({ type: singular(type), name });

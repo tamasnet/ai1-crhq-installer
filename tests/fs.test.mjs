@@ -142,6 +142,24 @@ await test('removes dest files absent from src, returning rel paths (dirs with t
   rmSync(root, { recursive: true, force: true });
 });
 
+await test('missing srcDir prunes dest to empty (content-only strict install)', () => {
+  const root = workDir();
+  const dest = join(root, 'dest');
+  mkdirSync(join(dest, 'scripts'), { recursive: true });
+  writeFileSync(join(dest, 'scripts', 'hello.js'), 'stay');
+  writeFileSync(join(dest, 'stale.txt'), 'gone');
+  mkdirSync(join(dest, 'memory'), { recursive: true });
+  writeFileSync(join(dest, 'memory', 'session.md'), 'keep');
+
+  const skip = (rel) => rel.split('/')[0] === 'memory';
+  assert.deepEqual(pruneTree(dest, null, { skip }).sort(), ['scripts/', 'scripts/hello.js', 'stale.txt']);
+  assert.equal(existsSync(join(dest, 'stale.txt')), false);
+  assert.equal(existsSync(join(dest, 'scripts', 'hello.js')), false);
+  assert.ok(existsSync(join(dest, 'memory', 'session.md')));
+
+  rmSync(root, { recursive: true, force: true });
+});
+
 await test('skip keeps dest-only paths (agent brain live dirs)', () => {
   const root = workDir();
   const src = join(root, 'src');

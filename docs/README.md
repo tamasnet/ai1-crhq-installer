@@ -1,6 +1,6 @@
 # ai1-satellite-tools documentation
 
-Current v1.0 reference for `ai1-satellite-tools`, a satellite management skill that installs Ai1 Packages, syncs live components back into packages, talks to the Ai1 Platform Hub, and clones GitHub Client Repositories.
+Current reference for `ai1-satellite-tools` (manifest v2 packages), a satellite management skill that installs Ai1 Packages, syncs live components back into packages, talks to the Ai1 Platform Hub, and clones GitHub Client Repositories.
 
 ## Start here
 

@@ -121,14 +121,14 @@ try {
   });
 
   await test('component reconstruction matches the live rows', async () => {
-    const { meta: sfm, body: sbody } = parseFrontmatter(readFileSync(join(dirA, 'skills', 'ai1-sample-skill', 'SKILL.md'), 'utf8'));
+    const { meta: sfm, body: sbody } = parseFrontmatter(readFileSync(join(dirA, 'skills', 'ai1-sample-skill.md'), 'utf8'));
     assert.equal(sfm.name, 'ai1-sample-skill');
     const srow = await db('skills').where({ name: 'ai1-sample-skill' }).first();
     assert.equal(sbody.replace(/^\n+/, ''), srow.content.replace(/^\n+/, ''), 'skill body = DB content');
 
-    const agent = parseFrontmatter(readFileSync(join(dirA, 'agents', 'ai1-sample-agent', 'AGENTS.md'), 'utf8')).meta;
+    const agent = parseFrontmatter(readFileSync(join(dirA, 'agents', 'ai1-sample-agent.md'), 'utf8')).meta;
     assert.equal(agent.provider, 'openai');
-    assert.equal(agent.agent_type, 'orchestrator', 'non-default agent_type emitted to AGENTS.md frontmatter');
+    assert.equal(agent.agent_type, 'orchestrator', 'non-default agent_type emitted to agent .md frontmatter');
     assert.deepEqual(agent.capabilities, ['search', 'recall']);
     assert.deepEqual(agent.skills, ['ai1-sample-skill']);
 
@@ -147,15 +147,15 @@ try {
     const dirB = pkgDir('pkg-brain');
     await mirror(dirB);
     const ap = join(dirB, 'agents', 'ai1-sample-agent');
-    assert.ok(existsSync(join(ap, 'AGENTS.md')), 'AGENTS.md regenerated from the DB');
+    assert.ok(existsSync(join(dirB, 'agents', 'ai1-sample-agent.md')), 'agent .md regenerated from the DB');
     assert.ok(existsSync(join(ap, 'identity.md')), 'sibling brain file captured');
     assert.ok(!existsSync(join(ap, 'activity')), 'runtime dir excluded from the capture');
 
-    const { meta, body } = parseFrontmatter(readFileSync(join(ap, 'AGENTS.md'), 'utf8'));
+    const { meta, body } = parseFrontmatter(readFileSync(join(dirB, 'agents', 'ai1-sample-agent.md'), 'utf8'));
     assert.equal(meta.name, 'ai1-sample-agent');
-    assert.equal(meta.provider, 'openai', 'DB config emitted to AGENTS.md frontmatter');
+    assert.equal(meta.provider, 'openai', 'DB config emitted to agent .md frontmatter');
     const arow = await db('agents').where({ key: 'ai1-sample-agent' }).first();
-    assert.equal(body.replace(/^\n+/, ''), (arow.instructions || '').replace(/^\n+/, ''), 'AGENTS.md body = DB instructions');
+    assert.equal(body.replace(/^\n+/, ''), (arow.instructions || '').replace(/^\n+/, ''), 'agent .md body = DB instructions');
 
     rmSync(join(brainDir, 'activity'), { recursive: true, force: true });   // keep later runs pristine
   });
@@ -166,12 +166,12 @@ try {
     const base = { db, log: sctx().log, DRY_RUN: false, SKILLS_BASE: process.env.SKILLS_BASE_DIR };
 
     const noBrains = pkgDir('pkg-no-brains-ctx');
-    await exportAgent(base, row, { outRoot: noBrains, relPath: 'agents/ai1-sample-agent' });
-    assert.ok(existsSync(join(noBrains, 'agents', 'ai1-sample-agent', 'AGENTS.md')), 'AGENTS.md always exported from DB');
+    await exportAgent(base, row, { outRoot: noBrains, relPath: 'agents/ai1-sample-agent.md' });
+    assert.ok(existsSync(join(noBrains, 'agents', 'ai1-sample-agent.md')), 'agent .md always exported from DB');
     assert.ok(!existsSync(join(noBrains, 'agents', 'ai1-sample-agent', 'identity.md')), 'without BRAINS, brain files skipped');
 
     const withBrains = pkgDir('pkg-with-brains-ctx');
-    await exportAgent({ ...base, BRAINS: process.env.AGENT_BRAINS_DIR }, row, { outRoot: withBrains, relPath: 'agents/ai1-sample-agent' });
+    await exportAgent({ ...base, BRAINS: process.env.AGENT_BRAINS_DIR }, row, { outRoot: withBrains, relPath: 'agents/ai1-sample-agent.md' });
     assert.ok(existsSync(join(withBrains, 'agents', 'ai1-sample-agent', 'identity.md')), 'with BRAINS, brain files copied');
   });
 
@@ -228,7 +228,7 @@ try {
     });
 
     const { manifest: keep } = await mirror(pkgDir('pkg-fid'), {}, { filterSpec: { include: 'fidelity-skill' } });
-    assert.deepEqual(keep.components.skills.map((e) => e.path), ['skills/fidelity-skill']);
+    assert.deepEqual(keep.components.skills.map((e) => e.path), ['skills/fidelity-skill.md']);
     assert.equal(keep.components.skills[0].install_type, 'user', 'fidelity preserved');
 
     const { manifest: norm } = await mirror(pkgDir('pkg-fid-norm'), {}, { filterSpec: { include: 'fidelity-skill' }, normalize: true });
@@ -275,7 +275,7 @@ try {
     const dirE = pkgDir('pkg-sync');
     writeFileSync(join(dirE, 'ai1-package.yaml'), dumpYaml({
       name: 'sync-keep', version: 5, description: 'x',
-      components: { skills: [{ path: 'skills/ai1-sample-skill', version: 1 }], recipes: [{ path: 'recipes/ghost.md' }] },
+      components: { skills: [{ path: 'skills/ai1-sample-skill.md', version: 1 }], recipes: [{ path: 'recipes/ghost.md' }] },
     }));
     writeFileSync(join(dirE, 'ghost.md'), 'placeholder');   // sync must NOT delete this
     mkdirSync(join(dirE, 'recipes'), { recursive: true });
@@ -294,7 +294,7 @@ try {
     const dirT = pkgDir('pkg-type-plain');
     await mirror(dirT);
 
-    const skillPath = join(dirT, 'skills', 'ai1-sample-skill', 'SKILL.md');
+    const skillPath = join(dirT, 'skills', 'ai1-sample-skill.md');
     const recipePath = join(dirT, 'recipes', 'ai1-sample-recipe.md');
     writeFileSync(skillPath, readFileSync(skillPath, 'utf8').replace(/^---[\s\S]*?---\n/, '---\nname: ai1-sample-skill\nversion: 1\ndescription: d\n---\nstale skill\n'));
     writeFileSync(recipePath, '---\nname: ai1-sample-recipe\n---\nstale recipe\n');
@@ -312,7 +312,7 @@ try {
     const dirI = pkgDir('pkg-include-plain');
     await mirror(dirI);
 
-    const skillPath = join(dirI, 'skills', 'ai1-sample-skill', 'SKILL.md');
+    const skillPath = join(dirI, 'skills', 'ai1-sample-skill.md');
     const recipePath = join(dirI, 'recipes', 'ai1-sample-recipe.md');
     writeFileSync(skillPath, readFileSync(skillPath, 'utf8').replace(/^---[\s\S]*?---\n/, '---\nname: ai1-sample-skill\nversion: 1\ndescription: d\n---\nstale skill\n'));
     writeFileSync(recipePath, '---\nname: ai1-sample-recipe\n---\nstale recipe\n');
@@ -351,11 +351,11 @@ try {
 
   await test('--add-* skips syncing other manifest entries (mutation-only)', async () => {
     const dirM = pkgDir('pkg-add-only');
-    const skillPath = join(dirM, 'skills', 'ai1-sample-skill', 'SKILL.md');
-    mkdirSync(join(dirM, 'skills', 'ai1-sample-skill'), { recursive: true });
+    mkdirSync(join(dirM, 'skills'), { recursive: true });
+    const skillPath = join(dirM, 'skills', 'ai1-sample-skill.md');
     writeFileSync(join(dirM, 'ai1-package.yaml'), dumpYaml({
       name: 'add-only', version: 1, description: 'x',
-      components: { skills: [{ path: 'skills/ai1-sample-skill', version: 1 }] },
+      components: { skills: [{ path: 'skills/ai1-sample-skill.md', version: 1 }] },
     }));
     writeFileSync(skillPath, '---\nname: ai1-sample-skill\nversion: 1\ndescription: d\n---\nstale package body\n');
 
@@ -372,13 +372,13 @@ try {
 
   await test('--remove-* skips syncing other manifest entries (mutation-only)', async () => {
     const dirR = pkgDir('pkg-remove-only');
-    const skillPath = join(dirR, 'skills', 'ai1-sample-skill', 'SKILL.md');
-    mkdirSync(join(dirR, 'skills', 'ai1-sample-skill'), { recursive: true });
+    mkdirSync(join(dirR, 'skills'), { recursive: true });
+    const skillPath = join(dirR, 'skills', 'ai1-sample-skill.md');
     mkdirSync(join(dirR, 'recipes'), { recursive: true });
     writeFileSync(join(dirR, 'ai1-package.yaml'), dumpYaml({
       name: 'remove-only', version: 1, description: 'x',
       components: {
-        skills: [{ path: 'skills/ai1-sample-skill', version: 1 }],
+        skills: [{ path: 'skills/ai1-sample-skill.md', version: 1 }],
         recipes: [{ path: 'recipes/ghost.md' }],
       },
     }));
@@ -542,9 +542,9 @@ try {
     assert.equal(sk.package, 'ai1-tamas', 'attributed to the mirror package');
     assert.equal(sk.package_version, String(manifest.version));
     assert.equal(sk.version, 2, 'component version reflects the live row');
-    assert.equal(sk.source, 'skills/ai1-sample-skill/SKILL.md', 'skill source path');
+    assert.equal(sk.source, 'skills/ai1-sample-skill.md', 'skill source path');
     assert.ok(byKey['agent:ai1-sample-agent'], 'the live agent is recorded');
-    assert.equal(byKey['agent:ai1-sample-agent'].source, 'agents/ai1-sample-agent/AGENTS.md');
+    assert.equal(byKey['agent:ai1-sample-agent'].source, 'agents/ai1-sample-agent.md');
     assert.ok(!byKey['job:ai1-sample-job'], 'a component absent from the satellite is not recorded');
   });
 

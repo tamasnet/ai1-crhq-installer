@@ -81,28 +81,26 @@ const pkg = (yaml, files) => { const d = mkPkg(yaml, files); tmpDirs.push(d); re
 await test('invalid handling value → ManifestError', () => {
   assert.throws(() => validateManifest({
     name: 'p', version: 1, description: 'x',
-    components: { skills: [{ path: 'skills/a', version: 1, handling: 'bogus' }] },
+    components: { skills: [{ path: 'skills/a.md', version: 1, handling: 'bogus' }] },
   }), (e) => e instanceof ManifestError && /handling must be one of/.test(e.message));
 });
 
 await test('normal/removed/optional/strict all validate', () => {
   for (const h of ['normal', 'optional', 'strict']) {
-    validateManifest({ name: 'p', version: 1, description: 'x', components: { skills: [{ path: 'skills/a', version: 1, handling: h }] } });
+    validateManifest({ name: 'p', version: 1, description: 'x', components: { skills: [{ path: 'skills/a.md', version: 1, handling: h }] } });
   }
-  // removed needs no version pin (next test); validate with one present is also fine
-  validateManifest({ name: 'p', version: 1, description: 'x', components: { skills: [{ path: 'skills/a', handling: 'removed' }] } });
+  validateManifest({ name: 'p', version: 1, description: 'x', components: { skills: [{ path: 'skills/a.md', handling: 'removed' }] } });
 });
 
 await test('removed tombstone is exempt from the skill version-pin requirement', () => {
   // A real skill with no version → error; the same entry marked removed → ok.
-  assert.throws(() => validateManifest({ name: 'p', version: 1, description: 'x', components: { skills: [{ path: 'skills/a' }] } }),
+  assert.throws(() => validateManifest({ name: 'p', version: 1, description: 'x', components: { skills: [{ path: 'skills/a.md' }] } }),
     (e) => e instanceof ManifestError && /requires a version pin/.test(e.message));
-  validateManifest({ name: 'p', version: 1, description: 'x', components: { skills: [{ path: 'skills/a', handling: 'removed' }] } });
+  validateManifest({ name: 'p', version: 1, description: 'x', components: { skills: [{ path: 'skills/a.md', handling: 'removed' }] } });
 });
 
-await test('removed tombstone loads WITHOUT reading files (no SKILL.md needed) and derives its name', () => {
-  // No skills/old/SKILL.md on disk, no version — would normally fail to load; as a tombstone it loads.
-  const dir = pkg('name: p\nversion: 1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/old\n      handling: removed\n');
+await test('removed tombstone loads WITHOUT reading files (no .md needed) and derives its name', () => {
+  const dir = pkg('name: p\nversion: 1\ndescription: x\ncomponents:\n  skills:\n    - path: skills/old.md\n      handling: removed\n');
   const { plan } = loadManifest(dir);
   assert.equal(plan.skills.length, 1);
   assert.equal(plan.skills[0].name, 'old', 'name derived from path basename');
@@ -112,7 +110,7 @@ await test('removed tombstone loads WITHOUT reading files (no SKILL.md needed) a
 
 await test('removed tombstone honors an explicit name; file-type name strips extension', () => {
   const dir = pkg('name: p\nversion: 1\ndescription: x\ncomponents:\n'
-    + '  skills:\n    - path: skills/dir-x\n      handling: removed\n      name: real-skill-name\n'
+    + '  skills:\n    - path: skills/dir-x.md\n      handling: removed\n      name: real-skill-name\n'
     + '  recipes:\n    - path: recipes/gone.md\n      handling: removed\n');
   const { plan } = loadManifest(dir);
   assert.equal(plan.skills[0].name, 'real-skill-name', 'explicit name wins over basename');
@@ -122,10 +120,10 @@ await test('removed tombstone honors an explicit name; file-type name strips ext
 await test('normal/optional entries still load their files and carry handling', () => {
   const dir = pkg(
     'name: p\nversion: 1\ndescription: x\ncomponents:\n'
-    + '  skills:\n    - path: skills/keep\n      version: 1\n'
-    + '    - path: skills/opt\n      version: 1\n      handling: optional\n'
-    + '    - path: skills/tight\n      version: 1\n      handling: strict\n',
-    { 'skills/keep/SKILL.md': SKILL_MD('keep'), 'skills/opt/SKILL.md': SKILL_MD('opt'), 'skills/tight/SKILL.md': SKILL_MD('tight') },
+    + '  skills:\n    - path: skills/keep.md\n      version: 1\n'
+    + '    - path: skills/opt.md\n      version: 1\n      handling: optional\n'
+    + '    - path: skills/tight.md\n      version: 1\n      handling: strict\n',
+    { 'skills/keep.md': SKILL_MD('keep'), 'skills/opt.md': SKILL_MD('opt'), 'skills/tight.md': SKILL_MD('tight') },
   );
   const { plan } = loadManifest(dir);
   assert.equal(plan.skills[0].handling, 'normal', 'omitted handling defaults to normal');
@@ -143,13 +141,13 @@ try {
   // Package with a normal skill (keep), a normal skill (doomed), and an optional skill (opt).
   const pkgA = pkg(
     'name: ph\nversion: 1\ndescription: x\ncomponents:\n'
-    + '  skills:\n    - path: skills/keep\n      version: 1\n'
-    + '    - path: skills/doomed\n      version: 1\n'
-    + '    - path: skills/opt\n      version: 1\n      handling: optional\n',
+    + '  skills:\n    - path: skills/keep.md\n      version: 1\n'
+    + '    - path: skills/doomed.md\n      version: 1\n'
+    + '    - path: skills/opt.md\n      version: 1\n      handling: optional\n',
     {
-      'skills/keep/SKILL.md': SKILL_MD('keep'),
-      'skills/doomed/SKILL.md': SKILL_MD('doomed'),
-      'skills/opt/SKILL.md': SKILL_MD('opt'),
+      'skills/keep.md': SKILL_MD('keep'),
+      'skills/doomed.md': SKILL_MD('doomed'),
+      'skills/opt.md': SKILL_MD('opt'),
     },
   );
   const A = loadManifest(pkgA);
@@ -185,10 +183,10 @@ try {
   // Package B: doomed has been dropped from the package → a tombstone; keep stays; opt still optional.
   const pkgB = pkg(
     'name: ph\nversion: 2\ndescription: x\ncomponents:\n'
-    + '  skills:\n    - path: skills/keep\n      version: 1\n'
-    + '    - path: skills/doomed\n      handling: removed\n'
-    + '    - path: skills/opt\n      version: 1\n      handling: optional\n',
-    { 'skills/keep/SKILL.md': SKILL_MD('keep'), 'skills/opt/SKILL.md': SKILL_MD('opt') },
+    + '  skills:\n    - path: skills/keep.md\n      version: 1\n'
+    + '    - path: skills/doomed.md\n      handling: removed\n'
+    + '    - path: skills/opt.md\n      version: 1\n      handling: optional\n',
+    { 'skills/keep.md': SKILL_MD('keep'), 'skills/opt.md': SKILL_MD('opt') },
   );
   const B = loadManifest(pkgB);
 
@@ -246,11 +244,11 @@ try {
     // A package whose only entry is a tombstone for a skill that is absent live. Mirror normally
     // prunes manifest entries whose component is gone — a tombstone must survive that.
     const dir = pkg('name: tomb\nversion: 1\ndescription: x\ncomponents:\n'
-      + '  skills:\n    - path: skills/ghost\n      handling: removed\n');
+      + '  skills:\n    - path: skills/ghost.md\n      handling: removed\n');
     const r = await runSync(makeCtx(), { packageDir: dir, mode: 'mirror' });
     assert.ok(!r.results.some((x) => x.name === 'ghost' && x.verdict === 'SYNC-REMOVED'), 'tombstone not pruned');
     const m = loadYaml(readFileSync(join(dir, 'ai1-package.yaml'), 'utf8'));
-    const ghost = (m.components.skills || []).find((e) => e.path === 'skills/ghost');
+    const ghost = (m.components.skills || []).find((e) => e.path === 'skills/ghost.md');
     assert.ok(ghost, 'tombstone entry survives the mirror run');
     assert.equal(ghost.handling, 'removed', 'handling: removed preserved');
   });
