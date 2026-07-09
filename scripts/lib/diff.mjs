@@ -62,7 +62,7 @@ function fileDetail(ctx, type, def, liveDir) {
   if (type === 'project' && !ctx.COPY_PROJECTS) return null;
   const protect = protectMatcher(def.protect);
   const copySkip = type === 'skill' ? (rel) => rel === 'SKILL.md' : null;
-  const d = diffTree(def.srcDir, liveDir, { copySkip, pruneSkip: protect.skip });
+  const d = diffTree(def.srcDir, liveDir, { copySkip, pruneSkip: protect.skip, strict: !ctx.CONTENT_ONLY });
   return { ...d, protected: [...protect.matched].sort() };
 }
 
@@ -100,7 +100,9 @@ async function diffComponent(ctx, type, def) {
 }
 
 // ctx must have: db, log, SKILLS_BASE, BRAINS (COPY_PROJECTS optional). Read-only.
-export async function runDiff(ctx, { packageDir = '.', typeScope = null, filterSpec = {} } = {}) {
+// strict=false (default) ignores mode/mtime-only file differences; strict=true reports them
+// annotated in `files.meta`.
+export async function runDiff(ctx, { packageDir = '.', typeScope = null, filterSpec = {}, strict = false } = {}) {
   const { meta, plan, packageRoot } = loadManifest(packageDir);
   const match = makeFilter(filterSpec);
   const typeSet = typeScope?.length ? new Set(typeScope) : null;
@@ -110,6 +112,7 @@ export async function runDiff(ctx, { packageDir = '.', typeScope = null, filterS
     ...ctx,
     DRY_RUN: true,
     STRICT: true,
+    CONTENT_ONLY: !strict,
     plannedSkills: new Set((plan.skills || []).map((d) => d.name)),
     plannedRecipes: new Set((plan.recipes || []).map((d) => d.name)),
   };
@@ -159,6 +162,7 @@ function detailCell(r) {
     if (r.files.missing.length) bits.push(`+${r.files.missing.length}`);
     if (r.files.extra.length) bits.push(`-${r.files.extra.length}`);
     if (bits.length) parts.push(`files: ${bits.join(' ')}`);
+    if (r.files.meta?.length) parts.push(`meta: ${r.files.meta.length}`);
     if (r.files.protected.length) parts.push(`protected: ${r.files.protected.join(', ')}`);
   }
   if (r.detail) parts.push(r.detail);
@@ -197,6 +201,7 @@ export function formatDiffReport(result) {
     lines.push(line(cells[i]));
     if (r.files) {
       for (const f of r.files.modified) lines.push(`      ~ ${f}`);
+      for (const f of r.files.meta ?? []) lines.push(`      ~ ${f}`);
       for (const f of r.files.missing) lines.push(`      + ${f}`);
       for (const f of r.files.extra) lines.push(`      - ${f}`);
     }

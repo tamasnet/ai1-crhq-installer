@@ -144,7 +144,7 @@ async function planWebApp(ctx, def, { type, baseDir, contentMode }) {
       }
     } catch { /* ENOENT → absent handled above */ }
   } else if (def.srcDir && existsSync(def.srcDir)) {
-    fileDrift = copyTree(def.srcDir, deployDir, { dryRun: true }) > 0;
+    fileDrift = copyTree(def.srcDir, deployDir, { dryRun: true, contentOnly: !!ctx.CONTENT_ONLY }) > 0;
     if (ctx.STRICT && existsSync(deployDir)) {
       fileDrift = fileDrift || pruneTree(deployDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip }).length > 0;
     }

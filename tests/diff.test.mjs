@@ -2,7 +2,7 @@
 // diff.mjs — package → live component diff: absent/in-sync/differs states, db/link/file detail.
 // Run from the project root:  node tests/diff.test.mjs
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, appendFileSync, rmSync, chmodSync, utimesSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -117,6 +117,31 @@ try {
     const r = cli(['examples/bundle', '--type=skill', '--json']);
     assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
     assert.equal(JSON.parse(r.stdout).summary.in_sync, 1);
+  });
+
+  console.log('\n--strict metadata sensitivity:');
+
+  await test('mode-only change: in-sync by default, annotated meta with strict', async () => {
+    chmodSync(join(skillDir, 'scripts', 'hello.js'), 0o700);
+    const scope = { packageDir: 'examples/bundle', typeScope: ['skills'] };
+    const dflt = await runDiff(makeCtx(), scope);
+    assert.equal(dflt.summary.in_sync, 1, JSON.stringify(dflt.results));
+    const strict = await runDiff(makeCtx(), { ...scope, strict: true });
+    const row = strict.results[0];
+    assert.equal(row.state, 'differs');
+    assert.match(row.files.meta[0], /^scripts\/hello\.js \(mode \d+→700\)$/);
+    assert.match(formatDiffReport(strict), /~ scripts\/hello\.js \(mode \d+→700\)/);
+  });
+
+  await test('mtime-only change: in-sync by default, "(mtime)" with strict', async () => {
+    const pkgMode = statSync(join(skillDef.srcDir, 'scripts', 'hello.js')).mode & 0o777;
+    chmodSync(join(skillDir, 'scripts', 'hello.js'), pkgMode);   // restore mode to package's
+    utimesSync(join(skillDir, 'scripts', 'hello.js'), new Date(0), new Date(0));
+    const scope = { packageDir: 'examples/bundle', typeScope: ['skills'] };
+    const dflt = await runDiff(makeCtx(), scope);
+    assert.equal(dflt.summary.in_sync, 1, JSON.stringify(dflt.results));
+    const strict = await runDiff(makeCtx(), { ...scope, strict: true });
+    assert.deepEqual(strict.results[0].files.meta, ['scripts/hello.js (mtime)']);
   });
 } finally {
   await sb.teardown(false);

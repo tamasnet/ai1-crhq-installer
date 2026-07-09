@@ -19,6 +19,8 @@ Options:
                      comma-separated and/or repeated)
   --include=<pat>    only components whose name matches <pat> (exact or regex)
   --exclude=<pat>    skip components whose name matches <pat>
+  --strict           also count mode/mtime-only file differences as modified
+                     (default compares content only)
   --json             machine-readable output
   --help             show this help and exit`;
 
@@ -28,14 +30,14 @@ const flagName = (token) => {
 };
 
 function parseArgs(argv) {
-  const flags = { json: false, package: null, type: [], include: null, exclude: null };
+  const flags = { json: false, strict: false, package: null, type: [], include: null, exclude: null };
   for (const token of argv) {
     if (!token.startsWith('--')) throw new UsageError(`unexpected argument: ${token} (see --help)`);
     const name = flagName(token);
     const hasEq = token.includes('=');
-    if (name === '--json') {
-      if (hasEq) throw new UsageError('option --json does not take a value');
-      flags.json = true;
+    if (name === '--json' || name === '--strict') {
+      if (hasEq) throw new UsageError(`option ${name} does not take a value`);
+      if (name === '--json') flags.json = true; else flags.strict = true;
     } else if (name === '--package') {
       const val = hasEq ? token.slice(token.indexOf('=') + 1).trim() : '';
       if (!hasEq || !val) throw new UsageError('option --package requires a value');
@@ -71,6 +73,7 @@ async function main() {
   const flags = parseArgs(argv);
   const ctx = await createContext([], { mode: 'status' });
   ctx.DRY_RUN = true;
+  ctx.CONTENT_ONLY = !flags.strict;
   await preflight(ctx);
 
   const result = await runDrift(ctx, {

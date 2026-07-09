@@ -21,12 +21,13 @@ export function writeIfChanged(path, content, { dryRun = false } = {}) {
 // written (or that would be written, in dry-run). `skip(relPath)` (path relative to srcDir, using
 // '/' separators) excludes matching entries — used by exportSkill to avoid copying the installed
 // SKILL.md it is about to regenerate from the DB (which would otherwise flip-flop the file and make
-// the export look "changed" on every run).
-export function copyTree(srcDir, destDir, { dryRun = false, skip = null } = {}) {
-  return copyTreeRel(srcDir, destDir, '', dryRun, skip);
+// the export look "changed" on every run). `contentOnly` ignores mode/mtime-only differences —
+// used by diff/drift reporting to suppress metadata noise; installs never set it.
+export function copyTree(srcDir, destDir, { dryRun = false, skip = null, contentOnly = false } = {}) {
+  return copyTreeRel(srcDir, destDir, '', dryRun, skip, contentOnly);
 }
 
-function copyTreeRel(srcDir, destDir, rel, dryRun, skip) {
+function copyTreeRel(srcDir, destDir, rel, dryRun, skip, contentOnly) {
   let changed = 0;
   for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
     const r = rel ? `${rel}/${entry.name}` : entry.name;
@@ -34,9 +35,9 @@ function copyTreeRel(srcDir, destDir, rel, dryRun, skip) {
     const src = join(srcDir, entry.name);
     const dest = join(destDir, entry.name);
     if (entry.isDirectory()) {
-      changed += copyTreeRel(src, dest, r, dryRun, skip);
+      changed += copyTreeRel(src, dest, r, dryRun, skip, contentOnly);
     } else if (entry.isFile()) {
-      if (copyFileIfChanged(src, dest, { dryRun })) changed++;
+      if (copyFileIfChanged(src, dest, { dryRun, contentOnly })) changed++;
     }
   }
   return changed;
@@ -90,7 +91,7 @@ function filesByteEqual(src, dest, size) {
 // Copy when content differs; chmod when content matches but mode does not. Uses copyFileSync
 // (kernel copy) instead of read/write buffers so large files do not allocate full-file buffers.
 // Mode and mtime always mirror the source on any write path.
-function copyFileIfChanged(src, dest, { dryRun = false } = {}) {
+function copyFileIfChanged(src, dest, { dryRun = false, contentOnly = false } = {}) {
   const srcStat = statSync(src);
 
   if (existsSync(dest)) {
@@ -98,6 +99,7 @@ function copyFileIfChanged(src, dest, { dryRun = false } = {}) {
     try { destStat = statSync(dest); } catch { destStat = null; }
     if (destStat?.isFile() && destStat.size === srcStat.size
         && filesByteEqual(src, dest, srcStat.size)) {
+      if (contentOnly) return false;
       if (syncMetadata(dest, srcStat, { dryRun })) return true;
       return false;
     }
@@ -148,39 +150,44 @@ function pruneTreeRel(destDir, srcDir, rel, dryRun, skip) {
 }
 
 // Compare srcDir (package) against destDir (live) without writing. Returns rel-path lists:
-// modified (bytes or mode differ; mtime-only ignored), missing (in src, not live), extra (live-only,
-// via pruneTree dry-run — dirs with trailing '/'). copySkip/pruneSkip mirror the install skips.
-export function diffTree(srcDir, destDir, { copySkip = null, pruneSkip = null } = {}) {
-  if (!srcDir || !existsSync(srcDir)) return { modified: [], missing: [], extra: [] };
-  const modified = [];
-  const missing = [];
-  diffTreeRel(srcDir, destDir, '', copySkip, modified, missing);
-  const extra = existsSync(destDir) ? pruneTree(destDir, srcDir, { dryRun: true, skip: pruneSkip }) : [];
-  return { modified, missing, extra };
+// modified (bytes differ), missing (in src, not live), extra (live-only, via pruneTree dry-run —
+// dirs with trailing '/'), meta (strict only: annotated mode/mtime-only differences, e.g.
+// 'run.sh (mode 644→755)' package→live, or 'a.txt (mtime)'). copySkip/pruneSkip mirror install.
+export function diffTree(srcDir, destDir, { copySkip = null, pruneSkip = null, strict = false } = {}) {
+  const out = { modified: [], missing: [], extra: [], meta: [] };
+  if (!srcDir || !existsSync(srcDir)) return out;
+  diffTreeRel(srcDir, destDir, '', copySkip, strict, out);
+  if (existsSync(destDir)) out.extra = pruneTree(destDir, srcDir, { dryRun: true, skip: pruneSkip });
+  return out;
 }
 
-function diffTreeRel(srcDir, destDir, rel, skip, modified, missing) {
+function diffTreeRel(srcDir, destDir, rel, skip, strict, out) {
   for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
     const r = rel ? `${rel}/${entry.name}` : entry.name;
     if (skip && skip(r)) continue;
     const src = join(srcDir, entry.name);
     const dest = join(destDir, entry.name);
-    if (entry.isDirectory()) { diffTreeRel(src, dest, r, skip, modified, missing); continue; }
+    if (entry.isDirectory()) { diffTreeRel(src, dest, r, skip, strict, out); continue; }
     if (!entry.isFile()) continue;
     let destStat = null;
     try { destStat = statSync(dest); } catch { /* missing */ }
-    if (!destStat?.isFile()) { missing.push(r); continue; }
+    if (!destStat?.isFile()) { out.missing.push(r); continue; }
     const srcStat = statSync(src);
-    if (srcStat.size !== destStat.size || !filesByteEqual(src, dest, srcStat.size)
-      || modeBits(srcStat) !== modeBits(destStat)) modified.push(r);
+    if (srcStat.size !== destStat.size || !filesByteEqual(src, dest, srcStat.size)) {
+      out.modified.push(r);
+    } else if (strict && modeBits(srcStat) !== modeBits(destStat)) {
+      out.meta.push(`${r} (mode ${modeBits(srcStat).toString(8)}→${modeBits(destStat).toString(8)})`);
+    } else if (strict && !mtimeEqual(srcStat, destStat)) {
+      out.meta.push(`${r} (mtime)`);
+    }
   }
 }
 
 // Copy package assets then optionally prune extras so dest matches src (--strict install).
 // `pruned` is the list of removed rel paths (empty when not strict).
-export function syncInstallTree(srcDir, destDir, { dryRun = false, strict = false, copySkip = null, pruneSkip = null } = {}) {
+export function syncInstallTree(srcDir, destDir, { dryRun = false, strict = false, copySkip = null, pruneSkip = null, contentOnly = false } = {}) {
   if (!srcDir || !existsSync(srcDir)) return { files: 0, pruned: [] };
-  const files = copyTree(srcDir, destDir, { dryRun, skip: copySkip });
+  const files = copyTree(srcDir, destDir, { dryRun, skip: copySkip, contentOnly });
   const pruned = strict && existsSync(destDir)
     ? pruneTree(destDir, srcDir, { dryRun, skip: pruneSkip })
     : [];

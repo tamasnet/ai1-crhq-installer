@@ -91,7 +91,7 @@ node scripts/drift.mjs --package=<name>
 node scripts/drift.mjs --type=skill,recipe --include='^acme-'
 ```
 
-Managed drift checks each `install.json` slot against the logged package@version in local package stores (`PACKAGE_BASE_DIR`, `REPOS_BASE_DIR`). States: `in-sync`, `modified`, `absent`, `source-missing`. Orphans are live components (same curation as `sync --mirror`) plus deployed services/projects not attributed in the install log. The report lists every out-of-sync row in one table with VERSION, PACKAGE, SOURCE (manifest path), LOCATION (local package dir), and DETAIL. Exit code 1 when any drift is found.
+Managed drift checks each `install.json` slot against the logged package@version in local package stores (`PACKAGE_BASE_DIR`, `REPOS_BASE_DIR`). States: `in-sync`, `modified`, `absent`, `source-missing`. Orphans are live components (same curation as `sync --mirror`) plus deployed services/projects not attributed in the install log. The report lists every out-of-sync row in one table with VERSION, PACKAGE, SOURCE (manifest path), LOCATION (local package dir), and DETAIL. File comparison is content-only by default; `--strict` also counts mode/mtime-only differences. Exit code 1 when any drift is found.
 
 ## Package diff
 
@@ -102,7 +102,7 @@ node scripts/diff.mjs <package>
 node scripts/diff.mjs <package> --type=skill --include='^acme-' --json
 ```
 
-States: `in-sync`, `differs`, `absent`, `tombstone`. File detail is status-only (no content diffs): `~` modified, `+` package-only (install would add), `-` live-only (`--strict` would delete); protected names are set aside and reported. `--copy-projects` mirrors the install flag for copy-mode project deploys. Exit code 1 when anything differs.
+States: `in-sync`, `differs`, `absent`, `tombstone`. File detail is status-only (no content diffs): `~` modified, `+` package-only (install would add), `-` live-only (a strict install would delete); protected names are set aside and reported. File comparison is content-only by default; `--strict` also reports mode/mtime-only differences, annotated (`(mode 644→755)` package→live, `(mtime)`). `--copy-projects` mirrors the install flag for copy-mode project deploys. Exit code 1 when anything differs.
 
 ## Sync and mirror
 

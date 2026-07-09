@@ -6,7 +6,7 @@ set -euo pipefail
 
 # ── config ───────────────────────────────────────────────────────────────────
 readonly PKG_NAME="ai1-satellite-tools"
-readonly SCRIPTS="install.mjs sync.mjs remote.mjs action.mjs polaris.mjs drift.mjs"
+readonly SCRIPTS="install.mjs sync.mjs remote.mjs action.mjs polaris.mjs drift.mjs diff.mjs"
 readonly HEARTBEAT_SCRIPT="heartbeat-actions.sh"
 readonly CRON_TAG="# ai1-satellite-tools: heartbeat-actions"
 readonly CRON_SCHEDULE="*/15 * * * *"

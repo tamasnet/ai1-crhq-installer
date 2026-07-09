@@ -197,7 +197,7 @@ await test('reports modified, missing (package-only), and extra (live-only) rel 
   rmSync(root, { recursive: true, force: true });
 });
 
-await test('honors copySkip and pruneSkip; flags mode-only changes; ignores mtime', () => {
+await test('honors copySkip/pruneSkip; metadata-only diffs ignored by default, annotated in meta with strict', () => {
   const root = workDir();
   const src = join(root, 'src');
   const dest = join(root, 'dest');
@@ -211,17 +211,40 @@ await test('honors copySkip and pruneSkip; flags mode-only changes; ignores mtim
   chmodSync(join(dest, 'run.sh'), 0o644);
   writeFileSync(join(src, 'a.txt'), 'a');
   writeFileSync(join(dest, 'a.txt'), 'a');
+  utimesSync(join(src, 'a.txt'), new Date(1000), new Date(1000));
   utimesSync(join(dest, 'a.txt'), new Date(0), new Date(0));   // mtime-only difference
   mkdirSync(join(dest, 'data'), { recursive: true });
   writeFileSync(join(dest, 'data', 'live.db'), 'state');
 
-  const d = diffTree(src, dest, {
-    copySkip: (rel) => rel === 'SKILL.md',
-    pruneSkip: (rel) => rel.split('/')[0] === 'data',
-  });
-  assert.deepEqual(d.modified, ['run.sh']);
+  const opts = { copySkip: (rel) => rel === 'SKILL.md', pruneSkip: (rel) => rel.split('/')[0] === 'data' };
+  const d = diffTree(src, dest, opts);
+  assert.deepEqual(d.modified, []);
+  assert.deepEqual(d.meta, []);
   assert.deepEqual(d.missing, []);
   assert.deepEqual(d.extra, []);
+
+  const s = diffTree(src, dest, { ...opts, strict: true });
+  assert.deepEqual(s.modified, []);
+  assert.deepEqual(s.meta.sort(), ['a.txt (mtime)', 'run.sh (mode 755→644)']);
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+console.log('\ncopyTree contentOnly:');
+
+await test('contentOnly ignores mode/mtime-only drift; default counts it', () => {
+  const root = workDir();
+  const src = join(root, 'src');
+  const dest = join(root, 'dest');
+  mkdirSync(src, { recursive: true });
+  mkdirSync(dest, { recursive: true });
+  writeFileSync(join(src, 'run.sh'), '#!/bin/sh');
+  writeFileSync(join(dest, 'run.sh'), '#!/bin/sh');
+  chmodSync(join(src, 'run.sh'), 0o755);
+  chmodSync(join(dest, 'run.sh'), 0o644);
+
+  assert.equal(copyTree(src, dest, { dryRun: true }), 1);
+  assert.equal(copyTree(src, dest, { dryRun: true, contentOnly: true }), 0);
 
   rmSync(root, { recursive: true, force: true });
 });

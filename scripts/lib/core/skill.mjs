@@ -29,7 +29,9 @@ async function resolveSkillState(ctx, def) {
   let fileChanges = 0;
   let pruned = 0;
   if (def.srcDir && existsSync(def.srcDir)) {
-    fileChanges = copyTree(def.srcDir, skillDir, { dryRun: true, skip: (rel) => rel === 'SKILL.md' });
+    fileChanges = copyTree(def.srcDir, skillDir, {
+      dryRun: true, skip: (rel) => rel === 'SKILL.md', contentOnly: !!ctx.CONTENT_ONLY,
+    });
     if (ctx.STRICT && existsSync(skillDir)) {
       pruned = pruneTree(skillDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip }).length;
     }

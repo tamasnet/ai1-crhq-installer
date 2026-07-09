@@ -21,6 +21,8 @@ Options:
                      comma-separated and/or repeated)
   --include=<pat>    only components whose name matches <pat> (exact or regex)
   --exclude=<pat>    skip components whose name matches <pat>
+  --strict           also report mode/mtime-only file differences (annotated, e.g.
+                     '(mode 644→755)' or '(mtime)'); default compares content only
   --copy-projects    treat project components as copy-mode deploys (default: symlink)
   --json             machine-readable output
   --help             show this help and exit
@@ -33,14 +35,16 @@ const flagName = (token) => {
 };
 
 function parseArgs(argv) {
-  const flags = { json: false, copyProjects: false, type: [], include: null, exclude: null, packageArg: '.' };
+  const flags = { json: false, strict: false, copyProjects: false, type: [], include: null, exclude: null, packageArg: '.' };
   for (const token of argv) {
     if (!token.startsWith('--')) { flags.packageArg = token; continue; }
     const name = flagName(token);
     const hasEq = token.includes('=');
-    if (name === '--json' || name === '--copy-projects') {
+    if (name === '--json' || name === '--strict' || name === '--copy-projects') {
       if (hasEq) throw new UsageError(`option ${name} does not take a value`);
-      if (name === '--json') flags.json = true; else flags.copyProjects = true;
+      if (name === '--json') flags.json = true;
+      else if (name === '--strict') flags.strict = true;
+      else flags.copyProjects = true;
     } else if (name === '--type') {
       const raw = hasEq ? token.slice(token.indexOf('=') + 1) : '';
       if (!raw.trim()) throw new UsageError('option --type requires a value');
@@ -74,6 +78,7 @@ async function main() {
     packageDir: flags.packageArg,
     typeScope: flags.type.length ? flags.type : null,
     filterSpec: { include: flags.include, exclude: flags.exclude },
+    strict: flags.strict,
   });
 
   if (flags.json) {
