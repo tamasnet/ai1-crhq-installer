@@ -11,9 +11,10 @@ import { spawnSync } from 'child_process';
 import {
   createContext, loadManifest, runPlan, preflight, sandbox, closeDb, updateInstallLog,
   readInstallLog, sortInstalled, formatInstalledList, buildAvailableReport, formatAvailableList,
-  validateFlags, usage, wantsHelp, declaredFlagNames, UsageError,
+  validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, parseFlags,
   ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
   validateInstallScope,
+  validateInstallSource,
   runPruneInstalled, formatPruneReport,
 } from './lib/index.mjs';
 
@@ -41,6 +42,7 @@ try {
   // missing value BEFORE provisioning a sandbox or touching the DB.
   const { meta, plan, packageRoot } = loadManifest(packageArgOf(argv));
   validateFlags(argv, { mode: 'install', declared: declaredFlagNames(meta) });
+  validateInstallSource(packageRoot, parseFlags(argv));
 
   if (has(argv, '--sandbox')) {
     sb = await sandbox.provisionSandbox({ ts: stamp() });   // sets INSTALL_SCHEMA / SKILLS_BASE_DIR

@@ -21,7 +21,8 @@ export const FLAG_SPEC = {
   install: {
     bool: ['--dry-run', '--status', '--uninstall', '--respect-locks', '--install-skills-as-user',
       '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available',
-      '--prune-installed', '--copy-projects', '--removed', '--optional', '--run-build', '--strict'],
+      '--prune-installed', '--copy-projects', '--removed', '--optional', '--run-build', '--strict',
+      '--force'],
     value: ['--type', '--include', '--exclude'],
   },
 };
@@ -137,7 +138,13 @@ Options:
   --keep                     with --sandbox: keep the schema + temp dir for inspection
   --lifecycle                with --sandbox: run install→status→idempotency→uninstall→reinstall
   --json                     machine-readable result output
+  --force                    proceed when <package> is inside a git repository (except
+                             REPOS_BASE_DIR/<repo>/platform, which is always permitted)
   --help                     show this help and exit
+
+Install refuses a package source inside a git work tree (may deploy uncommitted work). Built
+packages under PACKAGE_BASE_DIR are the normal path; REPOS_BASE_DIR/<repo>/platform is always
+allowed; other checkouts require --force.
 
 A package may declare additional package-specific flags via 'install_flags' in its manifest;
 those are accepted and forwarded to its install_entry hook. Any other option is rejected.`;

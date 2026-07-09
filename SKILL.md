@@ -62,6 +62,7 @@ Common install flags:
 | `--removed` | Act on `handling: removed` tombstone entries — remove those components on both install and uninstall (default: inert). |
 | `--optional` | Also install `handling: optional` entries (default: skipped on install; uninstall removes them regardless). |
 | `--json` | Emit machine-readable output. |
+| `--force` | Install from a git checkout (default: refused except `REPOS_BASE_DIR/<repo>/platform`). |
 
 Development/testing flags:
 
@@ -79,6 +80,8 @@ Development/testing flags:
 | `--install-skills-as-user` | Register all skills as unlocked `user` skills. |
 
 The installer accepts only standard flags plus package-specific flags declared in `install_flags`. Unknown flags fail before side effects.
+
+Install refuses a package source inside a git work tree (uncommitted work may reach the satellite). Built packages under `PACKAGE_BASE_DIR` are the normal install path. `REPOS_BASE_DIR/<repo>/platform` is always permitted; other checkouts (including `user/`) require `--force`.
 
 ## Drift report
 
@@ -207,7 +210,7 @@ Never print or persist hub tokens, bootstrap tokens, signed URLs, or GitHub toke
 node scripts/polaris.mjs init
 node scripts/polaris.mjs init --owner=MyZone-AI --repo=ai1-example
 node scripts/install.mjs ~/repos/<repo>/platform
-node scripts/install.mjs ~/repos/<repo>/user
+node scripts/install.mjs ~/repos/<repo>/user --force
 node scripts/sync.mjs ~/repos/<repo>/user --mirror
 ```
 

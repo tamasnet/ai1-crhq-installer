@@ -12,13 +12,14 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isInsideGitRepo } from '../scripts/lib/sync.mjs';
+import { isReposPlatformPackage } from '../scripts/lib/install-guard.mjs';
 import { harness } from './_helpers.mjs';
 
 const { test, done } = harness();
 const root = fileURLToPath(new URL('..', import.meta.url));
 const run = (script, args) => spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: 'utf8' });
 // install validation fires after the manifest loads, so point it at a real package.
-const install = (args) => run('scripts/install.mjs', ['examples/bundle', ...args]);
+const install = (args) => run('scripts/install.mjs', ['examples/bundle', '--force', ...args]);
 const sync = (args) => run('scripts/sync.mjs', args);
 const out = (r) => `${r.stdout}${r.stderr}`;
 
@@ -316,5 +317,94 @@ await test('--force is listed in --help', () => {
 });
 
 for (const d of gitTmps) rmSync(d, { recursive: true, force: true });
+
+// ── install.mjs git-source guard ─────────────────────────────────────────────────────────
+// Install refuses a package inside a git work tree (may deploy uncommitted work), except
+// REPOS_BASE_DIR/<repo>/platform. Checked after manifest load, before sandbox/DB.
+console.log('\ninstall.mjs git-source guard:');
+
+const installGuardTmps = [];
+const mkPkg = (dir, initGit = false) => {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'ai1-package.yaml'), 'name: guard-test\nversion: 1\ndescription: x\ncomponents: {}\n');
+  if (initGit) spawnSync('git', ['init', '-q', dir], { encoding: 'utf8' });
+  installGuardTmps.push(dir);
+  return dir;
+};
+const installAt = (pkgDir, args = [], env = {}) =>
+  spawnSync(process.execPath, [join(root, 'scripts/install.mjs'), pkgDir, ...args],
+    { cwd: root, encoding: 'utf8', env: { ...process.env, ...env } });
+
+const MINI_MANIFEST = 'name: guard-test\nversion: 1\ndescription: x\ncomponents: {}\n';
+
+await test('isReposPlatformPackage: true only for REPOS_BASE_DIR/<repo>/platform', () => {
+  const reposBase = mkdtempSync(join(tmpdir(), 'ai1-reposbase-'));
+  installGuardTmps.push(reposBase);
+  const platform = join(reposBase, 'acme', 'platform');
+  const user = join(reposBase, 'acme', 'user');
+  mkdirSync(platform, { recursive: true });
+  mkdirSync(user, { recursive: true });
+  const prev = process.env.REPOS_BASE_DIR;
+  process.env.REPOS_BASE_DIR = reposBase;
+  try {
+    assert.equal(isReposPlatformPackage(platform), true);
+    assert.equal(isReposPlatformPackage(user), false);
+    assert.equal(isReposPlatformPackage(join(reposBase, 'platform')), false, 'repo segment required');
+  } finally {
+    if (prev == null) delete process.env.REPOS_BASE_DIR;
+    else process.env.REPOS_BASE_DIR = prev;
+  }
+});
+
+await test('install from a git checkout (not platform) → exit 2 before DB work', () => {
+  const pkg = mkPkg(mkdtempSync(join(tmpdir(), 'ai1-install-git-')), true);
+  const r = installAt(pkg);
+  assert.equal(r.status, 2);
+  assert.match(out(r), /inside a git repository/);
+  assert.match(out(r), /--force/);
+});
+
+await test('--force proceeds past the install git guard', () => {
+  const pkg = mkPkg(mkdtempSync(join(tmpdir(), 'ai1-install-git2-')), true);
+  const r = installAt(pkg, ['--force', '--sandbox', '--dry-run']);
+  assert.doesNotMatch(out(r), /inside a git repository/);
+});
+
+await test('REPOS_BASE_DIR/<repo>/platform is permitted without --force', () => {
+  const reposBase = mkdtempSync(join(tmpdir(), 'ai1-reposplat-'));
+  installGuardTmps.push(reposBase);
+  const repo = join(reposBase, 'acme');
+  const platform = join(repo, 'platform');
+  mkdirSync(platform, { recursive: true });
+  writeFileSync(join(platform, 'ai1-package.yaml'), MINI_MANIFEST);
+  spawnSync('git', ['init', '-q', repo], { encoding: 'utf8' });
+  const r = installAt(platform, ['--sandbox', '--dry-run'], { REPOS_BASE_DIR: reposBase });
+  assert.doesNotMatch(out(r), /inside a git repository/);
+});
+
+await test('REPOS_BASE_DIR/<repo>/user is refused without --force', () => {
+  const reposBase = mkdtempSync(join(tmpdir(), 'ai1-reposuser-'));
+  installGuardTmps.push(reposBase);
+  const repo = join(reposBase, 'acme');
+  const user = join(repo, 'user');
+  mkdirSync(user, { recursive: true });
+  writeFileSync(join(user, 'ai1-package.yaml'), MINI_MANIFEST);
+  spawnSync('git', ['init', '-q', repo], { encoding: 'utf8' });
+  const r = installAt(user, [], { REPOS_BASE_DIR: reposBase });
+  assert.equal(r.status, 2);
+  assert.match(out(r), /inside a git repository/);
+});
+
+await test('--sandbox exempts the install git guard for non-platform checkouts', () => {
+  const pkg = mkPkg(mkdtempSync(join(tmpdir(), 'ai1-install-sbx-')), true);
+  const r = installAt(pkg, ['--sandbox', '--dry-run']);
+  assert.doesNotMatch(out(r), /inside a git repository/);
+});
+
+await test('install --force is listed in --help', () => {
+  assert.match(install(['--help']).stdout, /--force/);
+});
+
+for (const d of installGuardTmps) rmSync(d, { recursive: true, force: true });
 
 done();

@@ -20,6 +20,7 @@ export { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION, HANDL
 export { makeFilter, compileMatcher, hasFilter, FilterError } from './filter.mjs';
 export { CLI_TYPE_TO_COLLECTION, COLLECTION_TO_CLI_TYPE, CLI_TYPE_VALUES, COLLECTION_TYPE_VALUES, splitCliTypeValues, normalizeCliTypeScope, formatCliTypeError } from './component-types.mjs';
 export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC, validateInstallScope } from './flags.mjs';
+export { validateInstallSource, isReposPlatformPackage } from './install-guard.mjs';
 export { runPlan, ORDER, resolveHandling } from './run.mjs';
 export { isInstallStrict } from './strict.mjs';
 export { runSync, SyncError, SYNC_TYPES, discoverLiveComponents } from './sync.mjs';

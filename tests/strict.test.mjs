@@ -16,7 +16,7 @@ import { makeCtx, harness } from './_helpers.mjs';
 
 const { test, done } = harness();
 const root = fileURLToPath(new URL('..', import.meta.url));
-const install = (args) => spawnSync(process.execPath, ['scripts/install.mjs', 'examples/bundle', ...args],
+const install = (args) => spawnSync(process.execPath, ['scripts/install.mjs', 'examples/bundle', '--force', ...args],
   { cwd: root, encoding: 'utf8' });
 const out = (r) => `${r.stdout}${r.stderr}`;
 

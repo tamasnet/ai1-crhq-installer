@@ -21,7 +21,7 @@ The satellite typically installs both packages:
 
 ```bash
 node scripts/install.mjs ~/repos/<repo>/platform
-node scripts/install.mjs ~/repos/<repo>/user
+node scripts/install.mjs ~/repos/<repo>/user --force
 ```
 
 Live customer edits are synced back to `user/`:
@@ -69,8 +69,8 @@ node scripts/polaris.mjs init
 # install current platform and user packages
 node scripts/install.mjs ~/repos/<repo>/platform --dry-run
 node scripts/install.mjs ~/repos/<repo>/platform
-node scripts/install.mjs ~/repos/<repo>/user --dry-run
-node scripts/install.mjs ~/repos/<repo>/user
+node scripts/install.mjs ~/repos/<repo>/user --dry-run --force
+node scripts/install.mjs ~/repos/<repo>/user --force
 
 # later, capture live user edits back to the repo
 node scripts/sync.mjs ~/repos/<repo>/user --mirror --dry-run
