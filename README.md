@@ -14,7 +14,7 @@ It manages:
 
 The package has zero runtime npm dependencies. YAML parsing is vendored; the satellite supplies Node, knex, Postgres access, nginx, PM2, and `jq` (for `scripts/heartbeat-actions.sh`).
 
-> **NOTE:** If you're viewing this README in a Git repository, the actual package structure is assembled by `build-installer.sh` rather than being present in the the repository itself as would be typical for an Ai1 Package.
+> **NOTE:** If you're viewing this README in a Git repository, the actual package structure is assembled by `build-installer.sh` rather than being present in the repository itself as would be typical for an Ai1 Package.
 
 ## Quick start
 
@@ -50,6 +50,7 @@ node scripts/polaris.mjs init
 | `scripts/remote.mjs` | Register with the Ai1 Platform Hub, pull config, heartbeat, push install state, resolve GitHub tokens, and download registered packages. |
 | `scripts/action.mjs` | Process queued hub actions (`pull-config`, `push-install`, `install-package`, `drift-report`) from `${REMOTE_BASE_DIR}/actions.json`. |
 | `scripts/drift.mjs` | Read-only drift report: compare live satellite state against install-log source packages; list orphans. |
+| `scripts/diff.mjs` | Read-only package diff: compare a package's components (DB fields, links, files) against live equivalents, install-log independent. |
 | `scripts/polaris.mjs` | Clone the satellite's GitHub Client Repository using the hub-provided GitHub token. |
 
 ## Repository layout

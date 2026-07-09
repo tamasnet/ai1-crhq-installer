@@ -4,7 +4,7 @@
 
 ## Product shape
 
-Six CLIs sit on a shared library in `scripts/lib/`:
+Seven CLIs sit on a shared library in `scripts/lib/`:
 
 | CLI | Role | Live dependencies |
 |-----|------|-------------------|
@@ -48,6 +48,8 @@ install.mjs <package> [flags]
 ```
 
 Uninstall uses the reverse component order. Status is read-only. Dry-run records intended changes without DB/filesystem writes; service/project build commands are skipped unless `--run-build` is passed, and nginx/PM2 apply is always skipped.
+
+With `--strict` (requires `--include`), asset copies also delete target files not present in the package, listing every deleted path; protected names (manifest `protect` + defaults) always survive.
 
 ## Sync flow
 
@@ -111,7 +113,7 @@ It cross-references package manifests with the install log and reports `availabl
 
 ```text
 scripts/
-├── install.mjs, sync.mjs, remote.mjs, action.mjs, polaris.mjs
+├── install.mjs, sync.mjs, remote.mjs, action.mjs, drift.mjs, diff.mjs, polaris.mjs
 └── lib/
     ├── index.mjs              # public export surface
     ├── context.mjs            # flag/env resolution and runtime context
@@ -129,6 +131,7 @@ scripts/
     ├── parse.mjs              # frontmatter/YAML helpers
     ├── fs.mjs                 # copy/write/remove/diff helpers
     ├── protect.mjs            # protected-names matcher (strict prune + sync export skips)
+    ├── drift.mjs              # install-log drift report
     ├── diff.mjs               # package → live component diff
     ├── flags.mjs              # strict option validation
     ├── filter.mjs             # include/exclude matching

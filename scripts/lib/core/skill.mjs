@@ -3,6 +3,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { copyTree, removeTree, writeIfChanged, syncInstallTree, pruneTree } from '../fs.mjs';
 import { protectMatcher, listProtectedEntries } from '../protect.mjs';
+import { isInstallStrict } from '../strict.mjs';
 import { parseFrontmatter, dumpYaml } from '../parse.mjs';
 import { VERDICT, logDeletions } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
@@ -32,7 +33,7 @@ async function resolveSkillState(ctx, def) {
     fileChanges = copyTree(def.srcDir, skillDir, {
       dryRun: true, skip: (rel) => rel === 'SKILL.md', contentOnly: !!ctx.CONTENT_ONLY,
     });
-    if (ctx.STRICT && existsSync(skillDir)) {
+    if (isInstallStrict(ctx, def) && existsSync(skillDir)) {
       pruned = pruneTree(skillDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip }).length;
     }
   }
@@ -68,10 +69,10 @@ function installSkillAssets(ctx, def, skillDir) {
   }
   const protect = protectMatcher(def.protect);
   const { files, pruned } = syncInstallTree(def.srcDir, skillDir, {
-    dryRun: !!ctx.DRY_RUN, strict: !!ctx.STRICT, pruneSkip: protect.skip,
+    dryRun: !!ctx.DRY_RUN, strict: isInstallStrict(ctx, def), pruneSkip: protect.skip,
   });
   logDeletions(ctx.log, skillDir, pruned, { dryRun: !!ctx.DRY_RUN });
-  if (ctx.STRICT && protect.matched.size) {
+  if (isInstallStrict(ctx, def) && protect.matched.size) {
     ctx.log.info(`skill ${def.name}: protected (kept): ${[...protect.matched].sort().join(', ')}`);
   }
   return { files, pruned };

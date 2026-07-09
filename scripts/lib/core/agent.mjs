@@ -3,6 +3,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { writeIfChanged, copyTree, syncInstallTree, pruneTree } from '../fs.mjs';
 import { protectMatcher, listProtectedEntries } from '../protect.mjs';
+import { isInstallStrict } from '../strict.mjs';
 import { dumpYaml } from '../parse.mjs';
 import { VERDICT, logDeletions } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
@@ -89,7 +90,7 @@ export async function planAgent(ctx, def) {
   const brainFiles = hasBrain
     ? syncInstallTree(def.srcDir, brainDir, { dryRun: true, strict: false, contentOnly: !!ctx.CONTENT_ONLY }).files
     : 0;
-  const brainPruned = (hasBrain && ctx.STRICT && existsSync(brainDir))
+  const brainPruned = (hasBrain && isInstallStrict(ctx, def) && existsSync(brainDir))
     ? pruneTree(brainDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip }).length
     : 0;
 
@@ -115,10 +116,10 @@ function installBrainAssets(ctx, def, brainDir) {
   }
   const protect = protectMatcher(def.protect);
   const { files, pruned } = syncInstallTree(def.srcDir, brainDir, {
-    dryRun: !!ctx.DRY_RUN, strict: !!ctx.STRICT, pruneSkip: protect.skip,
+    dryRun: !!ctx.DRY_RUN, strict: isInstallStrict(ctx, def), pruneSkip: protect.skip,
   });
   logDeletions(ctx.log, brainDir, pruned, { dryRun: !!ctx.DRY_RUN });
-  if (ctx.STRICT && protect.matched.size) {
+  if (isInstallStrict(ctx, def) && protect.matched.size) {
     ctx.log.info(`agent ${def.name}: protected (kept): ${[...protect.matched].sort().join(', ')}`);
   }
   return { files, pruned };

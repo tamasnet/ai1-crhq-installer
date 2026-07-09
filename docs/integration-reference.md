@@ -28,6 +28,8 @@ The sandbox creates an isolated schema and clones these table shapes from live w
 
 ## Component mappings
 
+File copies are additive by default. With `--strict` (requires `--include`), installs also delete target files absent from the package; protected names (manifest `protect` + defaults — see the spec's "Component protect") always survive both strict prune and sync export.
+
 ### Skill
 
 Source: `skills/<key>/SKILL.md` and sibling files.
@@ -71,7 +73,7 @@ Install behavior:
 - Upsert `agents` by `key`, with `is_active=true`.
 - Sync `agent_skills` to the declared installed active skill names.
 - Sync `agent_recipes` to declared recipe names resolved to UUIDs.
-- Copy the whole agent directory to `AGENT_BRAINS_DIR/<key>` without deleting existing runtime files.
+- Copy the whole agent directory to `AGENT_BRAINS_DIR/<key>`; runtime dirs (`memory`, `activity`, …) are protected.
 - Record `agent_versions.version_num` when a version is declared.
 
 Uninstall removes the agent row, joins, and version history. It preserves the brain folder because it may contain runtime state.
@@ -139,9 +141,9 @@ On install, the declared component version is upserted. On sync/mirror, the curr
 
 `sync.mjs` uses the reverse of the install mappings:
 
-- Skills: regenerate `SKILL.md` from the DB row and copy installed skill files except the old `SKILL.md`.
+- Skills: regenerate `SKILL.md` from the DB row and copy installed skill files except the old `SKILL.md` and protected names.
 - Recipes: regenerate the Markdown file from the DB row.
-- Agents: regenerate `AGENTS.md` from the DB row/joins and copy brain files except excluded runtime dirs.
+- Agents: regenerate `AGENTS.md` from the DB row/joins and copy brain files except protected names.
 - Jobs: export only script/node jobs whose script path is under `SKILLS_BASE_DIR`.
 - Services: not exported.
 - Projects: added only with `--add-project`, then left to git.

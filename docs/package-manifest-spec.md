@@ -44,7 +44,7 @@ components:
     - path: skills/my-skill
       version: 1                 # required positive integer; must match SKILL.md version
       install_type: org          # optional: org (default, locked) or user (unlocked)
-      handling: normal           # optional: normal (default) | removed | optional
+      handling: normal           # optional: normal (default) | removed | optional | strict
       protect: ['!config']       # optional: extend/trim the protected-names set (see Component protect)
   recipes:
     - path: recipes/my-recipe.md
@@ -109,6 +109,7 @@ Every component entry may carry an optional `handling` field that controls wheth
 | Value | Install | Uninstall | Notes |
 |-------|---------|-----------|-------|
 | `normal` (default) | install/update | remove | Assumed when `handling` is omitted. |
+| `strict` | install/update (with file-tree pruning) | remove | Same lifecycle as `normal`; skills, agents, and copy-mode services/projects prune extras on install without CLI `--strict`. No effect on recipes/jobs or symlink-mode projects. Does not affect drift/diff. |
 | `removed` | no-op, unless `--removed` → **remove** | no-op, unless `--removed` → **remove** | Tombstone for a component no longer shipped in the package. |
 | `optional` | skipped, unless `--optional` → install | remove (no flag required) | Opt-in component. Uninstall and status treat it like a normal component. |
 
@@ -121,6 +122,10 @@ components:
     - path: skills/beta-skill
       version: 1
       handling: optional
+    - path: skills/tight-skill
+      version: 1
+      handling: strict
+      protect: ['!config']
 ```
 
 `handling: removed` is for retiring a component cleanly across a fleet. When a skill is dropped from a package, leaving a tombstone entry lets the next `--removed` install delete the now-orphaned component from satellites that still have it. Because the component's files may already be gone, a `removed` entry is **not** loaded from disk and needs **no** version pin — the installer only needs the component's name. The name is the entry's explicit `name` when given, otherwise the path basename (with the extension stripped for single-file recipes/jobs).

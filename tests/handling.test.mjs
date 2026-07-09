@@ -54,6 +54,14 @@ await test('optional: install gated by --optional; uninstall/status always norma
   assert.equal(resolveHandling('optional', 'status', NONE), 'status');
 });
 
+await test('strict: same lifecycle as normal (flags irrelevant)', () => {
+  for (const flags of [NONE, { removed: true, optional: true }]) {
+    assert.equal(resolveHandling('strict', 'install', flags), 'upsert');
+    assert.equal(resolveHandling('strict', 'uninstall', flags), 'remove');
+    assert.equal(resolveHandling('strict', 'status', flags), 'status');
+  }
+});
+
 // ── manifest validation + buildPlan ────────────────────────────────────────────────────────────
 console.log('\nmanifest:');
 
@@ -77,8 +85,8 @@ await test('invalid handling value → ManifestError', () => {
   }), (e) => e instanceof ManifestError && /handling must be one of/.test(e.message));
 });
 
-await test('handling values normal/removed/optional all validate', () => {
-  for (const h of ['normal', 'optional']) {
+await test('normal/removed/optional/strict all validate', () => {
+  for (const h of ['normal', 'optional', 'strict']) {
     validateManifest({ name: 'p', version: 1, description: 'x', components: { skills: [{ path: 'skills/a', version: 1, handling: h }] } });
   }
   // removed needs no version pin (next test); validate with one present is also fine
@@ -115,12 +123,14 @@ await test('normal/optional entries still load their files and carry handling', 
   const dir = pkg(
     'name: p\nversion: 1\ndescription: x\ncomponents:\n'
     + '  skills:\n    - path: skills/keep\n      version: 1\n'
-    + '    - path: skills/opt\n      version: 1\n      handling: optional\n',
-    { 'skills/keep/SKILL.md': SKILL_MD('keep'), 'skills/opt/SKILL.md': SKILL_MD('opt') },
+    + '    - path: skills/opt\n      version: 1\n      handling: optional\n'
+    + '    - path: skills/tight\n      version: 1\n      handling: strict\n',
+    { 'skills/keep/SKILL.md': SKILL_MD('keep'), 'skills/opt/SKILL.md': SKILL_MD('opt'), 'skills/tight/SKILL.md': SKILL_MD('tight') },
   );
   const { plan } = loadManifest(dir);
   assert.equal(plan.skills[0].handling, 'normal', 'omitted handling defaults to normal');
   assert.equal(plan.skills[1].handling, 'optional');
+  assert.equal(plan.skills[2].handling, 'strict');
   assert.ok(plan.skills[0].content.includes('body'), 'real skill body loaded');
 });
 
@@ -214,6 +224,22 @@ try {
     assert.equal(byName.opt.op, 'remove', 'optional processed as normal on uninstall');
     assert.equal(byName.doomed.verdict, 'SKIPPED', 'tombstone stays inert on uninstall without --removed');
     assert.equal(await skillRow('keep'), undefined, 'keep gone after uninstall');
+  });
+
+  await test('handling strict on recipe warns and has no file effect', async () => {
+    const dir = pkg(
+      'name: p\nversion: 1\ndescription: x\ncomponents:\n'
+      + '  recipes:\n    - path: recipes/warn.md\n      handling: strict\n',
+      { 'recipes/warn.md': '---\nname: warn\ndescription: d\n---\nbody' },
+    );
+    const { plan } = loadManifest(dir);
+    const ctx = makeCtx();
+    const logs = [];
+    const orig = ctx.log.warn;
+    ctx.log.warn = (m) => { logs.push(m); orig(m); };
+    await runPlan(ctx, plan);
+    assert.equal(ctx.results[0].verdict, 'INSTALL-OK');
+    assert.ok(logs.some((m) => /handling 'strict' has no effect/.test(m)), `expected warn, got: ${logs.join('; ')}`);
   });
 
   await test('mirror/sync preserves a removed tombstone instead of pruning it', async () => {

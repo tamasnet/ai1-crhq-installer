@@ -26,6 +26,7 @@ const nameOf = (type, def) => def.name;
 //              state under --status). Files may be gone, so it is only ever removed, never upserted.
 //   optional — not installed unless --optional. uninstall and status are processed normally, with no
 //              flag required — exactly like a normal component.
+//   strict   — same lifecycle as normal; per-component file pruning is enabled via isInstallStrict().
 export function resolveHandling(handling, mode, { removed = false, optional = false } = {}) {
   const h = handling || 'normal';
   if (h === 'removed') {
@@ -36,6 +37,7 @@ export function resolveHandling(handling, mode, { removed = false, optional = fa
     if (mode === 'install' && !optional) return null;   // opt-in install only
     return mode === 'uninstall' ? 'remove' : mode === 'status' ? 'status' : 'upsert';
   }
+  // normal and strict share the same install/uninstall/status verbs
   return mode === 'uninstall' ? 'remove' : mode === 'status' ? 'status' : 'upsert';
 }
 
@@ -100,6 +102,9 @@ export async function runPlan(ctx, plan) {
     for (const def of chosen) {
       const verb = resolveHandling(def.handling, ctx.mode, handlingFlags);
       if (!verb) { ctx.record(skipResult(type, def)); continue; }
+      if (verb === 'upsert' && def.handling === 'strict' && (type === 'recipes' || type === 'jobs')) {
+        ctx.log.warn(`${type.replace(/s$/, '')} ${def.name}: handling 'strict' has no effect (no file tree)`);
+      }
       const fn = DISPATCH[type]?.[verb];
       if (!fn) continue;
       try {

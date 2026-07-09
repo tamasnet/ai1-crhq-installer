@@ -11,6 +11,7 @@ import { closeDb } from '../scripts/lib/db.mjs';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
 import { upsertSkill } from '../scripts/lib/core/skill.mjs';
 import { upsertAgent } from '../scripts/lib/core/agent.mjs';
+import { isInstallStrict } from '../scripts/lib/strict.mjs';
 import { makeCtx, harness } from './_helpers.mjs';
 
 const { test, done } = harness();
@@ -48,6 +49,17 @@ try {
     await upsertSkill(ctx, skillDef);
     assert.ok(existsSync(join(skillDir, 'leftover.js')));
     rmSync(join(skillDir, 'leftover.js'));
+  });
+
+  await test('upsertSkill with handling strict prunes without CLI --strict', async () => {
+    const ctx = makeCtx();
+    const def = { ...skillDef, handling: 'strict' };
+    assert.ok(isInstallStrict(ctx, def));
+    assert.ok(!ctx.STRICT);
+    await upsertSkill(ctx, def);
+    writeFileSync(join(skillDir, 'stale-manifest.js'), '// old');
+    await upsertSkill(ctx, def);
+    assert.equal(existsSync(join(skillDir, 'stale-manifest.js')), false);
   });
 
   console.log('\nprotect under --strict:');

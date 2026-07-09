@@ -21,7 +21,9 @@ const TYPE_ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services', 'projects
 //              uninstall. Its files may be gone, so a 'removed' entry is never loaded from disk.
 //   optional — not installed unless the --optional flag is given; uninstall (and status) behave
 //              exactly like a normal component, with no flag required.
-export const HANDLING_VALUES = new Set(['normal', 'removed', 'optional']);
+//   strict   — install lifecycle matches normal; file-tree components prune extras on install
+//              (same as CLI --strict) without requiring --include.
+export const HANDLING_VALUES = new Set(['normal', 'removed', 'optional', 'strict']);
 
 // Component types whose manifest path is a single FILE (recipe .md / job .yaml); the rest are
 // directories. Used when deriving a tombstone's name from its path.
@@ -70,7 +72,7 @@ export function validateManifest(meta) {
     if (!Array.isArray(list)) throw new ManifestError(`components.${type} must be a list`);
     for (const entry of list) {
       if (!entry || !entry.path) throw new ManifestError(`components.${type}[] entry missing 'path'`);
-      // handling (optional): normal (default) | removed (tombstone) | optional — applies to any type.
+      // handling (optional): normal (default) | removed (tombstone) | optional | strict — any type.
       if (entry.handling != null && !HANDLING_VALUES.has(entry.handling)) {
         throw new ManifestError(`components.${type}[${entry.path}] handling must be one of ${[...HANDLING_VALUES].join(', ')} (got ${JSON.stringify(entry.handling)})`);
       }

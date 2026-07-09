@@ -130,7 +130,9 @@ Options:
   --strict                   after copying assets, delete files in the install target that are not
                              in the package; requires --include=<pat> (--type optional, to narrow
                              by component type); skills, agents, and copy-mode services/projects.
-                             Protected names (defaults + the entry's 'protect:' list) are kept
+                             Protected names (defaults + the entry's 'protect:' list) are kept.
+                             A component with handling: strict in the manifest prunes on install
+                             without --strict or --include
   --sandbox                  install into a throwaway isolated schema + temp dir, then tear down
   --keep                     with --sandbox: keep the schema + temp dir for inspection
   --lifecycle                with --sandbox: run install→status→idempotency→uninstall→reinstall
