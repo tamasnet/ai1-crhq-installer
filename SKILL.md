@@ -73,7 +73,7 @@ Development/testing flags:
 | `--keep` | With `--sandbox`, leave the schema and dirs for inspection. |
 | `--type=skill,recipe` | Restrict to component types. Useful for targeted development or repair. |
 | `--include=<pattern>` / `--exclude=<pattern>` | Restrict components by name. Plain values are exact matches; regex metacharacters are treated as regex. |
-| `--strict` | After copying assets, delete files in the install target not present in the package. Requires `--include`; `--type` is optional (narrows by component type). Applies to skills, agents, and copy-mode services/projects. |
+| `--strict` | After copying assets, delete files in the install target not present in the package. Requires `--include`; `--type` is optional (narrows by component type). Applies to skills, agents, and copy-mode services/projects. Protected names (see the `protect` manifest field) are never deleted. |
 | `--respect-locks` | Skip locked skills instead of unlocking/updating them. |
 | `--install-skills-as-user` | Register all skills as unlocked `user` skills. |
 
@@ -242,6 +242,8 @@ Component versions are positive integers. Skills, services, and projects require
 
 Any component entry may also carry an optional `handling` field: `normal` (default — install/uninstall as usual), `removed` (a tombstone for a dropped component — inert unless `--removed`, which removes it on both install and uninstall), or `optional` (skipped on install unless `--optional`; uninstall is normal). A `removed` tombstone needs no version pin and is not read from disk, since its files may already be gone.
 
+Any component entry may also carry an optional `protect: []` list — simple glob patterns (`*`/`?`) matched against **top-level** names in the component's install/live directory. Protected names are never deleted by a `--strict` install and never exported by sync, so runtime state survives both directions. Every component gets the defaults (`.*`, `_*`, `activity`, `memory`, `data`, `config`, `state`, `uploads`, `backup`, `logs`, `ecosystem.config.cjs`); the entry's list extends them, and a `!pattern` entry removes that exact default (e.g. `protect: ['!config']` for a component that ships a real `config/` directory). Install copy is unaffected: a package that ships a protected name installs it once as one-way seed data (warned at install, then never pruned or synced).
+
 Full package spec: `docs/package-manifest-spec.md`.
 
 ## Environment
@@ -255,7 +257,6 @@ Full package spec: `docs/package-manifest-spec.md`.
 | `SERVICES_BASE_DIR` | Parent dir for deployed service copies. Defaults to `~/services`. |
 | `REPOS_BASE_DIR` | Clone base for Git repos, including the Polaris customer repository. Defaults to `~/repos`. |
 | `REMOTE_BASE_DIR` | Hub client identity/config/state/action base. Defaults to `~/remote`. |
-| `AGENT_BRAIN_EXCLUDE` | Comma-separated top-level brain dirs excluded from sync/mirror. Default `activity,_backup,.scratch,memory`. |
 
 ## Safety rules
 

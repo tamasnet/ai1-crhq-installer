@@ -8,6 +8,7 @@ export { resolveSatelliteId, satellitePackageName } from './identity.mjs';
 export { getDb, getAdminDb, closeDb } from './db.mjs';
 export { parseFrontmatter, loadYaml, dumpYaml } from './parse.mjs';
 export { copyTree, writeIfChanged, removeTree, pruneTree, syncInstallTree, moveTree, ensureSymlink, pathExistsOrLink, safeName } from './fs.mjs';
+export { DEFAULT_PROTECT, effectiveProtect, protectMatcher, listProtectedEntries } from './protect.mjs';
 export { makeLogger, VERDICT, SEVERITY } from './log.mjs';
 export { requireSkills, requireFiles, PrereqError } from './prereq.mjs';
 export { preflight, PreflightError } from './preflight.mjs';

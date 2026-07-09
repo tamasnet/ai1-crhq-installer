@@ -2,8 +2,9 @@
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { copyTree, removeTree, writeIfChanged, syncInstallTree, pruneTree } from '../fs.mjs';
+import { protectMatcher, listProtectedEntries } from '../protect.mjs';
 import { parseFrontmatter, dumpYaml } from '../parse.mjs';
-import { VERDICT } from '../log.mjs';
+import { VERDICT, logDeletions } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
 import { planResult } from './plan-result.mjs';
 
@@ -33,7 +34,7 @@ async function resolveSkillState(ctx, def) {
   if (def.srcDir && existsSync(def.srcDir)) {
     fileChanges = copyTree(def.srcDir, skillDir, { dryRun: true, skip: (rel) => rel === 'SKILL.md' });
     if (ctx.STRICT && existsSync(skillDir)) {
-      pruned = pruneTree(skillDir, def.srcDir, { dryRun: true });
+      pruned = pruneTree(skillDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip }).length;
     }
   }
   const ver = { fkValue: name, version: def.version, name: def.name, description: def.description, body: def.content };
@@ -58,9 +59,19 @@ export async function planSkill(ctx, def) {
 }
 
 function installSkillAssets(ctx, def, skillDir) {
-  if (!def.srcDir || !existsSync(def.srcDir)) return { files: 0, pruned: 0 };
-  const { files, pruned } = syncInstallTree(def.srcDir, skillDir, { dryRun: !!ctx.DRY_RUN, strict: !!ctx.STRICT });
-  if (pruned && ctx.DRY_RUN) ctx.log.dry(`prune ${pruned} extra file(s) from ${skillDir}`);
+  if (!def.srcDir || !existsSync(def.srcDir)) return { files: 0, pruned: [] };
+  const shipped = listProtectedEntries(def.srcDir, def.protect);
+  if (shipped.length) {
+    ctx.log.warn(`skill ${def.name}: package ships protected entries (installed as one-way seed, never pruned/synced): ${shipped.join(', ')}`);
+  }
+  const protect = protectMatcher(def.protect);
+  const { files, pruned } = syncInstallTree(def.srcDir, skillDir, {
+    dryRun: !!ctx.DRY_RUN, strict: !!ctx.STRICT, pruneSkip: protect.skip,
+  });
+  logDeletions(ctx.log, skillDir, pruned, { dryRun: !!ctx.DRY_RUN });
+  if (ctx.STRICT && protect.matched.size) {
+    ctx.log.info(`skill ${def.name}: protected (kept): ${[...protect.matched].sort().join(', ')}`);
+  }
   return { files, pruned };
 }
 
@@ -136,12 +147,14 @@ export async function removeSkill(ctx, nameOrDef) {
   return result(name, VERDICT.OK, 'removed');
 }
 
-export async function exportSkill(ctx, row, { outRoot, relPath }) {
+export async function exportSkill(ctx, row, { outRoot, relPath, protect }) {
   const { db, log } = ctx;
   const destDir = join(outRoot, relPath);
+  const matcher = protectMatcher(protect);
   const files = row.skill_dir && existsSync(row.skill_dir)
-    ? copyTree(row.skill_dir, destDir, { dryRun: !!ctx.DRY_RUN, skip: (rel) => rel === 'SKILL.md' })
+    ? copyTree(row.skill_dir, destDir, { dryRun: !!ctx.DRY_RUN, skip: (rel) => rel === 'SKILL.md' || matcher.skip(rel) })
     : 0;
+  if (matcher.matched.size) log.info(`skill ${row.name}: protected (not exported): ${[...matcher.matched].sort().join(', ')}`);
 
   let version = await currentVersion(db, 'skill', row.name);
   if (version == null) {

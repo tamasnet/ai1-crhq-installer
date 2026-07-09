@@ -157,12 +157,13 @@ export async function discoverLiveComponents(db) {
   };
 }
 
-// Dispatch to the appropriate export function.
-async function exportComponent(ctx, type, row, { packageDir, relPath, skillNames }) {
+// Dispatch to the appropriate export function. `protect` = the manifest entry's protect list
+// (extends DEFAULT_PROTECT; undefined for a Step-1 addition, which gets the defaults).
+async function exportComponent(ctx, type, row, { packageDir, relPath, skillNames, protect }) {
   switch (type) {
-    case 'skills':  return exportSkill(ctx, row, { outRoot: packageDir, relPath });
+    case 'skills':  return exportSkill(ctx, row, { outRoot: packageDir, relPath, protect });
     case 'recipes': return exportRecipe(ctx, row, { outRoot: packageDir, relPath });
-    case 'agents':  return exportAgent(ctx, row, { outRoot: packageDir, relPath });
+    case 'agents':  return exportAgent(ctx, row, { outRoot: packageDir, relPath, protect });
     case 'jobs':    return exportJob(ctx, row, { outRoot: packageDir, relPath, skillNames });
     default:        throw new SyncError(`Unknown component type: ${type}`);
   }
@@ -519,7 +520,7 @@ export async function runSync(ctx, { packageDir, additions = {}, removals = {}, 
 
       let result;
       try {
-        result = await exportComponent(ctx, type, row, { packageDir, relPath: entry.path, skillNames: skillNamesInManifest });
+        result = await exportComponent(ctx, type, row, { packageDir, relPath: entry.path, skillNames: skillNamesInManifest, protect: entry.protect });
       } catch (e) {
         log.error(`${label(type, name)}: export failed — ${e.message}`);
         results.push({ type: singular(type), name, verdict: 'SYNC-FAIL', action: 'error', detail: e.message });

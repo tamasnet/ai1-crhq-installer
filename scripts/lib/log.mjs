@@ -34,6 +34,15 @@ export const SEVERITY = {
   [VERDICT.SYNC_FAIL]: 1,
 };
 
+// --strict deletion report: one line naming every removed path (dirs carry a trailing '/'),
+// so a strict install shows exactly what it deleted — dry-run and live read the same.
+export function logDeletions(log, dir, removed, { dryRun = false } = {}) {
+  if (!removed.length) return;
+  const detail = `from ${dir}: ${removed.join(', ')}`;
+  if (dryRun) log.dry(`delete ${detail}`);
+  else log.info(`deleted ${detail}`);
+}
+
 export function makeLogger({ dryRun = false, quiet = false } = {}) {
   const out = (s) => { if (!quiet) console.log(s); };
   return {

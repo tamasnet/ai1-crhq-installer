@@ -121,7 +121,7 @@ await test('dry-run reports would-copy and would-chmod', () => {
 
 console.log('\npruneTree:');
 
-await test('removes dest files absent from src', () => {
+await test('removes dest files absent from src, returning rel paths (dirs with trailing /)', () => {
   const root = workDir();
   const src = join(root, 'src');
   const dest = join(root, 'dest');
@@ -129,11 +129,15 @@ await test('removes dest files absent from src', () => {
   writeFileSync(join(src, 'keep', 'a.txt'), 'a');
   mkdirSync(join(dest, 'keep'), { recursive: true });
   writeFileSync(join(dest, 'keep', 'a.txt'), 'a');
+  writeFileSync(join(dest, 'keep', 'b.txt'), 'gone');
   writeFileSync(join(dest, 'stale.txt'), 'gone');
+  mkdirSync(join(dest, 'olddir'), { recursive: true });
+  writeFileSync(join(dest, 'olddir', 'x'), 'gone');
 
-  assert.equal(pruneTree(dest, src), 1);
+  assert.deepEqual(pruneTree(dest, src).sort(), ['keep/b.txt', 'olddir/', 'stale.txt']);
   assert.ok(existsSync(join(dest, 'keep', 'a.txt')));
   assert.equal(existsSync(join(dest, 'stale.txt')), false);
+  assert.equal(existsSync(join(dest, 'olddir')), false);
 
   rmSync(root, { recursive: true, force: true });
 });
@@ -148,7 +152,7 @@ await test('skip keeps dest-only paths (agent brain live dirs)', () => {
   writeFileSync(join(dest, 'memory', 'note.md'), 'live');
   writeFileSync(join(dest, 'stale.txt'), 'gone');
 
-  assert.equal(pruneTree(dest, src, { skip: (rel) => rel.split('/')[0] === 'memory' }), 1);
+  assert.deepEqual(pruneTree(dest, src, { skip: (rel) => rel.split('/')[0] === 'memory' }), ['stale.txt']);
   assert.ok(existsSync(join(dest, 'memory', 'note.md')));
   assert.equal(existsSync(join(dest, 'stale.txt')), false);
 
@@ -163,7 +167,7 @@ await test('dry-run reports removals without deleting', () => {
   mkdirSync(dest, { recursive: true });
   writeFileSync(join(dest, 'extra.txt'), 'x');
 
-  assert.equal(pruneTree(dest, src, { dryRun: true }), 1);
+  assert.deepEqual(pruneTree(dest, src, { dryRun: true }), ['extra.txt']);
   assert.ok(existsSync(join(dest, 'extra.txt')));
 
   rmSync(root, { recursive: true, force: true });

@@ -2,24 +2,11 @@
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { writeIfChanged, copyTree, syncInstallTree, pruneTree } from '../fs.mjs';
+import { protectMatcher, listProtectedEntries } from '../protect.mjs';
 import { dumpYaml } from '../parse.mjs';
-import { VERDICT } from '../log.mjs';
+import { VERDICT, logDeletions } from '../log.mjs';
 import { recordVersion, removeVersions, currentVersion } from '../version-history.mjs';
 import { planResult } from './plan-result.mjs';
-
-export const DEFAULT_BRAIN_EXCLUDE = ['activity', '_backup', '.scratch', 'memory'];
-
-export function brainExcludeSet(env = process.env.AGENT_BRAIN_EXCLUDE) {
-  const list = env != null
-    ? env.split(',').map((s) => s.trim()).filter(Boolean)
-    : DEFAULT_BRAIN_EXCLUDE;
-  return new Set(list);
-}
-
-export function brainPruneSkip(env = process.env.AGENT_BRAIN_EXCLUDE) {
-  const exclude = brainExcludeSet(env);
-  return (rel) => exclude.has(rel.split('/')[0]);
-}
 
 function agentFields(def) {
   const fields = { name: def.display_name, description: def.description || '', mode: def.mode || 'cli', is_active: true };
@@ -95,10 +82,9 @@ export async function planAgent(ctx, def) {
 
   const brainDir = BRAINS ? join(BRAINS, key) : null;
   const hasBrain = !!(def.srcDir && brainDir && existsSync(def.srcDir));
-  const pruneSkip = brainPruneSkip();
   const brainFiles = hasBrain ? syncInstallTree(def.srcDir, brainDir, { dryRun: true, strict: false }).files : 0;
   const brainPruned = (hasBrain && ctx.STRICT && existsSync(brainDir))
-    ? pruneTree(brainDir, def.srcDir, { dryRun: true, skip: pruneSkip })
+    ? pruneTree(brainDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip }).length
     : 0;
 
   if (!dbDrift && !linkDrift && brainFiles === 0 && brainPruned === 0) {
@@ -112,12 +98,19 @@ export async function planAgent(ctx, def) {
 }
 
 function installBrainAssets(ctx, def, brainDir) {
-  if (!def.srcDir || !brainDir || !existsSync(def.srcDir)) return { files: 0, pruned: 0 };
-  const pruneSkip = brainPruneSkip();
+  if (!def.srcDir || !brainDir || !existsSync(def.srcDir)) return { files: 0, pruned: [] };
+  const shipped = listProtectedEntries(def.srcDir, def.protect);
+  if (shipped.length) {
+    ctx.log.warn(`agent ${def.name}: package ships protected entries (installed as one-way seed, never pruned/synced): ${shipped.join(', ')}`);
+  }
+  const protect = protectMatcher(def.protect);
   const { files, pruned } = syncInstallTree(def.srcDir, brainDir, {
-    dryRun: !!ctx.DRY_RUN, strict: !!ctx.STRICT, pruneSkip,
+    dryRun: !!ctx.DRY_RUN, strict: !!ctx.STRICT, pruneSkip: protect.skip,
   });
-  if (pruned && ctx.DRY_RUN) ctx.log.dry(`prune ${pruned} extra file(s) from ${brainDir}`);
+  logDeletions(ctx.log, brainDir, pruned, { dryRun: !!ctx.DRY_RUN });
+  if (ctx.STRICT && protect.matched.size) {
+    ctx.log.info(`agent ${def.name}: protected (kept): ${[...protect.matched].sort().join(', ')}`);
+  }
   return { files, pruned };
 }
 
@@ -192,7 +185,7 @@ export async function removeAgent(ctx, nameOrDef) {
   return res(key, VERDICT.OK, 'removed');
 }
 
-export async function exportAgent(ctx, row, { outRoot, relPath }) {
+export async function exportAgent(ctx, row, { outRoot, relPath, protect }) {
   const { db } = ctx;
   const key = row.key;
   const skills = (await db('agent_skills').where({ agent_key: key }).orderBy('skill_name').select('skill_name'))
@@ -219,13 +212,14 @@ export async function exportAgent(ctx, row, { outRoot, relPath }) {
   };
   const destDir = join(outRoot, relPath);
   const brainDir = ctx.BRAINS ? join(ctx.BRAINS, key) : null;
-  const exclude = brainExcludeSet();
+  const matcher = protectMatcher(protect);
   const files = brainDir && existsSync(brainDir)
     ? copyTree(brainDir, destDir, {
         dryRun: !!ctx.DRY_RUN,
-        skip: (rel) => rel === 'AGENTS.md' || exclude.has(rel.split('/')[0]),
+        skip: (rel) => rel === 'AGENTS.md' || matcher.skip(rel),
       })
     : 0;
+  if (matcher.matched.size) ctx.log.info(`agent ${key}: protected (not exported): ${[...matcher.matched].sort().join(', ')}`);
 
   const body = (row.instructions || '').replace(/^\n+/, '');
   const md = `---\n${dumpYaml(fm)}---\n${body ? `\n${body.endsWith('\n') ? body : `${body}\n`}` : ''}`;

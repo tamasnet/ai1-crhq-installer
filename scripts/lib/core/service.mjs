@@ -16,18 +16,14 @@ import { existsSync, mkdirSync, writeFileSync, chmodSync, readdirSync, readFileS
 import { join, resolve, dirname } from 'path';
 import { spawnSync } from 'child_process';
 import { copyTree, removeTree, ensureSymlink, syncInstallTree, pruneTree } from '../fs.mjs';
+import { protectMatcher, listProtectedEntries } from '../protect.mjs';
 import { assertSafeEnvValue, formatEnvValue } from '../validate.mjs';
-import { VERDICT } from '../log.mjs';
+import { VERDICT, logDeletions } from '../log.mjs';
 import { resolveServicesBase, resolveUserProjectsBase } from '../paths.mjs';
 import { planResult } from './plan-result.mjs';
 
 const NGINX_DIR = '/etc/nginx/projects.d';
 const PORT_BASE = 4300;
-const DEPLOY_PRUNE_SKIP = new Set(['.env', 'ecosystem.config.cjs']);
-
-export function deployPruneSkip(rel) {
-  return DEPLOY_PRUNE_SKIP.has(rel.split('/')[0]);
-}
 
 // ── Pure renderers (fully testable; no I/O) ──────────────────────────────────────────────────
 
@@ -150,7 +146,7 @@ async function planWebApp(ctx, def, { type, baseDir, contentMode }) {
   } else if (def.srcDir && existsSync(def.srcDir)) {
     fileDrift = copyTree(def.srcDir, deployDir, { dryRun: true }) > 0;
     if (ctx.STRICT && existsSync(deployDir)) {
-      fileDrift = fileDrift || pruneTree(deployDir, def.srcDir, { dryRun: true, skip: deployPruneSkip }) > 0;
+      fileDrift = fileDrift || pruneTree(deployDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip }).length > 0;
     }
   }
 
@@ -233,6 +229,15 @@ async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
     }
   }
 
+  // Copy-mode deploys: surface protected names the package ships (after builds, so build output in
+  // srcDir counts). They install as one-way seed data — never pruned by --strict afterward.
+  if (contentMode === 'copy' && def.srcDir && existsSync(def.srcDir)) {
+    const shipped = listProtectedEntries(def.srcDir, def.protect);
+    if (shipped.length) {
+      log.warn(`${type} ${def.name}: package ships protected entries (installed as one-way seed, never pruned): ${shipped.join(', ')}`);
+    }
+  }
+
   const projectDir = join(baseDir, def.name);
   const port = def.port || nextFreePort(DRY_RUN ? [] : scanUsedPorts());
   const artifacts = renderArtifacts(def, port, projectDir, process.env);
@@ -243,6 +248,10 @@ async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
       ? (contentMode === 'copy' ? 'copy project files' : `symlink to ${def.srcDir}`)
       : 'copy service files';
     log.dry(`deploy ${type} ${def.name} → ${projectDir} on port ${port} (${content}; nginx vhost + PM2 — apply skipped)`);
+    if (ctx.STRICT && contentMode === 'copy' && def.srcDir && existsSync(def.srcDir) && existsSync(projectDir)) {
+      const stale = pruneTree(projectDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip });
+      logDeletions(log, projectDir, stale, { dryRun: true });
+    }
     const verdict = plan.verdict === VERDICT.ALREADY ? VERDICT.ALREADY : VERDICT.OK;
     const action = plan.verdict === VERDICT.ALREADY ? 'unchanged' : `built (port ${port})`;
     return out(type, def.name, verdict, action);
@@ -265,9 +274,14 @@ function applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode 
   } else {
     if (isSymlink(projectDir)) removeTree(projectDir, { dryRun: false });
     mkdirSync(projectDir, { recursive: true });
-    syncInstallTree(def.srcDir, projectDir, {
-      dryRun: false, strict: !!ctx.STRICT, pruneSkip: deployPruneSkip,
+    const protect = protectMatcher(def.protect);
+    const { pruned } = syncInstallTree(def.srcDir, projectDir, {
+      dryRun: false, strict: !!ctx.STRICT, pruneSkip: protect.skip,
     });
+    logDeletions(ctx.log, projectDir, pruned, { dryRun: false });
+    if (ctx.STRICT && protect.matched.size) {
+      ctx.log.info(`${type} ${def.name}: protected (kept): ${[...protect.matched].sort().join(', ')}`);
+    }
   }
 
   const envPath = join(projectDir, '.env');

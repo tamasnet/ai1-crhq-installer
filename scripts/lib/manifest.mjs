@@ -74,6 +74,12 @@ export function validateManifest(meta) {
       if (entry.handling != null && !HANDLING_VALUES.has(entry.handling)) {
         throw new ManifestError(`components.${type}[${entry.path}] handling must be one of ${[...HANDLING_VALUES].join(', ')} (got ${JSON.stringify(entry.handling)})`);
       }
+      // protect (optional): top-level glob patterns extending DEFAULT_PROTECT ('!pattern' opts out
+      // of a default). Shape-checked only; pattern semantics live in protect.mjs.
+      if (entry.protect != null && (!Array.isArray(entry.protect)
+        || entry.protect.some((p) => typeof p !== 'string' || p.trim() === ''))) {
+        throw new ManifestError(`components.${type}[${entry.path}] protect must be a list of non-empty strings`);
+      }
       // A version pin is required for real skills/services/projects. A 'removed' tombstone is exempt:
       // its component files are gone, so there is nothing left to version-check.
       if (entry.handling !== 'removed' && (type === 'skills' || type === 'services' || type === 'projects') && !entry.version) {
@@ -125,7 +131,8 @@ function buildPlan(meta, root) {
 function resolveEntry(type, entry, root, loader) {
   const handling = entry.handling || 'normal';
   if (handling === 'removed') return loadRemovedDef(type, entry, root);
-  return { ...loader(entry, root), handling };
+  // protect rides the def for every type so core/* consumers (strict prune, sync export) share it.
+  return { ...loader(entry, root), handling, ...(entry.protect != null ? { protect: entry.protect } : {}) };
 }
 
 // Build a 'removed' tombstone def. We never read the component's files; we only need its canonical DB

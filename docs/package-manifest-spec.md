@@ -45,6 +45,7 @@ components:
       version: 1                 # required positive integer; must match SKILL.md version
       install_type: org          # optional: org (default, locked) or user (unlocked)
       handling: normal           # optional: normal (default) | removed | optional
+      protect: ['!config']       # optional: extend/trim the protected-names set (see Component protect)
   recipes:
     - path: recipes/my-recipe.md
       version: 1                 # optional positive integer
@@ -132,6 +133,35 @@ Activating flags (`install.mjs`):
 | `--optional` | Also install `handling: optional` entries on an install run. Not needed for uninstall. |
 
 Components skipped by their handling mode are reported with a `SKIPPED` verdict (exit-code neutral) so they remain visible in the run summary and `--json` output.
+
+### Component protect
+
+Every component entry may carry an optional `protect` list: simple glob patterns (`*` matches any run of characters, `?` one character; everything else is literal) matched against **top-level** names in the component's install/live directory — never nested elements or full paths. A protected name is treated as runtime state, not package content:
+
+- a `--strict` install never deletes it from the install target (protected directories are skipped entirely, contents unexamined);
+- `sync` / `sync --mirror` never export it into the package.
+
+Install **copy** is unaffected: a package that ships a file/dir with a protected name installs it as one-way seed data — copied in, then never pruned or synced afterward. The installer warns when a package ships protected names so this is deliberate.
+
+Every component starts from the same default set:
+
+```text
+.*  _*  activity  memory  data  config  state  uploads  backup  logs  ecosystem.config.cjs
+```
+
+The entry's `protect` list extends the defaults. A `!pattern` entry removes that exact pattern from the effective set (literal match on the pattern text, resolved after all additions, so order never matters):
+
+```yaml
+components:
+  services:
+    - path: services/my-api
+      version: 1
+      protect:
+        - '!config'      # this service ships a real config/ directory — sync + strict-prune it
+        - 'sessions'     # extra runtime dir to preserve
+```
+
+`protect` applies to skills, agents, and copy-mode services/projects (the component types with a managed file tree). Symlink-mode projects need no protection — the deployed path is the package source itself.
 
 ## Components
 

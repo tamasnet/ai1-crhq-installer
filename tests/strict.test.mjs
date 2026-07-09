@@ -50,6 +50,36 @@ try {
     rmSync(join(skillDir, 'leftover.js'));
   });
 
+  console.log('\nprotect under --strict:');
+
+  await test('default protect keeps runtime state (data/, .env) while pruning stale files', async () => {
+    const ctx = makeCtx({ STRICT: true });
+    await upsertSkill(ctx, skillDef);
+    mkdirSync(join(skillDir, 'data'), { recursive: true });
+    writeFileSync(join(skillDir, 'data', 'live.db'), 'state');
+    writeFileSync(join(skillDir, '.env'), 'X=1');
+    writeFileSync(join(skillDir, 'stale.js'), '// old');
+    await upsertSkill(ctx, skillDef);
+    assert.ok(existsSync(join(skillDir, 'data', 'live.db')));
+    assert.ok(existsSync(join(skillDir, '.env')));
+    assert.equal(existsSync(join(skillDir, 'stale.js')), false);
+    rmSync(join(skillDir, 'data'), { recursive: true, force: true });
+    rmSync(join(skillDir, '.env'));
+  });
+
+  await test("entry protect extends defaults; '!data' negation re-enables pruning", async () => {
+    const ctx = makeCtx({ STRICT: true });
+    const def = { ...skillDef, protect: ['keep-*', '!data'] };
+    await upsertSkill(ctx, def);
+    writeFileSync(join(skillDir, 'keep-me.txt'), 'stays');
+    mkdirSync(join(skillDir, 'data'), { recursive: true });
+    writeFileSync(join(skillDir, 'data', 'x'), 'goes');
+    await upsertSkill(ctx, def);
+    assert.ok(existsSync(join(skillDir, 'keep-me.txt')));
+    assert.equal(existsSync(join(skillDir, 'data')), false);
+    rmSync(join(skillDir, 'keep-me.txt'));
+  });
+
   console.log('\nagent strict:');
 
   await test('upsertAgent --strict removes stale brain files but keeps memory/', async () => {
@@ -80,7 +110,7 @@ try {
   await test('--strict with --type=skill is accepted', () => {
     const r = install(['--strict', '--type=skill', '--include=ai1-sample-skill', '--sandbox', '--dry-run']);
     assert.equal(r.status, 0, out(r));
-    assert.match(out(r), /prune 0 extra|copy assets|noop/);
+    assert.match(out(r), /copy assets|noop/);
   });
 
   await test('--strict with --status is rejected', () => {

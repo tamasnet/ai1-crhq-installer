@@ -127,6 +127,7 @@ scripts/
     ├── version-history.mjs    # satellite *_versions table round-trip
     ├── parse.mjs              # frontmatter/YAML helpers
     ├── fs.mjs                 # copy/write/remove helpers
+    ├── protect.mjs            # protected-names matcher (strict prune + sync export skips)
     ├── flags.mjs              # strict option validation
     ├── filter.mjs             # include/exclude matching
     ├── identity.mjs           # satellite id -> package name helpers
@@ -146,7 +147,6 @@ scripts/
 | `SERVICES_BASE_DIR` | `~/services` | Deployed service copies. |
 | `REMOTE_BASE_DIR` | `~/remote` | Hub identity/config/state/action files. |
 | `REPOS_BASE_DIR` | `~/repos` | Client Repository checkout base. |
-| `AGENT_BRAIN_EXCLUDE` | `activity,_backup,.scratch,memory` | Top-level brain dirs omitted from sync/mirror. |
 
 `remote.mjs heartbeat` refreshes `${REMOTE_BASE_DIR}/state.json` with `install_version` and `install_changed_at` from `${PACKAGES_DIR}/install.json` before it reports state to the hub.
 
