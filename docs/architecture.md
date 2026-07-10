@@ -73,7 +73,7 @@ With `--strict` (requires `--include`), asset copies also delete target files no
 - Removes in-scope manifest entries whose live component is gone.
 - Preserves live skill `install_type` unless `--normalize` is passed.
 - Increments the package-level integer `version` only if package content changed.
-- Returns an install-log delta that the CLI applies to `${PACKAGES_DIR}/install.json`.
+- Returns an install-log delta that the CLI applies to `${PACKAGES_DIR}/install.json` (unless `--skip-install-log`).
 - Services and projects are never auto-added by mirror. Existing project entries are left for git to manage.
 
 Both sync modes edit the package in place and require the destination to be inside a git work tree unless `--force` is used.

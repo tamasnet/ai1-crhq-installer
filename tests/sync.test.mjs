@@ -11,11 +11,14 @@
 //   • plain sync (no --mirror): keeps a dead manifest entry (SYNC-SKIP), never bumps package version
 //   • mirror diff: component version bump, removal of a gone component, integer package-version bump
 //     only on real content change (a no-op run does not bump)
+//   • --skip-install-log: mirror updates package but leaves install.json unchanged
 // Run from the project root:  node tests/sync.test.mjs
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, lstatSync, readlinkSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { provisionSandbox } from '../scripts/lib/sandbox.mjs';
 import { closeDb } from '../scripts/lib/db.mjs';
 import { loadManifest } from '../scripts/lib/manifest.mjs';
@@ -27,6 +30,7 @@ import { dumpYaml, loadYaml, parseFrontmatter, normalizeTextBody } from '../scri
 import { makeCtx, harness } from './_helpers.mjs';
 
 const { test, done } = harness();
+const root = fileURLToPath(new URL('..', import.meta.url));
 const stamp = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 const sb = await provisionSandbox({ ts: stamp, seed: false });
 const workBase = mkdtempSync(join(tmpdir(), 'ai1-sync-'));
@@ -565,6 +569,28 @@ try {
     updateInstallLogForMirror(ictx, { installed: res.installLog.installed, removed: res.installLog.removed, pkg: { name: res.manifest.name, version: res.manifest.version } });
 
     assert.ok(!readInstallLog(packagesDir).some((c) => c.name === 'ai1-sample-recipe'), 'recipe dropped from install.json');
+  });
+
+  await test('--skip-install-log: mirror updates package but leaves install.json unchanged', async () => {
+    const packagesDir = pkgDir('pkgs-skip-log');
+    const priorLog = {
+      install_version: 3,
+      install_changed_at: '2026-01-01T00:00:00.000Z',
+      installed_components: [{ type: 'skill', name: 'prior', version: 1, package: 'other', package_version: '9' }],
+    };
+    writeFileSync(installLogPath(packagesDir), `${JSON.stringify(priorLog, null, 2)}\n`);
+
+    const dir = pkgDir('pkg-skip-log');
+    const r = spawnSync(process.execPath, ['scripts/sync.mjs', dir, '--mirror', '--skip-install-log', '--force', '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, PACKAGES_DIR: packagesDir },
+    });
+    assert.equal(r.status, 0, r.stderr || r.stdout);
+    const body = JSON.parse(r.stdout);
+    assert.ok(!('installLog' in body), 'json omits installLog when the log was not updated');
+    assert.equal(readFileSync(installLogPath(packagesDir), 'utf8'), `${JSON.stringify(priorLog, null, 2)}\n`, 'install.json byte-identical');
+    assert.ok(existsSync(join(dir, 'ai1-package.yaml')), 'package was mirrored');
   });
 } finally {
   if (prevSatelliteId === undefined) delete process.env.SATELLITE_ID; else process.env.SATELLITE_ID = prevSatelliteId;

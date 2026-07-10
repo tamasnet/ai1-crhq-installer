@@ -232,7 +232,7 @@ await test('boolean flag given a value → message + exit 2', () => {
 });
 
 await test('mirror-only flag without --mirror → message + exit 2', () => {
-  for (const f of ['--normalize']) {
+  for (const f of ['--normalize', '--skip-install-log']) {
     const r = sync([f]);
     assert.equal(r.status, 2, f);
     assert.match(out(r), /requires? --mirror/, f);
@@ -259,6 +259,10 @@ await test('--mirror rejects plural --type values', () => {
 
 await test('--add-project is listed in sync help', () => {
   assert.match(sync(['--help']).stdout, /--add-project/);
+});
+
+await test('--skip-install-log is listed in sync help', () => {
+  assert.match(sync(['--help']).stdout, /--skip-install-log/);
 });
 
 // ── sync.mjs git-safety guard ────────────────────────────────────────────────────────────

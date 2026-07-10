@@ -138,6 +138,7 @@ Use `--mirror` when the live satellite is the authority and the package should m
 
 ```bash
 node scripts/sync.mjs <package-dir> --mirror
+node scripts/sync.mjs <package-dir> --mirror --skip-install-log
 node scripts/sync.mjs <package-dir> --mirror --dry-run
 node scripts/sync.mjs <package-dir> --mirror --type=skill,recipe --include='^acme-' --json
 node scripts/install.mjs <package-dir>   # reinstall the mirrored state
@@ -150,7 +151,9 @@ Mirror mode:
 - Removes in-scope manifest entries whose live component is gone.
 - Preserves live skill `install_type` by default; pass `--normalize` to ship distributable org/locked defaults.
 - Bumps the package-level integer `version` only when package content changes.
-- Reconciles `${PACKAGES_DIR:-~/packages}/install.json` for exactly the components the mirror carries.
+- Reconciles `${PACKAGES_DIR:-~/packages}/install.json` for exactly the components the mirror carries (unless `--skip-install-log`).
+
+`--skip-install-log` (mirror only): export package content without updating `install.json`. Use when mirroring is for version control only and install provenance should stay as recorded by `install.mjs`.
 
 Services and projects are not mirrored because they are not DB-resident; projects are added only through `--add-project` and then managed by git.
 

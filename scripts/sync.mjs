@@ -15,7 +15,7 @@
 //                 [--add-job=<n>] [--add-project=<n>] [--remove-skill=<n>] [--remove-recipe=<n>]
 //                 [--remove-agent=<n>] [--remove-job=<n>] [--remove-project=<n>]
 //                 [--type=<t>] [--include=<p>] [--exclude=<p>]
-//                 [--mirror [--normalize]] [--dry-run] [--json] [--help]
+//                 [--mirror [--normalize] [--skip-install-log]] [--dry-run] [--json] [--help]
 
 import { resolve } from 'node:path';
 import {
@@ -70,6 +70,8 @@ never touched — run before git diff/add/commit.
                         package version by 1 when the run changed package content.
   --normalize           With --mirror: ship the distributable default for added skills (org/locked)
                         instead of preserving the live user/org install_type. (Default: preserve.)
+  --skip-install-log    With --mirror: update the package only; do not reconcile
+                        install.json under PACKAGES_DIR (default ~/packages).
 
   --dry-run             Preview what would be written/removed; no filesystem or manifest changes
   --force               Proceed even if <package-dir> is not inside a git repository (see below)
@@ -93,13 +95,13 @@ Exit codes: 0 = clean  1 = error or export failure  2 = usage error
 
 // sync's own flag set — a spec the satellite-tools mode-based validator doesn't cover.
 const FLAG_SPEC = {
-  bool:  ['--mirror', '--normalize', '--dry-run', '--force', '--json', '--help'],
+  bool:  ['--mirror', '--normalize', '--skip-install-log', '--dry-run', '--force', '--json', '--help'],
   value: ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--add-project',
           '--remove-skill', '--remove-recipe', '--remove-agent', '--remove-job', '--remove-project',
           '--type', '--include', '--exclude'],
 };
 // Flags that only make sense inside --mirror.
-const MIRROR_ONLY = ['--normalize'];
+const MIRROR_ONLY = ['--normalize', '--skip-install-log'];
 const ADD_FLAGS = ['--add-skill', '--add-recipe', '--add-agent', '--add-job', '--add-project'];
 const REMOVE_FLAGS = ['--remove-skill', '--remove-recipe', '--remove-agent', '--remove-job', '--remove-project'];
 
@@ -159,6 +161,7 @@ try {
   const dryRun = !!flags['dry-run'];
   const json   = !!flags['json'];
   const mirror = !!flags['mirror'];
+  const skipInstallLog = !!flags['skip-install-log'];
 
   const additions = {
     skills:  flags['add-skill']  ?? [],
@@ -214,7 +217,7 @@ try {
   }
 
   const db  = getDb();
-  const log = makeLogger({ dryRun });
+  const log = makeLogger({ dryRun, quiet: json });
   const ctx = {
     db,
     log,
@@ -236,14 +239,13 @@ try {
 
   // --mirror reconciles the global install log (${PACKAGES_DIR}/install.json) so it reflects the live
   // satellite for the components THIS mirror now carries — installed slots upserted, removed ones
-  // dropped. Bookkeeping only: a write failure warns, it never fails the mirror. Dry-run skips.
+  // dropped. Bookkeeping only: a write failure warns, it never fails the mirror. Skipped by
+  // --skip-install-log; dry-run never writes.
   let installLogUpdated = null;
-  if (mirror) {
+  if (mirror && !skipInstallLog) {
     const nIn = installLog?.installed?.length ?? 0;
     const nOut = installLog?.removed?.length ?? 0;
-    if (dryRun) {
-      if (nIn || nOut) log.dry(`update install log: ${nIn} installed, ${nOut} removed`);
-    } else if (nIn || nOut) {
+    if (!dryRun && (nIn || nOut)) {
       try {
         installLogUpdated = updateInstallLogForMirror(ctx, {
           installed: installLog.installed,
@@ -258,7 +260,10 @@ try {
   }
 
   if (json) {
-    console.log(JSON.stringify({ ok, mode: mirror ? 'mirror' : 'sync', package: manifest?.name, version: manifest?.version, counts, results, ...(mirror ? { installLog: installLogUpdated } : {}) }, null, 2));
+    console.log(JSON.stringify({
+      ok, mode: mirror ? 'mirror' : 'sync', package: manifest?.name, version: manifest?.version, counts, results,
+      ...(installLogUpdated ? { installLog: installLogUpdated } : {}),
+    }, null, 2));
   } else {
     const parts = [
       counts.added     && `${counts.added} added`,
