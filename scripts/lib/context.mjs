@@ -35,7 +35,7 @@ export function parseFlags(argv) {
     mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false, INSTALL_SKILLS_AS_USER: false,
     TYPE: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
     JSON: false, COPY_PROJECTS: false, REMOVED: false, OPTIONAL: false, RUN_BUILD: false, STRICT: false,
-    FORCE: false,
+    FORCE: false, WITH_ENTRY: false,
     packageArg: '.',
   };
   for (const a of argv) {
@@ -54,6 +54,7 @@ export function parseFlags(argv) {
     else if (a === '--run-build') flags.RUN_BUILD = true;
     else if (a === '--strict') flags.STRICT = true;
     else if (a === '--force') flags.FORCE = true;
+    else if (a === '--with-entry') flags.WITH_ENTRY = true;
     // --type=<type>[,<type>...] accepts singular CLI values and stores internal collection keys.
     else if (a.startsWith('--type=')) {
       const { types, invalid } = normalizeCliTypeScope(a.slice('--type='.length));

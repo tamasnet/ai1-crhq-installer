@@ -22,7 +22,7 @@ export const FLAG_SPEC = {
     bool: ['--dry-run', '--status', '--uninstall', '--respect-locks', '--install-skills-as-user',
       '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available',
       '--prune-installed', '--copy-projects', '--removed', '--optional', '--run-build', '--strict',
-      '--force'],
+      '--force', '--with-entry'],
     value: ['--type', '--include', '--exclude'],
   },
 };
@@ -84,6 +84,22 @@ export function validateFlags(argv, { mode = 'install', declared = [] } = {}) {
   }
 }
 
+// True when the run is scoped to a subset of components (--type / --include / --exclude).
+export function isScopedRun(flags) {
+  const types = flags?.TYPE;
+  return Boolean(
+    (Array.isArray(types) ? types.length : types)
+    || flags?.INCLUDE
+    || flags?.EXCLUDE,
+  );
+}
+
+// install_entry runs on full installs; scoped runs skip unless --with-entry.
+export function shouldRunInstallEntry(flags) {
+  if (flags?.WITH_ENTRY) return true;
+  return !isScopedRun(flags);
+}
+
 // Post-parse install constraints (--strict scope, mode compatibility).
 export function validateInstallScope(flags) {
   if (!flags.STRICT) return;
@@ -128,6 +144,8 @@ Options:
   --include=<pat>            process only components whose name matches <pat>
                              (regex; a value with no regex metacharacter is an exact ^pat$ match)
   --exclude=<pat>            skip components whose name matches <pat> (applied after --include)
+  --with-entry               on a scoped run (--type / --include / --exclude), also run the package's
+                             install_entry hook (default: skipped when scoped)
   --strict                   after copying assets, delete files in the install target that are not
                              in the package; requires --include=<pat> (--type optional, to narrow
                              by component type); skills, agents, and copy-mode services/projects.

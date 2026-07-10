@@ -310,6 +310,6 @@ Projects use the same nginx/PM2 schema as services, including the `build` field 
 
 ## Install entry hook
 
-`install_entry` is for package-specific operations the declarative installer cannot infer. It is run after the declarative pass for install, status, and uninstall. The runner forwards standard flags and declared `install_flags`, and it inherits the same environment (`INSTALL_SCHEMA`, `SKILLS_BASE_DIR`, etc.).
+`install_entry` is for package-specific operations the declarative installer cannot infer. It is run after the declarative pass for install, status, and uninstall on **full** runs. On scoped runs (`--type`, `--include`, or `--exclude`), the hook is skipped unless `--with-entry` is passed. The runner forwards standard flags and declared `install_flags`, and it inherits the same environment (`INSTALL_SCHEMA`, `SKILLS_BASE_DIR`, etc.).
 
 Keep hooks idempotent and make them honor `--dry-run`, `--status`, and `--uninstall`.

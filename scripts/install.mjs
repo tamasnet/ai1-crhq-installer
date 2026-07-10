@@ -14,6 +14,7 @@ import {
   validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, parseFlags,
   ManifestError, PrereqError, PreflightError, FilterError, VERDICT,
   validateInstallScope,
+  shouldRunInstallEntry,
   validateInstallSource,
   runPruneInstalled, formatPruneReport,
 } from './lib/index.mjs';
@@ -83,6 +84,14 @@ try {
 // .mjs/.js entries run under node; other paths run directly (shebang + executable bit).
 function runInstallEntry(ctx, meta, packageRoot, rawArgv) {
   if (!meta.install_entry) return;
+  if (!shouldRunInstallEntry(ctx)) {
+    ctx.log.info('install_entry skipped (scoped run; pass --with-entry to run)');
+    ctx.record({
+      type: 'entry', name: meta.install_entry,
+      verdict: VERDICT.SKIPPED, action: 'scoped (pass --with-entry)',
+    });
+    return;
+  }
   const entryPath = resolve(packageRoot, meta.install_entry);
   if (!existsSync(entryPath)) {
     ctx.record({ type: 'entry', name: meta.install_entry, verdict: VERDICT.FAIL, action: 'missing' });

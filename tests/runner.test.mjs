@@ -59,16 +59,18 @@ await test('status mode forwarded', () => {
   assert.match(r.stdout, /ENTRY-ARGV:.*--status/);
 });
 
-await test('--type=skill forwarded', () => {
+await test('scoped run skips install_entry by default', () => {
   const r = cli(['--type=skill']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /ENTRY-ARGV:.*--type=skill/);
+  assert.doesNotMatch(r.stdout, /ENTRY-ARGV:/);
+  assert.match(r.stdout, /install_entry skipped \(scoped run/);
 });
 
-await test('--type with multiple (comma-separated) singular types forwarded', () => {
-  const r = cli(['--type=skill,recipe']);
+await test('--with-entry runs install_entry on a scoped run and forwards flags', () => {
+  const r = cli(['--type=skill', '--with-entry']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /ENTRY-ARGV:.*--type=skill,recipe/);
+  assert.match(r.stdout, /ENTRY-ARGV:.*--type=skill/);
+  assert.match(r.stdout, /ENTRY-ARGV:.*--with-entry/);
 });
 
 done();

@@ -74,7 +74,7 @@ Development/testing flags:
 | `--lifecycle` | With `--sandbox`, assert install/status/idempotency/uninstall/reinstall. |
 | `--keep` | With `--sandbox`, leave the schema and dirs for inspection. |
 | `--type=skill,recipe` | Restrict to component types. Useful for targeted development or repair. |
-| `--include=<pattern>` / `--exclude=<pattern>` | Restrict components by name. Plain values are exact matches; regex metacharacters are treated as regex. |
+| `--include=<pattern>` / `--exclude=<pattern>` | Restrict components by name. Plain values are exact matches; regex metacharacters are treated as regex. Scoped runs skip `install_entry` unless `--with-entry`. |
 | `--strict` | After copying assets, delete files in the install target not present in the package. Requires `--include`; `--type` is optional (narrows by component type). Applies to skills, agents, and copy-mode services/projects. Protected names (see the `protect` manifest field) are never deleted. Manifest `handling: strict` enables the same pruning for that component without `--strict` or `--include`. |
 | `--respect-locks` | Skip locked skills instead of unlocking/updating them. |
 | `--install-skills-as-user` | Register all skills as unlocked `user` skills. |

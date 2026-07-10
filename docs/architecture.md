@@ -42,7 +42,7 @@ install.mjs <package> [flags]
   -> create context: flags, env, DB, logger, paths
   -> preflight DB and writable install base
   -> run ordered plan: skills -> recipes -> agents -> jobs -> services -> projects
-  -> run optional install_entry hook
+  -> run optional install_entry hook (skipped on scoped runs unless --with-entry)
   -> update install log when appropriate
   -> report and close DB
 ```
