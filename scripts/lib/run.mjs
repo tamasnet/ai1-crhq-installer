@@ -9,6 +9,9 @@ import * as job from './core/job.mjs';
 import * as service from './core/service.mjs';
 import { VERDICT } from './log.mjs';
 import { makeFilter, hasFilter } from './filter.mjs';
+import { COLLECTION_TO_CLI_TYPE } from './component-types.mjs';
+import { scriptsEnabled } from './flags.mjs';
+import { runComponentScript } from './hooks.mjs';
 
 export const ORDER = ['skills', 'recipes', 'agents', 'jobs', 'services', 'projects'];
 
@@ -41,6 +44,25 @@ export function resolveHandling(handling, mode, { removed = false, optional = fa
   return mode === 'uninstall' ? 'remove' : mode === 'status' ? 'status' : 'upsert';
 }
 
+// Action-bound components for this run (filters + handling). Used for INSTALL_COMPONENTS env and hook planning.
+export function planActionBoundComponents(ctx, plan) {
+  const handlingFlags = { removed: !!ctx.REMOVED, optional: !!ctx.OPTIONAL };
+  const match = makeFilter({ include: ctx.INCLUDE, exclude: ctx.EXCLUDE });
+  const only = Array.isArray(ctx.TYPE) ? ctx.TYPE : (ctx.TYPE ? [ctx.TYPE] : []);
+  const onlySet = only.length ? new Set(only) : null;
+  const types = onlySet ? ORDER.filter((t) => onlySet.has(t)) : ORDER;
+  const seq = ctx.mode === 'uninstall' ? [...types].reverse() : types;
+  const components = [];
+  for (const type of seq) {
+    for (const def of (plan[type] || []).filter((d) => match(nameOf(type, d)))) {
+      const op = resolveHandling(def.handling, ctx.mode, handlingFlags);
+      if (!op) continue;
+      components.push({ collection: type, type: COLLECTION_TO_CLI_TYPE[type], name: def.name, op });
+    }
+  }
+  return components;
+}
+
 // A visible, exit-code-neutral result line for a component skipped by its handling mode, with a hint
 // on how to activate it. Recorded so --status/install summaries (and --json) show the entry rather
 // than silently dropping it.
@@ -61,10 +83,8 @@ const DISPATCH = {
   projects: { upsert: service.installProject, remove: service.removeProject, status: service.statusProject },
 };
 
-export async function runPlan(ctx, plan) {
-  // Per-component handling is resolved against the run mode + the --removed/--optional activation
-  // flags (resolveHandling), so the verb can differ per component (e.g. a 'removed' tombstone is
-  // removed during an install run).
+export async function runPlan(ctx, plan, hookCtx = null) {
+  // hookCtx: { meta, packageRoot, rawArgv } — when set, component before/after scripts run.
   const handlingFlags = { removed: !!ctx.REMOVED, optional: !!ctx.OPTIONAL };
   // --type restricts which component TYPES run. The CLI normalizes singular values (`skill`, `job`)
   // into these internal plural collection keys; library callers may pass collection keys directly.
@@ -91,6 +111,7 @@ export async function runPlan(ctx, plan) {
     .map((def) => def.name);
   ctx.plannedSkills = new Set(willRun('skills') ? plannedUpsert('skills', plan.skills) : []);
   ctx.plannedRecipes = new Set(willRun('recipes') ? plannedUpsert('recipes', plan.recipes) : []);
+  ctx.plannedComponents = planActionBoundComponents(ctx, plan);
 
   let considered = 0;
   let selected = 0;
@@ -107,14 +128,33 @@ export async function runPlan(ctx, plan) {
       }
       const fn = DISPATCH[type]?.[verb];
       if (!fn) continue;
+
+      const component = { type: COLLECTION_TO_CLI_TYPE[type], name: def.name, op: verb };
+      const hooks = hookCtx && scriptsEnabled(ctx);
+      if (hooks && def.before) {
+        const ok = runComponentScript(
+          ctx, hookCtx.meta, hookCtx.packageRoot, hookCtx.rawArgv,
+          def.before, 'before', component, ctx.plannedComponents,
+        );
+        if (!ok) continue;
+      }
+
       try {
         const r = await fn(ctx, def);
-        if (r) r.op = verb;   // tag the operation so the install log can upsert vs. delete per result
+        if (r) r.op = verb;
         ctx.record(r);
       } catch (e) {
         const name = def.name || '?';
         ctx.log.error(`${type}:${name} failed: ${e.message}`);
         ctx.record({ type: type.replace(/s$/, ''), name, verdict: e.name === 'PrereqError' ? VERDICT.PREREQ : VERDICT.FAIL, action: 'error', detail: e.message });
+        continue;
+      }
+
+      if (hooks && def.after) {
+        runComponentScript(
+          ctx, hookCtx.meta, hookCtx.packageRoot, hookCtx.rawArgv,
+          def.after, 'after', component, ctx.plannedComponents,
+        );
       }
     }
   }

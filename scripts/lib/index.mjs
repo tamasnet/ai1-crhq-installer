@@ -19,9 +19,14 @@ export { assertSafeSegment, assertDnsLabel, assertSafeEnvValue, formatEnvValue }
 export { loadManifest, validateManifest, ManifestError, INSTALLER_VERSION, HANDLING_VALUES } from './manifest.mjs';
 export { makeFilter, compileMatcher, hasFilter, FilterError } from './filter.mjs';
 export { CLI_TYPE_TO_COLLECTION, COLLECTION_TO_CLI_TYPE, CLI_TYPE_VALUES, COLLECTION_TYPE_VALUES, splitCliTypeValues, normalizeCliTypeScope, formatCliTypeError } from './component-types.mjs';
-export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC, validateInstallScope, isScopedRun, shouldRunInstallEntry } from './flags.mjs';
+export { validateFlags, usage, wantsHelp, declaredFlagNames, UsageError, STANDARD_FLAG_NAMES, FLAG_SPEC, validateInstallScope, isScopedRun, shouldRunPackageScripts, shouldRunInstallEntry, scriptsEnabled } from './flags.mjs';
 export { validateInstallSource, isReposPlatformPackage } from './install-guard.mjs';
-export { runPlan, ORDER, resolveHandling } from './run.mjs';
+export { runPlan, ORDER, resolveHandling, planActionBoundComponents } from './run.mjs';
+export {
+  HookAbortError, resolvePackageAfter, resolvePackageFlags, warnDeprecatedPackageFields,
+  runPackageScript, runComponentScript, shouldRunPackageBefore, actualComponentsFromResults,
+  formatComponentsEnv,
+} from './hooks.mjs';
 export { isInstallStrict } from './strict.mjs';
 export { runSync, SyncError, SYNC_TYPES, discoverLiveComponents } from './sync.mjs';
 export { runPruneInstalled, formatPruneReport } from './prune-installed.mjs';

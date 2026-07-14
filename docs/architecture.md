@@ -37,15 +37,19 @@ DB-managed resources are written through knex, not REST, so sandbox mode can red
 install.mjs <package> [flags]
   -> handle --help / --list-installed / --list-available
   -> load ai1-package.yaml and component files
-  -> validate CLI flags, including package-specific install_flags
+  -> validate CLI flags, including package-specific flags
   -> provision sandbox if requested
   -> create context: flags, env, DB, logger, paths
   -> preflight DB and writable install base
+  -> run package before script (install only; aborts on failure)
   -> run ordered plan: skills -> recipes -> agents -> jobs -> services -> projects
-  -> run optional install_entry hook (skipped on scoped runs unless --with-entry)
+     (component before/after scripts around each action-bound component)
   -> update install log when appropriate
+  -> run package after script (install, uninstall, status)
   -> report and close DB
 ```
+
+Package scripts are skipped on scoped runs unless `--with-package-scripts`. Pass `--no-scripts` to skip all hook scripts (package and component). Component scripts still run on scoped installs unless `--no-scripts` is set.
 
 Uninstall uses the reverse component order. Status is read-only. Dry-run records intended changes without DB/filesystem writes; service/project build commands are skipped unless `--run-build` is passed, and nginx/PM2 apply is always skipped.
 
@@ -120,6 +124,7 @@ scripts/
     ├── db.mjs                 # knex access and optional schema/searchPath
     ├── manifest.mjs           # manifest/component parsing and validation
     ├── run.mjs                # ordered install/status/uninstall dispatch
+    ├── hooks.mjs              # package/component before/after script runner
     ├── sync.mjs               # package export and mirror reconciliation
     ├── remote.mjs             # hub protocol client
     ├── action.mjs             # queued hub action processor
@@ -144,6 +149,12 @@ scripts/
 
 | Variable | Default | Used for |
 |----------|---------|----------|
+| `INSTALL_MODE` | unset | Hook scripts: `install`, `uninstall`, or `status`. |
+| `INSTALL_PACKAGE` | unset | Hook scripts: `name@version`. |
+| `INSTALL_DRY_RUN` | unset | Hook scripts: `1` or `0`. |
+| `INSTALL_COMPONENTS` | unset | Hook scripts: space-separated action-bound list (`skill:foo agent:bar`). |
+| `INSTALL_COMPONENT` | unset | Component hook scripts: current `type:name`. |
+| `INSTALL_COMPONENT_OP` | unset | Component hook scripts: `upsert`, `remove`, or `status`. |
 | `SKILLS_BASE_DIR` | `<satellite-root>/user-skills` | Installed skill directories. |
 | `AGENT_BRAINS_DIR` | `<satellite-root>/documents/agent-brains` | Installed agent brain directories. |
 | `INSTALL_SCHEMA` | unset | Optional DB schema/search path; sandbox sets it. |

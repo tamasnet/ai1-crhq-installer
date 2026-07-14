@@ -25,7 +25,7 @@ The manifest is the source of truth. Files that exist in the package but are not
 ├── projects/<project-name>/
 │   ├── project.yaml
 │   └── ...                      # git-managed project source
-└── scripts/install.mjs          # optional install_entry hook
+└── scripts/…                   # optional package before/after hook scripts
 ```
 
 A package may contain any subset of component types, but `components` must be present in the manifest.
@@ -47,6 +47,8 @@ components:
       install_type: org          # optional: org (default, locked) or user (unlocked)
       handling: normal           # optional: normal (default) | removed | optional | strict
       protect: ['!config']       # optional: extend/trim the protected-names set (see Component protect)
+      before: scripts/pre-skill.mjs   # optional: run before this component's operation
+      after: scripts/post-skill.mjs # optional: run after this component's operation
   recipes:
     - path: recipes/my-recipe.md
       version: 1                 # optional positive integer
@@ -62,10 +64,11 @@ components:
     - path: projects/my-project
       version: 1                 # required positive integer; must match project.yaml version
 
-install_entry: scripts/install.mjs
-install_flags:
+before: scripts/prepare.mjs
+after: scripts/install.mjs
+flags:
   - name: --skip-extra
-    description: Package-specific flag forwarded to install_entry.
+    description: Package-specific flag forwarded to hook scripts.
 ```
 
 ### Required fields
@@ -77,8 +80,11 @@ install_flags:
 | `description` | yes | Package summary. |
 | `components` | yes | Mapping of component type to list of entries. |
 | `installer` | no | Positive integer minimum installer version; current installer version is `2`. |
-| `install_entry` | no | Package-specific hook run after declarative install/status/uninstall. |
-| `install_flags` | no | Package-specific flags accepted by `install.mjs` and forwarded to `install_entry`. |
+| `before` | no | Package script run before declarative install (install mode only). |
+| `after` | no | Package script run after declarative install/status/uninstall. |
+| `install_entry` | no | Deprecated alias for `after`. |
+| `flags` | no | Package-specific flags accepted by `install.mjs` and forwarded to hook scripts. |
+| `install_flags` | no | Deprecated alias for `flags`. |
 
 Unknown component types are invalid. Unknown top-level metadata is tolerated by YAML parsing but ignored by the installer.
 
@@ -139,6 +145,10 @@ Activating flags (`install.mjs`):
 | `--optional` | Also install `handling: optional` entries on an install run. Not needed for uninstall. |
 
 Components skipped by their handling mode are reported with a `SKIPPED` verdict (exit-code neutral) so they remain visible in the run summary and `--json` output.
+
+### Component hook scripts
+
+Any component entry may declare optional `before` and `after` script paths. They run around that component's declarative operation (`upsert`, `remove`, or `status`) when the component is action-bound this run. Component hooks run even on scoped installs (`--type`, `--include`, `--exclude`) unless `--no-scripts` is passed. A failing component `before` script skips that component's operation; other components continue.
 
 ### Component protect
 
@@ -308,8 +318,27 @@ Projects use the same nginx/PM2 schema as services, including the `build` field 
 
 `sync.mjs --add-project=<name>` moves `/opt/projects/user/<name>` into `projects/<name>` inside the package, adds the manifest entry, and replaces the live directory with a symlink. If the live project has no `project.yaml`, a minimal valid default (`name`, `version: 1`, `start: node server.js`) is generated inside the package for the author to edit. Mirror mode never auto-adds projects, and later sync/mirror runs do not export project content; git is the source of truth after the initial add.
 
-## Install entry hook
+## Hook scripts
 
-`install_entry` is for package-specific operations the declarative installer cannot infer. It is run after the declarative pass for install, status, and uninstall on **full** runs. On scoped runs (`--type`, `--include`, or `--exclude`), the hook is skipped unless `--with-entry` is passed. The runner forwards standard flags and declared `install_flags`, and it inherits the same environment (`INSTALL_SCHEMA`, `SKILLS_BASE_DIR`, etc.).
+Package and component entries may declare optional `before` / `after` script paths (relative to the package root). `.mjs`/`.js` run under `node`; other paths run directly (shebang).
 
-Keep hooks idempotent and make them honor `--dry-run`, `--status`, and `--uninstall`.
+| Scope | Field | When |
+|-------|-------|------|
+| Package | `before` | Install only — after preflight, before any component writes. Failure aborts the run. |
+| Package | `after` | After declarative pass + install log — install, uninstall, and status. |
+| Component | `before` / `after` | Around that component's operation when it is action-bound this run. |
+
+On scoped runs (`--type`, `--include`, `--exclude`), **package** scripts are skipped unless `--with-package-scripts` (`--with-entry` is a deprecated alias). **Component** scripts still run for matched components. Pass `--no-scripts` to skip all hooks.
+
+Hook subprocesses inherit `INSTALL_SCHEMA`, `SKILLS_BASE_DIR`, etc., plus:
+
+| Variable | Meaning |
+|----------|---------|
+| `INSTALL_MODE` | `install`, `uninstall`, or `status` |
+| `INSTALL_PACKAGE` | `name@version` |
+| `INSTALL_DRY_RUN` | `1` or `0` |
+| `INSTALL_COMPONENTS` | Space-separated action-bound list: `skill:foo agent:bar` |
+| `INSTALL_COMPONENT` | Current component (component hooks): `service:api` |
+| `INSTALL_COMPONENT_OP` | Current verb (component hooks): `upsert`, `remove`, or `status` |
+
+The runner forwards standard flags and declared `flags`. Keep hooks idempotent; honor `--dry-run`, `--status`, and `--uninstall`.

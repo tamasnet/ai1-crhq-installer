@@ -49,7 +49,7 @@ await test('unknown option → message + exit 2', () => {
 });
 
 await test('undeclared package-specific flag is rejected', () => {
-  const r = install(['--no-such-pkg-flag']);     // not in examples/bundle install_flags
+  const r = install(['--no-such-pkg-flag']);     // not in examples/bundle flags
   assert.equal(r.status, 2);
   assert.match(out(r), /unknown option: --no-such-pkg-flag/);
 });

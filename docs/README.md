@@ -9,7 +9,7 @@ Current reference for `ai1-satellite-tools` (manifest v2 packages), a satellite 
 | [`../SKILL.md`](../SKILL.md) | Canonical agent/operator usage instructions. |
 | [`package-manifest-spec.md`](./package-manifest-spec.md) | Ai1 Package layout and `ai1-package.yaml` schema. |
 | [`architecture.md`](./architecture.md) | CLI/library structure, install/sync flows, storage model, safety boundaries. |
-| [`integration-reference.md`](./integration-reference.md) | satellite DB/file/service mappings used by the installer. |
+| [`integration-reference.md`](./integration-reference.md) | satellite DB/file/service mappings and hook script environment. |
 | [`testing-and-sandbox.md`](./testing-and-sandbox.md) | Sandbox lifecycle and test suite coverage. |
 | [`repo-methodology.md`](./repo-methodology.md) | GitHub Client Repository model used by `polaris.mjs`. |
 

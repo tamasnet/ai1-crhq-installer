@@ -7,8 +7,8 @@
 // Two flag kinds:
 //   • boolean — present or absent; supplying `=value` is an error.
 //   • value   — require `--flag=<value>`; a bare `--flag` or empty `--flag=` is an error.
-// A package may declare extra package-specific flags via `install_flags` in its manifest; those are
-// accepted in `install` mode (and forwarded to the package's install_entry). Anything else is
+// A package may declare extra package-specific flags via `flags` in its manifest; those are
+// accepted in `install` mode (and forwarded to hook scripts). install_flags is deprecated.
 // rejected with a UsageError → usage exit (2), so a typo never silently does the wrong thing.
 import { CLI_TYPE_VALUES, formatCliTypeError, normalizeCliTypeScope } from './component-types.mjs';
 
@@ -22,7 +22,7 @@ export const FLAG_SPEC = {
     bool: ['--dry-run', '--status', '--uninstall', '--respect-locks', '--install-skills-as-user',
       '--sandbox', '--keep', '--lifecycle', '--json', '--list-installed', '--list-available',
       '--prune-installed', '--copy-projects', '--removed', '--optional', '--run-build', '--strict',
-      '--force', '--with-entry'],
+      '--force', '--with-package-scripts', '--with-entry', '--no-scripts'],
     value: ['--type', '--include', '--exclude'],
   },
 };
@@ -41,9 +41,8 @@ export function wantsHelp(argv) {
 
 // Package-specific flag names a manifest permits (install mode), e.g. ['--no-ingest'].
 export function declaredFlagNames(meta) {
-  return Array.isArray(meta?.install_flags)
-    ? meta.install_flags.map((f) => f && f.name).filter(Boolean)
-    : [];
+  const list = meta?.flags ?? meta?.install_flags;
+  return Array.isArray(list) ? list.map((f) => f && f.name).filter(Boolean) : [];
 }
 
 const flagName = (token) => {
@@ -75,7 +74,7 @@ export function validateFlags(argv, { mode = 'install', declared = [] } = {}) {
     } else if (bool.has(name)) {
       if (hasEq) throw new UsageError(`option ${name} does not take a value`);
     } else if (pkg.has(name)) {
-      // package-specific flag declared in the manifest's install_flags — forwarded to install_entry.
+      // package-specific flag declared in the manifest's flags — forwarded to hook scripts.
     } else if (STANDARD_FLAG_NAMES.has(name)) {
       throw new UsageError(`option ${name} is not supported by ${mode} (see --help)`);
     } else {
@@ -94,10 +93,20 @@ export function isScopedRun(flags) {
   );
 }
 
-// install_entry runs on full installs; scoped runs skip unless --with-entry.
-export function shouldRunInstallEntry(flags) {
-  if (flags?.WITH_ENTRY) return true;
+export function scriptsEnabled(flags) {
+  return !flags?.NO_SCRIPTS;
+}
+
+// Package before/after scripts run on full installs; scoped runs skip unless --with-package-scripts.
+export function shouldRunPackageScripts(flags) {
+  if (!scriptsEnabled(flags)) return false;
+  if (flags?.WITH_PACKAGE_SCRIPTS || flags?.WITH_ENTRY) return true;
   return !isScopedRun(flags);
+}
+
+/** @deprecated use shouldRunPackageScripts */
+export function shouldRunInstallEntry(flags) {
+  return shouldRunPackageScripts(flags);
 }
 
 // Post-parse install constraints (--strict scope, mode compatibility).
@@ -144,8 +153,10 @@ Options:
   --include=<pat>            process only components whose name matches <pat>
                              (regex; a value with no regex metacharacter is an exact ^pat$ match)
   --exclude=<pat>            skip components whose name matches <pat> (applied after --include)
-  --with-entry               on a scoped run (--type / --include / --exclude), also run the package's
-                             install_entry hook (default: skipped when scoped)
+  --with-package-scripts     on a scoped run (--type / --include / --exclude), also run the
+                             package before/after scripts (default: skipped when scoped)
+  --with-entry               deprecated alias for --with-package-scripts
+  --no-scripts               skip all package and component before/after scripts
   --strict                   after copying assets, delete files in the install target that are not
                              in the package; requires --include=<pat> (--type optional, to narrow
                              by component type); skills, agents, and copy-mode services/projects.
@@ -164,8 +175,8 @@ Install refuses a package source inside a git work tree (may deploy uncommitted 
 packages under PACKAGE_BASE_DIR are the normal path; REPOS_BASE_DIR/<repo>/platform is always
 allowed; other checkouts require --force.
 
-A package may declare additional package-specific flags via 'install_flags' in its manifest;
-those are accepted and forwarded to its install_entry hook. Any other option is rejected.`;
+A package may declare additional package-specific flags via 'flags' in its manifest;
+those are accepted and forwarded to its hook scripts. Any other option is rejected.`;
 
 export function usage() {
   return INSTALL_USAGE;

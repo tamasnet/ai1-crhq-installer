@@ -23,8 +23,8 @@ components:
     - path: services/ai1-sample-svc
       version: 1
 
-# Optional package-specific hook, invoked after the declarative pass (all modes).
-install_entry: scripts/install.mjs
-install_flags:
+# Optional package after script, invoked after the declarative pass (all modes).
+after: scripts/install.mjs
+flags:
   - name: --skip-extra
-    description: Example package-specific flag (forwarded to install_entry).
+    description: Example package-specific flag (forwarded to hook scripts).

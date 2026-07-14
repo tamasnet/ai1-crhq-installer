@@ -65,7 +65,8 @@ Coverage summary:
 | `job.test.mjs` | Job schedule aliases, script args, prereqs, idempotency, removal. |
 | `service.test.mjs` | Service/project artifact rendering, port selection, dry-run, sandbox skip, symlink handling, secret placement. |
 | `service-live.test.mjs` | Live nginx/PM2 apply/remove (requires `AI1_LIVE_SERVICE_TEST=1`; otherwise skipped). |
-| `runner.test.mjs` | Preflight, install entry forwarding, component type selection. |
+| `runner.test.mjs` | Preflight, package/component hook scripts, flag forwarding, scoped-run script gating. |
+| `hooks.test.mjs` | Manifest hook field validation; `after`/`flags` aliases and backwards compatibility. |
 | `validate.test.mjs` | Name/env-value validation and manifest error paths. |
 | `filter.test.mjs` | Include/exclude matching and invalid regex handling. |
 | `handling.test.mjs` | `handling: removed`/`optional` install, uninstall, and sync behavior. |

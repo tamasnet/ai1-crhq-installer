@@ -74,12 +74,15 @@ Development/testing flags:
 | `--lifecycle` | With `--sandbox`, assert install/status/idempotency/uninstall/reinstall. |
 | `--keep` | With `--sandbox`, leave the schema and dirs for inspection. |
 | `--type=skill,recipe` | Restrict to component types. Useful for targeted development or repair. |
-| `--include=<pattern>` / `--exclude=<pattern>` | Restrict components by name. Plain values are exact matches; regex metacharacters are treated as regex. Scoped runs skip `install_entry` unless `--with-entry`. |
+| `--include=<pattern>` / `--exclude=<pattern>` | Restrict components by name. Plain values are exact matches; regex metacharacters are treated as regex. Scoped runs skip package scripts unless `--with-package-scripts`. Component scripts still run for matched components. |
+| `--with-package-scripts` | On scoped runs, also run package `before`/`after` scripts. |
+| `--with-entry` | Deprecated alias for `--with-package-scripts`. |
+| `--no-scripts` | Skip all package and component hook scripts. |
 | `--strict` | After copying assets, delete files in the install target not present in the package. Requires `--include`; `--type` is optional (narrows by component type). Applies to skills, agents, and copy-mode services/projects. Protected names (see the `protect` manifest field) are never deleted. Manifest `handling: strict` enables the same pruning for that component without `--strict` or `--include`. |
 | `--respect-locks` | Skip locked skills instead of unlocking/updating them. |
 | `--install-skills-as-user` | Register all skills as unlocked `user` skills. |
 
-The installer accepts only standard flags plus package-specific flags declared in `install_flags`. Unknown flags fail before side effects.
+The installer accepts only standard flags plus package-specific flags declared in `flags` (`install_flags` is deprecated). Unknown flags fail before side effects.
 
 Install refuses a package source inside a git work tree (uncommitted work may reach the satellite). Built packages under `PACKAGE_BASE_DIR` are the normal install path. `REPOS_BASE_DIR/<repo>/platform` is always permitted; other checkouts (including `user/`) require `--force`.
 
@@ -247,10 +250,10 @@ components:
   projects:
     - path: projects/my-project
       version: 1
-install_entry: scripts/install.mjs
-install_flags:
+after: scripts/install.mjs
+flags:
   - name: --skip-extra
-    description: Package-specific flag forwarded to install_entry.
+    description: Package-specific flag forwarded to hook scripts.
 ```
 
 Component files:
@@ -268,12 +271,20 @@ Any component entry may also carry an optional `handling` field: `normal` (defau
 
 Any component entry may also carry an optional `protect: []` list — glob patterns (`*`/`?` within a segment, `**` across segments) with tiered matching: patterns without `/` match **top-level** names only; patterns with `/` match anchored paths from the component root (and descendants); `**` matches at any depth (e.g. `**/node_modules`). Protected paths are never deleted by a `--strict` install and never exported by sync. Every component gets the defaults (`.*`, `_*`, `activity`, `memory`, `data`, `config`, `state`, `uploads`, `backup`, `logs`, `ecosystem.config.cjs`); the entry's list extends them, and a `!pattern` entry removes that exact default (e.g. `protect: ['!config']` for a component that ships a real `config/` directory). Install copy is unaffected: a package that ships a protected path installs it once as one-way seed data (warned at install, then never pruned or synced).
 
+Any component entry may also carry optional `before` / `after` script paths — they run around that component's operation when it is action-bound this run (even on scoped installs; skipped with `--no-scripts`). Package-level `before` (install only) and `after` (all modes) scripts are separate manifest fields; package scripts are skipped on scoped runs unless `--with-package-scripts`.
+
 Full package spec: `docs/package-manifest-spec.md`.
 
 ## Environment
 
 | Variable | Meaning |
 |----------|---------|
+| `INSTALL_MODE` | `install`, `uninstall`, or `status` — set for hook scripts. |
+| `INSTALL_PACKAGE` | `name@version` — set for hook scripts. |
+| `INSTALL_DRY_RUN` | `1` or `0` — set for hook scripts. |
+| `INSTALL_COMPONENTS` | Action-bound component list (`skill:foo agent:bar`) — set for hook scripts. |
+| `INSTALL_COMPONENT` | Current component (`type:name`) — set for component hook scripts. |
+| `INSTALL_COMPONENT_OP` | Current verb (`upsert`, `remove`, `status`) — set for component hook scripts. |
 | `SKILLS_BASE_DIR` | Parent dir for installed skill folders. Default `<satellite-root>/user-skills`. |
 | `AGENT_BRAINS_DIR` | Parent dir for installed agent brain folders. Default `<satellite-root>/documents/agent-brains`. |
 | `INSTALL_SCHEMA` | Optional Postgres schema/search path for DB writes. Sandbox sets this. |

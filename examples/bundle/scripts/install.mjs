@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Sample install_entry — the escape hatch for package-specific steps the declarative installer
+// Sample package after script — the escape hatch for package-specific steps the declarative installer
 // can't infer (OAuth, data seed, starting a one-off process). The runner forwards the mode +
 // standard + package-specific flags as argv, and INSTALL_SCHEMA / SKILLS_BASE_DIR via env, so this
 // hook honors --dry-run / --uninstall / --status and targets the same (sandbox) schema.

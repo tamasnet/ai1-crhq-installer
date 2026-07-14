@@ -9,7 +9,7 @@ Reference Ai1 Package for `ai1-satellite-tools`. It includes each DB component t
 | Agent | `agents/ai1-sample-agent.md` + `agents/ai1-sample-agent/` | Content `.md` plus a sample brain file. |
 | Job | `jobs/ai1-sample-job.yaml` | Hourly job requiring the sample skill. |
 | Service | `services/ai1-sample-svc/` | Minimal HTTP service deployed via nginx + PM2 on real install. |
-| Install entry | `scripts/install.mjs` | Package-specific hook used to demonstrate flag forwarding. |
+| Install hook | `scripts/install.mjs` | Package `after` script demonstrating flag forwarding (`--skip-extra`). |
 
 Run from the repository root:
 

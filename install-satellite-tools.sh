@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install_entry — symlink ai1-satellite-tools CLIs into ~/.local/bin and schedule heartbeat-actions.
+# Package after script — symlink ai1-satellite-tools CLIs into ~/.local/bin and schedule heartbeat-actions.
 # Path defaults match scripts/lib/context.mjs.
 
 set -euo pipefail

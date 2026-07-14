@@ -35,7 +35,7 @@ export function parseFlags(argv) {
     mode: 'install', DRY_RUN: false, RESPECT_LOCKS: false, INSTALL_SKILLS_AS_USER: false,
     TYPE: null, INCLUDE: null, EXCLUDE: null, SANDBOX: false, KEEP: false, LIFECYCLE: false,
     JSON: false, COPY_PROJECTS: false, REMOVED: false, OPTIONAL: false, RUN_BUILD: false, STRICT: false,
-    FORCE: false, WITH_ENTRY: false,
+    FORCE: false, WITH_PACKAGE_SCRIPTS: false, WITH_ENTRY: false, NO_SCRIPTS: false,
     packageArg: '.',
   };
   for (const a of argv) {
@@ -54,7 +54,9 @@ export function parseFlags(argv) {
     else if (a === '--run-build') flags.RUN_BUILD = true;
     else if (a === '--strict') flags.STRICT = true;
     else if (a === '--force') flags.FORCE = true;
-    else if (a === '--with-entry') flags.WITH_ENTRY = true;
+    else if (a === '--with-package-scripts') flags.WITH_PACKAGE_SCRIPTS = true;
+    else if (a === '--with-entry') { flags.WITH_ENTRY = true; flags.WITH_PACKAGE_SCRIPTS = true; }
+    else if (a === '--no-scripts') flags.NO_SCRIPTS = true;
     // --type=<type>[,<type>...] accepts singular CLI values and stores internal collection keys.
     else if (a.startsWith('--type=')) {
       const { types, invalid } = normalizeCliTypeScope(a.slice('--type='.length));
@@ -63,7 +65,7 @@ export function parseFlags(argv) {
     }
     else if (a.startsWith('--include=')) flags.INCLUDE = a.slice('--include='.length);
     else if (a.startsWith('--exclude=')) flags.EXCLUDE = a.slice('--exclude='.length);
-    else if (a.startsWith('--')) { /* package-specific flag — forwarded to install_entry, ignored here */ }
+    else if (a.startsWith('--')) { /* package-specific flag — forwarded to hook scripts, ignored here */ }
     else flags.packageArg = a;
   }
   return flags;

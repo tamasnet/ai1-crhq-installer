@@ -7,6 +7,7 @@ It manages:
 - Satellite **skills**, **recipes**, **agents**, and **background jobs** directly through the satellite database.
 - Standalone **services** as nginx + PM2 web apps under `$SERVICES_BASE_DIR/<service>`.
 - Git-managed **projects** as nginx + PM2 web apps under `/opt/projects/user/<project>` symlinked to their package source by default.
+- Optional package and component **hook scripts** (`before` / `after` in the manifest) for custom install lifecycle steps.
 - Mirroring live skill/agent/recipe/job definitions back into a version-controllable package.
 - Ai1 Platform Hub registration/config/package download workflows.
 - Queued hub actions from `${REMOTE_BASE_DIR}/actions.json`.

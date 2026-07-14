@@ -88,6 +88,8 @@ export function validateManifest(meta) {
         || entry.protect.some((p) => typeof p !== 'string' || p.trim() === ''))) {
         throw new ManifestError(`components.${type}[${entry.path}] protect must be a list of non-empty strings`);
       }
+      validateScriptPath(`components.${type}[${entry.path}] before`, entry.before);
+      validateScriptPath(`components.${type}[${entry.path}] after`, entry.after);
       // A version pin is required for real skills/services/projects. A 'removed' tombstone is exempt:
       // its component files are gone, so there is nothing left to version-check.
       if (entry.handling !== 'removed' && (type === 'skills' || type === 'services' || type === 'projects') && !entry.version) {
@@ -106,18 +108,28 @@ export function validateManifest(meta) {
       throw new ManifestError(`package requires installer version >= ${need}, but this installer is ${INSTALLER_VERSION}`);
     }
   }
-  // install_flags (optional): package-specific CLI flags the installer accepts and forwards to
-  // install_entry. Each must be a `--`-prefixed name and must NOT shadow a standard flag.
-  if (meta.install_flags != null) {
-    if (!Array.isArray(meta.install_flags)) throw new ManifestError('install_flags must be a list');
-    for (const f of meta.install_flags) {
+  // flags (optional): package-specific CLI flags accepted and forwarded to hook scripts.
+  // install_flags is a deprecated alias for flags.
+  const flagList = meta.flags ?? meta.install_flags;
+  if (meta.flags != null && meta.install_flags != null) {
+    throw new ManifestError('manifest cannot declare both flags and install_flags — use flags');
+  }
+  if (flagList != null) {
+    if (!Array.isArray(flagList)) throw new ManifestError('flags must be a list');
+    for (const f of flagList) {
       if (!f || typeof f.name !== 'string' || !f.name.startsWith('--')) {
-        throw new ManifestError("install_flags[] entry needs a string 'name' starting with '--'");
+        throw new ManifestError("flags[] entry needs a string 'name' starting with '--'");
       }
       if (STANDARD_FLAG_NAMES.has(f.name)) {
-        throw new ManifestError(`install_flags cannot re-declare a standard flag: ${f.name}`);
+        throw new ManifestError(`flags cannot re-declare a standard flag: ${f.name}`);
       }
     }
+  }
+  validateScriptPath('before', meta.before);
+  validateScriptPath('after', meta.after);
+  validateScriptPath('install_entry', meta.install_entry);
+  if (meta.after != null && meta.install_entry != null && meta.after !== meta.install_entry) {
+    throw new ManifestError('after and install_entry disagree — use after only');
   }
 }
 
@@ -143,7 +155,7 @@ function resolveEntry(type, entry, root, loader) {
   const handling = entry.handling || 'normal';
   if (handling === 'removed') return loadRemovedDef(type, entry, root);
   // protect rides the def for every type so core/* consumers (strict prune, sync export) share it.
-  return { ...loader(entry, root), handling, ...(entry.protect != null ? { protect: entry.protect } : {}) };
+  return { ...loader(entry, root), handling, ...(entry.protect != null ? { protect: entry.protect } : {}), ...(entry.before ? { before: entry.before } : {}), ...(entry.after ? { after: entry.after } : {}) };
 }
 
 // Build a 'removed' tombstone def. We never read the component's files; we only need its canonical DB
@@ -340,6 +352,12 @@ export function normalizeBuild(label, build) {
 
 function checkLen(label, val, max) {
   if (String(val).length > max) throw new ManifestError(`${label} exceeds ${max} chars: ${val}`);
+}
+
+function validateScriptPath(label, v) {
+  if (v != null && (typeof v !== 'string' || v.trim() === '')) {
+    throw new ManifestError(`${label} must be a non-empty string`);
+  }
 }
 
 function assertManifestSegment(label, val) {

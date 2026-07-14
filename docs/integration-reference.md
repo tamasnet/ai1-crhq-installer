@@ -149,3 +149,9 @@ On install, the declared component version is upserted. On sync/mirror, the curr
 - Projects: added only with `--add-project`, then left to git.
 
 Unrepresentable components are reported as skipped rather than exported incorrectly.
+
+## Hook scripts
+
+Packages and components may declare optional `before` / `after` script paths in `ai1-package.yaml`. Hook subprocesses inherit the install environment (`INSTALL_SCHEMA`, `SKILLS_BASE_DIR`, etc.) plus `INSTALL_MODE`, `INSTALL_PACKAGE`, `INSTALL_DRY_RUN`, and `INSTALL_COMPONENTS`. Component hooks also receive `INSTALL_COMPONENT` and `INSTALL_COMPONENT_OP`.
+
+Package `before` runs once before the declarative pass on install only. Package `after` runs after the pass and install-log update on install, uninstall, and status. Component hooks wrap each action-bound component. See the "Hook scripts" section in [`package-manifest-spec.md`](./package-manifest-spec.md) for scoped-run behavior and CLI flags (`--with-package-scripts`, `--no-scripts`).

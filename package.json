@@ -14,7 +14,7 @@
   },
   "scripts": {
     "install-bundle": "node scripts/install.mjs",
-    "test": "node tests/parse.test.mjs && node tests/fs.test.mjs && node tests/protect.test.mjs && node tests/strict.test.mjs && node tests/skill-recipe.test.mjs && node tests/agent.test.mjs && node tests/job.test.mjs && node tests/runner.test.mjs && node tests/service.test.mjs && node tests/validate.test.mjs && node tests/service-live.test.mjs && node tests/filter.test.mjs && node tests/handling.test.mjs && node tests/identity.test.mjs && node tests/options.test.mjs && node tests/install-log.test.mjs && node tests/list-available.test.mjs && node tests/sync.test.mjs && node tests/archive.test.mjs && node tests/remote.test.mjs && node tests/action.test.mjs && node tests/polaris.test.mjs && node tests/drift.test.mjs && node tests/diff.test.mjs && node tests/installer.test.mjs"
+    "test": "node tests/parse.test.mjs && node tests/fs.test.mjs && node tests/protect.test.mjs && node tests/strict.test.mjs && node tests/skill-recipe.test.mjs && node tests/agent.test.mjs && node tests/job.test.mjs && node tests/hooks.test.mjs && node tests/runner.test.mjs && node tests/service.test.mjs && node tests/validate.test.mjs && node tests/service-live.test.mjs && node tests/filter.test.mjs && node tests/handling.test.mjs && node tests/identity.test.mjs && node tests/options.test.mjs && node tests/install-log.test.mjs && node tests/list-available.test.mjs && node tests/sync.test.mjs && node tests/archive.test.mjs && node tests/remote.test.mjs && node tests/action.test.mjs && node tests/polaris.test.mjs && node tests/drift.test.mjs && node tests/diff.test.mjs && node tests/installer.test.mjs"
   },
   "engines": {
     "node": ">=18"
