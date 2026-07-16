@@ -6,8 +6,9 @@
 // Safety model:
 //   • dry-run            → render artifacts, SKIP build + apply (no nginx/PM2/port) unless --run-build.
 //   • --sandbox          → web apps aren't modelled by the sandbox → SKIP entirely (build + apply).
-//   • real install       → applyWebApp(): copy/symlink source, write .env/ecosystem/vhost,
-//                          alloc port, pm2 start+save, nginx reload. This MUTATES THE LIVE VPS.
+//   • real install       → applyWebApp(): copy/symlink source, write .env (+ ecosystem/nginx per
+//                          app_deploy), alloc app_port, optional pm2 start + nginx reload.
+//                          app_deploy: default (both) | none | nginx | pm2. This MUTATES THE LIVE VPS.
 //
 // ⚠️ The live apply/remove paths mutate nginx + PM2 on the VPS. Run tests/service-live.test.mjs
 // with AI1_LIVE_SERVICE_TEST=1 on a machine with sudo/nginx/pm2 to exercise them end-to-end. Render +
@@ -21,6 +22,7 @@ import { isInstallStrict } from '../strict.mjs';
 import { assertSafeEnvValue, formatEnvValue } from '../validate.mjs';
 import { VERDICT, logDeletions } from '../log.mjs';
 import { resolveServicesBase, resolveUserProjectsBase } from '../paths.mjs';
+import { deployIncludesNginx, deployIncludesPm2 } from '../manifest.mjs';
 import { planResult } from './plan-result.mjs';
 
 const NGINX_DIR = '/etc/nginx/projects.d';
@@ -151,8 +153,8 @@ async function planWebApp(ctx, def, { type, baseDir, contentMode }) {
     }
   }
 
-  const nginxDrift = !st.vhostPresent;
-  const pm2Drift = !st.pm2Present;
+  const nginxDrift = deployIncludesNginx(def.app_deploy) ? !st.vhostPresent : false;
+  const pm2Drift = deployIncludesPm2(def.app_deploy) ? !st.pm2Present : false;
   if (!fileDrift && !nginxDrift && !pm2Drift) {
     return planResult(type, name, { verdict: VERDICT.ALREADY, action: 'updated' });
   }
@@ -239,8 +241,13 @@ async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
     }
   }
 
+  if (def.portDeprecated) {
+    log.warn(`${type} ${def.name}: 'port' is deprecated — use 'app_port' in service.yaml/project.yaml`);
+  }
+
   const projectDir = join(baseDir, def.name);
-  const port = def.port || nextFreePort(DRY_RUN ? [] : scanUsedPorts());
+  const port = def.app_port ?? nextFreePort(DRY_RUN ? [] : scanUsedPorts());
+  const deploy = def.app_deploy || 'default';
   const artifacts = renderArtifacts(def, port, projectDir, process.env);
   const plan = await planWebApp(ctx, def, { type, baseDir, contentMode });
 
@@ -248,7 +255,8 @@ async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
     const content = type === 'project'
       ? (contentMode === 'copy' ? 'copy project files' : `symlink to ${def.srcDir}`)
       : 'copy service files';
-    log.dry(`deploy ${type} ${def.name} → ${projectDir} on port ${port} (${content}; nginx vhost + PM2 — apply skipped)`);
+    const deployNote = deploy === 'default' ? 'nginx + PM2' : deploy;
+    log.dry(`deploy ${type} ${def.name} → ${projectDir} on port ${port} (${content}; app_deploy=${deployNote} — apply skipped)`);
     if (isInstallStrict(ctx, def) && contentMode === 'copy' && def.srcDir && existsSync(def.srcDir) && existsSync(projectDir)) {
       const stale = pruneTree(projectDir, def.srcDir, { dryRun: true, skip: protectMatcher(def.protect).skip });
       logDeletions(log, projectDir, stale, { dryRun: true });
@@ -262,13 +270,14 @@ async function installWebApp(ctx, def, { type, baseDir, contentMode }) {
     return out(type, def.name, VERDICT.ALREADY, 'unchanged');
   }
 
-  applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode });
-  return out(type, def.name, VERDICT.OK, `deployed (port ${port})`);
+  applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode, deploy });
+  const deployNote = deploy === 'default' ? '' : `, app_deploy=${deploy}`;
+  return out(type, def.name, VERDICT.OK, `deployed (port ${port}${deployNote})`);
 }
 
 // Live apply — gated to real (non-dry-run, non-sandbox) installs; follows the deploy-project
 // skill's deployment steps. Verified by tests/service-live.test.mjs when AI1_LIVE_SERVICE_TEST=1.
-function applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode }) {
+function applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode, deploy = 'default' }) {
   if (def.name === 'crhq-satellite') throw new Error(`refusing to deploy a ${type} named crhq-satellite`);
   if (contentMode === 'symlink') {
     ensureSymlink(projectDir, def.srcDir);
@@ -288,14 +297,23 @@ function applyWebApp(ctx, def, projectDir, port, artifacts, { type, contentMode 
   const envPath = join(projectDir, '.env');
   writeFileSync(envPath, artifacts.env);
   chmodSync(envPath, 0o640);                                   // Rule 3: lock down secrets
-  writeFileSync(join(projectDir, 'ecosystem.config.cjs'), artifacts.ecosystem);
-  writeFileSync(join(NGINX_DIR, `${def.name}.conf`), artifacts.nginx);
 
-  sh(ctx, 'pm2', ['start', 'ecosystem.config.cjs'], { cwd: projectDir });
-  sh(ctx, 'pm2', ['save'], {});                                // reboot persistence
-  sh(ctx, 'sudo', ['nginx', '-t']);
-  sh(ctx, 'sudo', ['nginx', '-s', 'reload']);
-  ctx.log.ok(`${type} ${def.name} deployed on 127.0.0.1:${port}`);
+  if (deployIncludesPm2(deploy)) {
+    writeFileSync(join(projectDir, 'ecosystem.config.cjs'), artifacts.ecosystem);
+    sh(ctx, 'pm2', ['start', 'ecosystem.config.cjs'], { cwd: projectDir });
+    sh(ctx, 'pm2', ['save'], {});                                // reboot persistence
+  }
+
+  if (deployIncludesNginx(deploy)) {
+    writeFileSync(join(NGINX_DIR, `${def.name}.conf`), artifacts.nginx);
+    sh(ctx, 'sudo', ['nginx', '-t']);
+    sh(ctx, 'sudo', ['nginx', '-s', 'reload']);
+  }
+
+  const parts = ['files'];
+  if (deployIncludesPm2(deploy)) parts.push('pm2');
+  if (deployIncludesNginx(deploy)) parts.push('nginx');
+  ctx.log.ok(`${type} ${def.name} deployed on 127.0.0.1:${port} (${parts.join(' + ')})`);
 }
 
 export function removeService(ctx, nameOrDef) {
@@ -313,16 +331,28 @@ export function removeProject(ctx, nameOrDef) {
 }
 
 function removeWebApp(ctx, nameOrDef, { type, baseDir }) {
-  const name = typeof nameOrDef === 'string' ? nameOrDef : nameOrDef.name;
+  const def = typeof nameOrDef === 'string' ? null : nameOrDef;
+  const name = def?.name ?? nameOrDef;
+  const deploy = def?.app_deploy ?? 'default';
   const { DRY_RUN, SANDBOX, log } = ctx;
   if (name === 'crhq-satellite') throw new Error('refusing to touch crhq-satellite');
   if (SANDBOX) { log.warn(`${type} ${name}: skipped under --sandbox`); return out(type, name, VERDICT.ALREADY, 'sandbox-skipped'); }
-  if (DRY_RUN) { log.dry(`remove ${type} ${name} (pm2 delete + rm vhost + nginx reload)`); return out(type, name, VERDICT.OK, 'removed'); }
+  if (DRY_RUN) {
+    const parts = ['remove files'];
+    if (deployIncludesPm2(deploy)) parts.push('pm2 delete');
+    if (deployIncludesNginx(deploy)) parts.push('rm vhost + nginx reload');
+    log.dry(`remove ${type} ${name} (${parts.join(', ')})`);
+    return out(type, name, VERDICT.OK, 'removed');
+  }
 
-  sh(ctx, 'pm2', ['delete', name], { allowFail: true });
-  sh(ctx, 'pm2', ['save'], { allowFail: true });
-  removeTree(join(NGINX_DIR, `${name}.conf`), { dryRun: false });
-  sh(ctx, 'sudo', ['nginx', '-s', 'reload'], { allowFail: true });
+  if (deployIncludesPm2(deploy)) {
+    sh(ctx, 'pm2', ['delete', name], { allowFail: true });
+    sh(ctx, 'pm2', ['save'], { allowFail: true });
+  }
+  if (deployIncludesNginx(deploy)) {
+    removeTree(join(NGINX_DIR, `${name}.conf`), { dryRun: false });
+    sh(ctx, 'sudo', ['nginx', '-s', 'reload'], { allowFail: true });
+  }
   removeTree(join(baseDir, name), { dryRun: false });   // remove deployed dir/symlink (incl. .env)
   return out(type, name, VERDICT.OK, 'removed');
 }

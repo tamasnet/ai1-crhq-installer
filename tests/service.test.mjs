@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, lstatSync, readlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { loadManifest, normalizeBuild, ManifestError } from '../scripts/lib/manifest.mjs';
+import { loadManifest, normalizeBuild, ManifestError, deployIncludesNginx, deployIncludesPm2 } from '../scripts/lib/manifest.mjs';
 import { makeLogger } from '../scripts/lib/log.mjs';
 import {
   installService, installProject, renderEnv, renderEcosystem, renderNginx, nextFreePort,
@@ -126,6 +126,44 @@ await test('secret hygiene: env secret never logged', async () => {
   console.log = (...a) => { buf += `${a.join(' ')}\n`; };
   try { await installService(svcCtx({ DRY_RUN: true }), def); } finally { console.log = orig; }
   assert.doesNotMatch(buf, /super-secret-value/, 'secret must not appear in logs');
+});
+
+console.log('\napp_port / app_deploy:');
+
+await test('loadManifest: deprecated port maps to app_port', () => {
+  assert.equal(def.app_port, 4399);
+  assert.equal(def.app_deploy, 'default');
+  assert.equal(def.portDeprecated, true);
+});
+
+await test('deployIncludesNginx/Pm2 helpers', () => {
+  assert.equal(deployIncludesNginx('default'), true);
+  assert.equal(deployIncludesPm2('default'), true);
+  assert.equal(deployIncludesNginx('nginx'), true);
+  assert.equal(deployIncludesPm2('nginx'), false);
+  assert.equal(deployIncludesNginx('pm2'), false);
+  assert.equal(deployIncludesPm2('pm2'), true);
+  assert.equal(deployIncludesNginx('none'), false);
+  assert.equal(deployIncludesPm2('none'), false);
+});
+
+await test('dry-run app_deploy=none: files only, no pm2/nginx in message', async () => {
+  const logs = [];
+  const log = makeLogger({ dryRun: true });
+  const origDry = log.dry.bind(log);
+  log.dry = (m) => { logs.push(m); origDry(m); };
+  const r = await installService({ ...svcCtx({ DRY_RUN: true }), log }, { ...def, app_deploy: 'none', portDeprecated: false });
+  assert.equal(r.verdict, 'INSTALL-OK');
+  assert.ok(logs.some((m) => /app_deploy=none/.test(m)));
+});
+
+await test('install warns when deprecated port is used', async () => {
+  const logs = [];
+  const log = makeLogger({ dryRun: true });
+  const origWarn = log.warn.bind(log);
+  log.warn = (m) => { logs.push(m); origWarn(m); };
+  await installService({ ...svcCtx({ DRY_RUN: true }), log }, def);
+  assert.ok(logs.some((m) => /'port' is deprecated/.test(m)));
 });
 
 console.log('\nprojects (no live apply):');

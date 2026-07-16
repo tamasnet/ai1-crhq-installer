@@ -179,7 +179,7 @@ async function exportComponent(ctx, type, row, { packageDir, relPath, skillNames
 }
 
 // A minimal but valid project.yaml for a live project that doesn't ship one. Required fields only
-// (name/version/start); port and nginx fall back to runtime defaults (auto-allocated port,
+// (name/version/start); app_port and app_deploy/nginx fall back to runtime defaults (auto-allocated port,
 // app_name = name, ssl on). The author edits it afterward — git owns the project once it's added.
 function defaultProjectConfig(name) {
   return dumpYaml({ name, version: 1, start: 'node server.js' });

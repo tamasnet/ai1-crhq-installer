@@ -280,7 +280,8 @@ Required fields: `name`, `schedule`, `script`. Schedule aliases: `hourly`, `dail
 name: my-service
 version: 1
 start: node server.js
-port: 4310
+app_port: 4310
+app_deploy: default
 build: npm run build
 env:
   NODE_ENV: production
@@ -288,7 +289,13 @@ app_name: my-service
 ssl: true
 ```
 
-Required fields: `name`, `version`, `start`. Optional fields: `port`, `build`, `env`, `app_name`, `ssl`.
+Required fields: `name`, `version`, `start`. Optional fields: `app_port`, `app_deploy`, `build`, `env`, `app_name`, `ssl`.
+
+`app_port` — TCP port the app listens on (written to `.env` as `PORT`). When omitted, the installer auto-allocates from 4300 upward.
+
+`app_deploy` — which host integration steps to run on install/uninstall. Default `default` (nginx vhost + PM2). `none` deploys files and `.env` only; `nginx` writes the vhost and reloads nginx; `pm2` writes `ecosystem.config.cjs` and starts/saves PM2.
+
+`port` is deprecated in favour of `app_port` but still accepted when `app_port` is omitted. If both are set they must match.
 
 `build` accepts a single shell command string or a YAML list of command strings. A list is run sequentially, in order, and fails fast on the first non-zero exit; empty/whitespace entries are ignored. Each command runs through a shell, so a single string can also chain commands with `&&`/`;`.
 
@@ -306,7 +313,8 @@ A real install copies the service source to `${SERVICES_BASE_DIR:-~/services}/<n
 name: my-project
 version: 1
 start: node server.js
-port: 4311
+app_port: 4311
+app_deploy: default
 build: npm run build
 env:
   NODE_ENV: production

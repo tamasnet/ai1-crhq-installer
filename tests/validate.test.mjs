@@ -72,6 +72,33 @@ await test('malicious app_name with nginx injection chars rejected at manifest l
   assert.throws(() => loadManifest(dir), (e) => e instanceof ManifestError && /invalid app_name/.test(e.message));
 });
 
+await test('app_port and deprecated port must agree', () => {
+  const dir = mkPkg(
+    'name: p\nversion: 1\ndescription: x\ncomponents:\n  services:\n    - path: services/x\n      version: 1\n',
+    { 'services/x/service.yaml': SERVICE_YAML('svc', 'port: 4310\napp_port: 4311\n') },
+  );
+  assert.throws(() => loadManifest(dir), (e) => e instanceof ManifestError && /disagree/.test(e.message));
+});
+
+await test('invalid app_deploy rejected at manifest load', () => {
+  const dir = mkPkg(
+    'name: p\nversion: 1\ndescription: x\ncomponents:\n  services:\n    - path: services/x\n      version: 1\n',
+    { 'services/x/service.yaml': SERVICE_YAML('svc', 'app_deploy: both\n') },
+  );
+  assert.throws(() => loadManifest(dir), (e) => e instanceof ManifestError && /app_deploy must be one of/.test(e.message));
+});
+
+await test('app_port and app_deploy load into service def', () => {
+  const dir = mkPkg(
+    'name: p\nversion: 1\ndescription: x\ncomponents:\n  services:\n    - path: services/x\n      version: 1\n',
+    { 'services/x/service.yaml': SERVICE_YAML('svc', 'app_port: 4320\napp_deploy: nginx\n') },
+  );
+  const { plan } = loadManifest(dir);
+  assert.equal(plan.services[0].app_port, 4320);
+  assert.equal(plan.services[0].app_deploy, 'nginx');
+  assert.equal(plan.services[0].portDeprecated, false);
+});
+
 await test('package name with path traversal rejected at manifest load', () => {
   assert.throws(
     () => loadManifest(mkPkg('name: ../escape\nversion: 1\ndescription: x\ncomponents: {}\n')),

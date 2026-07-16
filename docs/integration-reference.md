@@ -103,9 +103,9 @@ Install behavior:
 - Required fields: `name`, `version`, `start`.
 - Optional `build` runs before apply. It is a single shell command string or a YAML list of commands run sequentially (fail-fast on the first non-zero exit). During dry-run, build commands are skipped by default (pass `--run-build` to execute them).
 - Copy source to `${SERVICES_BASE_DIR:-~/services}/<name>`.
-- Write `.env`, `ecosystem.config.cjs`, and nginx vhost.
-- Bind nginx upstream to `127.0.0.1:<port>`.
-- Start/save PM2 and reload nginx.
+- Write `.env` (always). Optional `app_port` sets `PORT`; when omitted the installer auto-allocates.
+- `app_deploy` controls host integration (default: both): `none` (files + `.env` only), `nginx` (vhost + reload), `pm2` (`ecosystem.config.cjs` + start/save), `default` (nginx + PM2).
+- When nginx is included, bind upstream to `127.0.0.1:<app_port>`.
 
 Services are not DB-resident and are not exported by `sync.mjs`.
 
@@ -119,9 +119,9 @@ Install behavior:
 - Optional `build` runs before apply. It is a single shell command string or a YAML list of commands run sequentially (fail-fast on the first non-zero exit). During dry-run, build commands are skipped by default (pass `--run-build` to execute them).
 - By default, create/update `/opt/projects/user/<name>` as a symlink to the package project directory.
 - With `--copy-projects`, copy source to `/opt/projects/user/<name>` instead.
-- Write `.env`, `ecosystem.config.cjs`, and nginx vhost.
-- Bind nginx upstream to `127.0.0.1:<port>`.
-- Start/save PM2 and reload nginx.
+- Write `.env` (always). Optional `app_port` sets `PORT`; when omitted the installer auto-allocates.
+- `app_deploy` controls host integration (default: both): `none`, `nginx`, `pm2`, or `default` (nginx + PM2).
+- When nginx is included, bind upstream to `127.0.0.1:<app_port>`.
 
 Projects are not DB-resident. `sync.mjs --add-project=<name>` moves the live `/opt/projects/user/<name>` directory into the package and replaces it with a symlink; mirror mode never auto-adds projects, and later sync/mirror runs do not export project content.
 

@@ -301,6 +301,46 @@ function loadProjectDef(entry, root) {
   return loadWebAppDef(entry, root, 'project');
 }
 
+export const APP_DEPLOY_VALUES = new Set(['default', 'none', 'nginx', 'pm2']);
+
+export function deployIncludesNginx(appDeploy = 'default') {
+  return appDeploy === 'default' || appDeploy === 'nginx';
+}
+
+export function deployIncludesPm2(appDeploy = 'default') {
+  return appDeploy === 'default' || appDeploy === 'pm2';
+}
+
+function parseAppPort(label, v) {
+  if (v == null) return undefined;
+  const n = typeof v === 'number' ? v : (typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) {
+    throw new ManifestError(`${label} must be a valid TCP port 1–65535 (got ${JSON.stringify(v)})`);
+  }
+  return n;
+}
+
+function resolveAppDeploy(s, pathLabel) {
+  const raw = s.app_deploy ?? 'default';
+  const v = String(raw).trim().toLowerCase();
+  if (!APP_DEPLOY_VALUES.has(v)) {
+    throw new ManifestError(`app_deploy must be one of default, none, nginx, pm2 (got ${JSON.stringify(raw)}) at ${pathLabel}`);
+  }
+  return v;
+}
+
+function resolveAppPort(s, pathLabel) {
+  const hasAppPort = s.app_port != null;
+  const hasPort = s.port != null;
+  if (hasAppPort && hasPort && s.app_port !== s.port) {
+    throw new ManifestError(`app_port and deprecated port disagree at ${pathLabel}`);
+  }
+  const label = `${pathLabel} app_port`;
+  if (hasAppPort) return parseAppPort(label, s.app_port);
+  if (hasPort) return parseAppPort(`${pathLabel} port`, s.port);
+  return undefined;
+}
+
 export function readWebAppConfig(srcDir, { kind = 'service', pathLabel = srcDir } = {}) {
   const cap = kind === 'project' ? 'Project' : 'Service';
   const fileName = kind === 'project' ? 'project.yaml' : 'service.yaml';
@@ -318,12 +358,15 @@ export function readWebAppConfig(srcDir, { kind = 'service', pathLabel = srcDir 
     app_name = String(s.app_name).trim();
     assertManifestDnsLabel('app_name', app_name);
   }
-  return { config: s, version, srcFile: yPath, app_name };
+  const app_port = resolveAppPort(s, pathLabel);
+  const app_deploy = resolveAppDeploy(s, pathLabel);
+  const portDeprecated = s.port != null && s.app_port == null;
+  return { config: s, version, srcFile: yPath, app_name, app_port, app_deploy, portDeprecated };
 }
 
 function loadWebAppDef(entry, root, kind) {
   const srcDir = join(root, entry.path);
-  const { config: s, version, srcFile, app_name } = readWebAppConfig(srcDir, { kind, pathLabel: entry.path });
+  const { config: s, version, srcFile, app_name, app_port, app_deploy, portDeprecated } = readWebAppConfig(srcDir, { kind, pathLabel: entry.path });
   const cap = kind === 'project' ? 'Project' : 'Service';
   const fileName = kind === 'project' ? 'project.yaml' : 'service.yaml';
   const pin = intVersion(`${cap} ${entry.path} manifest version`, entry.version);
@@ -331,7 +374,7 @@ function loadWebAppDef(entry, root, kind) {
     throw new ManifestError(`${cap} ${s.name}: ${fileName} version ${version} != manifest pin ${pin}`);
   }
   return {
-    name: s.name, version, start: s.start, port: s.port, cwd: s.cwd || './',
+    name: s.name, version, start: s.start, app_port, app_deploy, portDeprecated, cwd: s.cwd || './',
     build: normalizeBuild(`${cap} ${s.name} build`, s.build), env: s.env || {}, app_name, ssl: s.ssl, srcDir, srcFile,
   };
 }

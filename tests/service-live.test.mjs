@@ -47,7 +47,8 @@ writeFileSync(join(srcDir, 'service.yaml'), [
 const def = {
   name: svcName,
   version: 1,
-  port: 4398,
+  app_port: 4398,
+  app_deploy: 'default',
   start: 'node server.js',
   app_name: 'live-smoke',
   ssl: false,
